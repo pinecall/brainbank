@@ -35,6 +35,11 @@ export const tests = {
         assert.includes(tables, 'memory_vectors');
         assert.includes(tables, 'distilled_strategies');
         assert.includes(tables, 'schema_version');
+        assert.includes(tables, 'collections');
+        assert.includes(tables, 'doc_chunks');
+        assert.includes(tables, 'doc_vectors');
+        assert.includes(tables, 'path_contexts');
+        assert.includes(tables, 'conversation_memories');
         db.close();
     },
 

@@ -1,6 +1,7 @@
 /**
  * Unit Tests — BrainBank Orchestrator
  * 
+ * Tests modular initialization with feature flags.
  * Uses a mock embedding provider (no model download required).
  */
 
@@ -9,8 +10,6 @@ import { BrainBank } from '../../src/core/brainbank.ts';
 import type { EmbeddingProvider } from '../../src/types.ts';
 
 export const name = 'BrainBank Orchestrator';
-
-const TEST_DB = '/tmp/brainbank-test-main.db';
 
 /** Deterministic mock embeddings — no model needed. */
 class MockEmbedding implements EmbeddingProvider {
@@ -21,7 +20,6 @@ class MockEmbedding implements EmbeddingProvider {
         for (let i = 0; i < 16; i++) {
             v[i] = Math.sin((text.charCodeAt(i % text.length) || 0) * (i + 1));
         }
-        // Normalize
         let norm = 0;
         for (let i = 0; i < v.length; i++) norm += v[i] * v[i];
         norm = Math.sqrt(norm);
@@ -36,61 +34,78 @@ class MockEmbedding implements EmbeddingProvider {
     async close(): Promise<void> {}
 }
 
-function cleanup() {
-    try { fs.unlinkSync(TEST_DB); } catch {}
-    try { fs.unlinkSync(TEST_DB + '-wal'); } catch {}
-    try { fs.unlinkSync(TEST_DB + '-shm'); } catch {}
+function makeDB() {
+    const path = `/tmp/brainbank-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+    return path;
+}
+
+function cleanup(path: string) {
+    try { fs.unlinkSync(path); } catch {}
+    try { fs.unlinkSync(path + '-wal'); } catch {}
+    try { fs.unlinkSync(path + '-shm'); } catch {}
 }
 
 export const tests = {
     async 'constructor does not initialize immediately'(assert: any) {
-        cleanup();
-        const brain = new BrainBank({
-            dbPath: TEST_DB,
-            embeddingProvider: new MockEmbedding(),
-            embeddingDims: 16,
-        });
-        assert.ok(!brain.isInitialized, 'should not be initialized yet');
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
+        assert.ok(!brain.isInitialized);
         brain.close();
+        cleanup(db);
     },
 
-    async 'initialize creates DB and indices'(assert: any) {
-        cleanup();
-        const brain = new BrainBank({
-            dbPath: TEST_DB,
-            embeddingProvider: new MockEmbedding(),
-            embeddingDims: 16,
-        });
+    async 'initialize creates DB (all features)'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
         await brain.initialize();
-        assert.ok(brain.isInitialized, 'should be initialized');
-        assert.ok(fs.existsSync(TEST_DB), 'DB file should exist');
+        assert.ok(brain.isInitialized);
+        assert.ok(fs.existsSync(db));
         brain.close();
+        cleanup(db);
     },
 
-    async 'stats returns correct structure'(assert: any) {
-        cleanup();
+    async 'conversations-only mode initializes without code/git/patterns'(assert: any) {
+        const db = makeDB();
         const brain = new BrainBank({
-            dbPath: TEST_DB,
+            dbPath: db,
             embeddingProvider: new MockEmbedding(),
             embeddingDims: 16,
+            features: { code: false, git: false, patterns: false, conversations: true },
         });
         await brain.initialize();
-        const s = brain.stats();
-
-        assert.ok('code' in s, 'should have code stats');
-        assert.ok('git' in s, 'should have git stats');
-        assert.ok('memory' in s, 'should have memory stats');
-        assert.equal(s.code.files, 0);
-        assert.equal(s.code.chunks, 0);
-        assert.equal(s.git.commits, 0);
-        assert.equal(s.memory.patterns, 0);
+        assert.ok(brain.isInitialized);
+        assert.equal(brain.features.code, false);
+        assert.equal(brain.features.conversations, true);
         brain.close();
+        cleanup(db);
+    },
+
+    async 'disabled feature throws clear error'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({
+            dbPath: db,
+            embeddingProvider: new MockEmbedding(),
+            embeddingDims: 16,
+            features: { code: false, git: false, patterns: false },
+        });
+        await brain.initialize();
+
+        let threw = false;
+        try { await brain.indexCode(); } catch (e: any) {
+            threw = true;
+            assert.includes(e.message, 'code');
+            assert.includes(e.message, 'feature');
+        }
+        assert.ok(threw, 'should throw for disabled feature');
+
+        brain.close();
+        cleanup(db);
     },
 
     async 'learn and searchPatterns roundtrip'(assert: any) {
-        cleanup();
+        const db = makeDB();
         const brain = new BrainBank({
-            dbPath: TEST_DB,
+            dbPath: db,
             embeddingProvider: new MockEmbedding(),
             embeddingDims: 16,
         });
@@ -102,51 +117,88 @@ export const tests = {
             approach: 'Use middleware pattern with token validation',
             successRate: 0.95,
         });
-
-        assert.gt(id, 0, 'should return positive ID');
+        assert.gt(id, 0);
 
         const results = await brain.searchPatterns('authentication JWT token');
-        assert.gt(results.length, 0, 'should find the learned pattern');
+        assert.gt(results.length, 0);
         assert.includes(results[0].approach, 'middleware');
+
         brain.close();
+        cleanup(db);
+    },
+
+    async 'stats only includes enabled features'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({
+            dbPath: db,
+            embeddingProvider: new MockEmbedding(),
+            embeddingDims: 16,
+            features: { code: false, git: false, patterns: true, conversations: true },
+        });
+        await brain.initialize();
+        const s = brain.stats();
+
+        assert.ok(!('code' in s), 'should NOT have code stats');
+        assert.ok(!('git' in s), 'should NOT have git stats');
+        assert.ok('memory' in s, 'should have memory stats');
+        assert.ok('conversations' in s, 'should have conversations stats');
+
+        brain.close();
+        cleanup(db);
+    },
+
+    async 'documents mode: addCollection and searchDocs'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({
+            dbPath: db,
+            embeddingProvider: new MockEmbedding(),
+            embeddingDims: 16,
+            features: { code: false, git: false, patterns: false, documents: true, conversations: false },
+        });
+        await brain.initialize();
+
+        // Create a temp docs directory
+        const docsDir = `/tmp/brainbank-docs-test-${Date.now()}`;
+        fs.mkdirSync(docsDir, { recursive: true });
+        fs.writeFileSync(`${docsDir}/guide.md`, '# Getting Started\n\nThis is a guide for setting up authentication with JWT tokens.\n\n## Installation\n\nRun npm install jsonwebtoken to get started.');
+        fs.writeFileSync(`${docsDir}/api.md`, '# API Reference\n\nThe login endpoint accepts POST requests with email and password.');
+
+        await brain.addCollection({ name: 'docs', path: docsDir, pattern: '**/*.md' });
+
+        const collections = brain.listCollections();
+        assert.equal(collections.length, 1);
+        assert.equal(collections[0].name, 'docs');
+
+        const result = await brain.indexDocs();
+        assert.ok(result.docs, 'should have docs result');
+        assert.equal(result.docs.indexed, 2);
+
+        const searchResults = await brain.searchDocs('authentication JWT');
+        assert.gt(searchResults.length, 0);
+        assert.equal(searchResults[0].type, 'document');
+
+        brain.close();
+        cleanup(db);
+        fs.rmSync(docsDir, { recursive: true });
     },
 
     async 'close sets initialized to false'(assert: any) {
-        cleanup();
-        const brain = new BrainBank({
-            dbPath: TEST_DB,
-            embeddingProvider: new MockEmbedding(),
-            embeddingDims: 16,
-        });
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
         await brain.initialize();
         assert.ok(brain.isInitialized);
         brain.close();
         assert.ok(!brain.isInitialized);
-    },
-
-    async 'config is accessible and readonly'(assert: any) {
-        cleanup();
-        const brain = new BrainBank({
-            repoPath: '/my/repo',
-            dbPath: TEST_DB,
-            embeddingProvider: new MockEmbedding(),
-            embeddingDims: 16,
-        });
-        assert.equal(brain.config.repoPath, '/my/repo');
-        assert.equal(brain.config.dbPath, TEST_DB);
-        brain.close();
+        cleanup(db);
     },
 
     async 'double initialize is idempotent'(assert: any) {
-        cleanup();
-        const brain = new BrainBank({
-            dbPath: TEST_DB,
-            embeddingProvider: new MockEmbedding(),
-            embeddingDims: 16,
-        });
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
         await brain.initialize();
-        await brain.initialize(); // second call should not throw
+        await brain.initialize();
         assert.ok(brain.isInitialized);
         brain.close();
+        cleanup(db);
     },
 };

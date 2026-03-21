@@ -5,13 +5,13 @@
 export const name = 'BM25 Full-Text Search';
 
 export const tests = {
-    async 'FTS5 tables are created with schema v2'(assert: any) {
+    async 'FTS5 tables are created with schema v4'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
         const { SCHEMA_VERSION } = await import('../../src/core/schema.ts');
         const path = `/tmp/brainbank-bm25-test-${Date.now()}.db`;
         const db = new Database(path);
 
-        assert.equal(SCHEMA_VERSION, 3);
+        assert.equal(SCHEMA_VERSION, 4);
 
         // Check FTS tables exist
         const tables = db.prepare(
@@ -22,6 +22,8 @@ export const tests = {
         assert(names.includes('fts_code'), 'fts_code table should exist');
         assert(names.includes('fts_commits'), 'fts_commits table should exist');
         assert(names.includes('fts_patterns'), 'fts_patterns table should exist');
+        assert(names.includes('fts_docs'), 'fts_docs table should exist');
+        assert(names.includes('fts_conversations'), 'fts_conversations table should exist');
 
         db.close();
     },

@@ -4,6 +4,29 @@
  * All interfaces and types for the semantic knowledge bank.
  */
 
+// ── Feature Flags ───────────────────────────────────
+
+export interface FeatureFlags {
+    /** Enable code indexing (30+ languages). Default: true */
+    code?: boolean;
+    /** Enable git history indexing. Default: true */
+    git?: boolean;
+    /** Enable generic document collections. Default: false */
+    documents?: boolean;
+    /** Enable conversation memory. Default: true */
+    conversations?: boolean;
+    /** Enable agent memory patterns. Default: true */
+    patterns?: boolean;
+}
+
+export interface ResolvedFeatureFlags {
+    code: boolean;
+    git: boolean;
+    documents: boolean;
+    conversations: boolean;
+    patterns: boolean;
+}
+
 // ── Configuration ───────────────────────────────────
 
 export interface BrainBankConfig {
@@ -11,6 +34,8 @@ export interface BrainBankConfig {
     repoPath?: string;
     /** SQLite database path. Default: '.brainbank/brainbank.db' */
     dbPath?: string;
+    /** Feature flags — selectively enable/disable subsystems. */
+    features?: FeatureFlags;
     /** Max git commits to index. Default: 500 */
     gitDepth?: number;
     /** Max file size in bytes to index. Default: 512_000 (500KB) */
@@ -34,6 +59,7 @@ export interface BrainBankConfig {
 export interface ResolvedConfig {
     repoPath: string;
     dbPath: string;
+    features: ResolvedFeatureFlags;
     gitDepth: number;
     maxFileSize: number;
     maxDiffBytes: number;
@@ -145,15 +171,17 @@ export interface DistilledStrategy {
 
 // ── Search Results ──────────────────────────────────
 
-export type SearchResultType = 'code' | 'commit' | 'pattern';
+export type SearchResultType = 'code' | 'commit' | 'pattern' | 'document';
 
 export interface SearchResult {
     type: SearchResultType;
     score: number;
-    /** File path (for code results) */
+    /** File path (for code results) or document path */
     filePath?: string;
     /** Content / text */
     content: string;
+    /** Context description (for document results) */
+    context?: string;
     /** Extra metadata depending on type */
     metadata: Record<string, any>;
 }
@@ -177,26 +205,65 @@ export interface ContextOptions {
     mmrLambda?: number;
 }
 
+// ── Document Collections ────────────────────────────
+
+export interface DocumentCollection {
+    /** Collection name (e.g. 'notes', 'docs') */
+    name: string;
+    /** Directory path to index */
+    path: string;
+    /** Glob pattern for files. Default: '**/*.md' */
+    pattern?: string;
+    /** Glob patterns to ignore */
+    ignore?: string[];
+    /** Context description for this collection */
+    context?: string;
+}
+
+export interface DocChunk {
+    id?: number;
+    /** Collection name */
+    collection: string;
+    /** Relative file path within the collection */
+    filePath: string;
+    /** Document title (first heading or filename) */
+    title: string;
+    /** Chunk content */
+    content: string;
+    /** Chunk sequence within the document (0, 1, 2...) */
+    seq: number;
+    /** Character position in original document */
+    pos: number;
+    /** Content hash for incremental updates */
+    contentHash: string;
+}
+
 // ── Stats ───────────────────────────────────────────
 
 export interface IndexStats {
-    code: {
+    code?: {
         files: number;
         chunks: number;
         hnswSize: number;
     };
-    git: {
+    git?: {
         commits: number;
         filesTracked: number;
         coEdits: number;
         hnswSize: number;
     };
-    memory: {
+    memory?: {
         patterns: number;
         avgSuccess: number;
         hnswSize: number;
     };
-    conversations: {
+    documents?: {
+        collections: number;
+        documents: number;
+        chunks: number;
+        hnswSize: number;
+    };
+    conversations?: {
         total: number;
         short: number;
         long: number;

@@ -14,6 +14,7 @@ export { BrainBank } from './core/brainbank.ts';
 // Types
 export type {
     BrainBankConfig, ResolvedConfig,
+    FeatureFlags, ResolvedFeatureFlags,
     EmbeddingProvider,
     VectorIndex, SearchHit,
     CodeChunk,
@@ -24,6 +25,7 @@ export type {
     IndexStats, IndexResult,
     ProgressCallback,
     CoEditSuggestion,
+    DocumentCollection, DocChunk,
 } from './types.ts';
 
 // Embeddings
@@ -38,6 +40,7 @@ export { searchMMR } from './vector/mmr.ts';
 export { CodeChunker } from './indexers/chunker.ts';
 export { CodeIndexer } from './indexers/code-indexer.ts';
 export { GitIndexer } from './indexers/git-indexer.ts';
+export { DocIndexer } from './indexers/doc-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Memory
@@ -56,4 +59,4 @@ export { ConversationStore } from './memory/conversation-store.ts';
 export type { ConversationDigest, StoredMemory, RecallOptions } from './memory/conversation-store.ts';
 
 // Config
-export { resolveConfig, DEFAULTS } from './core/config.ts';
+export { resolveConfig, DEFAULTS, DEFAULT_FEATURES } from './core/config.ts';
