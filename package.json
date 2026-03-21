@@ -1,0 +1,30 @@
+{
+    "name": "brainbank",
+    "version": "0.1.0",
+    "description": "Semantic knowledge bank for AI agents — code indexing, git history, learned patterns, vector search",
+    "type": "module",
+    "main": "src/index.ts",
+    "bin": {
+        "brainbank": "./src/integrations/cli.ts"
+    },
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "test": "node --import tsx test/run.ts",
+        "test:integration": "node --import tsx test/run.ts --integration",
+        "test:verbose": "node --import tsx test/run.ts --verbose"
+    },
+    "keywords": [
+        "ai",
+        "agent",
+        "semantic-memory",
+        "vector-search",
+        "knowledge-base",
+        "embeddings",
+        "hnsw",
+        "typescript"
+    ],
+    "author": "Bernardo Castro <bernardo@pinecall.io>",
+    "license": "MIT"
+}
