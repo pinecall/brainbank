@@ -4,17 +4,33 @@
  * Semantic knowledge bank for AI agents.
  * 
  *   import { BrainBank } from 'brainbank';
- *   const brain = new BrainBank({ repoPath: '.' });
- *   await brain.index();
- *   const context = await brain.getContext('add auth to /login');
+ *   import { code } from 'brainbank/code';
+ *   import { docs } from 'brainbank/docs';
+ *   import { memory } from 'brainbank/memory';
+ *   import { conversations } from 'brainbank/conversations';
+ *   
+ *   const brain = new BrainBank()
+ *     .use(code({ repoPath: '.' }))
+ *     .use(docs())
+ *     .use(memory())
+ *     .use(conversations());
  */
 
 export { BrainBank } from './core/brainbank.ts';
 
+// Module factories
+export { code } from './modules/code.ts';
+export { git } from './modules/git.ts';
+export { docs } from './modules/docs.ts';
+export { conversations } from './modules/conversations.ts';
+export { memory } from './modules/memory.ts';
+
+// Module types
+export type { BrainBankModule, ModuleContext } from './modules/types.ts';
+
 // Types
 export type {
     BrainBankConfig, ResolvedConfig,
-    FeatureFlags, ResolvedFeatureFlags,
     EmbeddingProvider,
     VectorIndex, SearchHit,
     CodeChunk,
@@ -59,4 +75,4 @@ export { ConversationStore } from './memory/conversation-store.ts';
 export type { ConversationDigest, StoredMemory, RecallOptions } from './memory/conversation-store.ts';
 
 // Config
-export { resolveConfig, DEFAULTS, DEFAULT_FEATURES } from './core/config.ts';
+export { resolveConfig, DEFAULTS } from './core/config.ts';

@@ -6,17 +6,42 @@
  * Standalone command-line interface for the semantic knowledge bank.
  * 
  * Commands:
- *   brainbank index [path]           Index a repository (code + git)
- *   brainbank search <query>         Semantic search (vector only)
- *   brainbank hsearch <query>        Hybrid search (vector + BM25, best quality)
- *   brainbank ksearch <query>        Keyword search (BM25 only, instant)
- *   brainbank context <task>         Get formatted context for a task
- *   brainbank stats                  Show index statistics
- *   brainbank learn                  Store a learned pattern
- *   brainbank serve                  Start MCP server (stdio)
+ * 
+ *   INDEXING
+ *   brainbank index [path]                    Index code + git history
+ *   brainbank collection add <path> --name    Add a document collection
+ *   brainbank collection list                 List collections
+ *   brainbank collection remove <name>        Remove a collection
+ *   brainbank docs [--collection <name>]      Index document collections
+ * 
+ *   SEARCH
+ *   brainbank search <query>                  Semantic search (vector)
+ *   brainbank hsearch <query>                 Hybrid search (vector + BM25)
+ *   brainbank ksearch <query>                 Keyword search (BM25)
+ *   brainbank dsearch <query>                 Document search
+ * 
+ *   CONTEXT
+ *   brainbank context <task>                  Get formatted context for a task
+ *   brainbank context add <col> <path> <desc> Add context metadata
+ *   brainbank context list                    List all context metadata
+ * 
+ *   MEMORY
+ *   brainbank memory learn                    Store a learned pattern
+ *   brainbank memory search <query>           Search patterns
+ *   brainbank remember                        Store conversation memory
+ *   brainbank recall <query>                  Recall conversation memories
+ * 
+ *   UTILITY
+ *   brainbank stats                           Show index statistics
+ *   brainbank serve                           Start MCP server (stdio)
  */
 
 import { BrainBank } from '../core/brainbank.ts';
+import { code } from '../modules/code.ts';
+import { git } from '../modules/git.ts';
+import { docs } from '../modules/docs.ts';
+import { conversations } from '../modules/conversations.ts';
+import { memory } from '../modules/memory.ts';
 
 // ── Colors ──────────────────────────────────────────
 
@@ -27,12 +52,14 @@ const c = {
     cyan: (s: string) => `\x1b[36m${s}\x1b[0m`,
     dim: (s: string) => `\x1b[2m${s}\x1b[0m`,
     bold: (s: string) => `\x1b[1m${s}\x1b[0m`,
+    magenta: (s: string) => `\x1b[35m${s}\x1b[0m`,
 };
 
 // ── CLI Parser ──────────────────────────────────────
 
 const args = process.argv.slice(2);
 const command = args[0];
+const subcommand = args[1];
 
 function getFlag(name: string): string | undefined {
     const idx = args.indexOf(`--${name}`);
@@ -41,6 +68,25 @@ function getFlag(name: string): string | undefined {
 
 function hasFlag(name: string): boolean {
     return args.includes(`--${name}`);
+}
+
+/** Create a full BrainBank with all modules for code projects. */
+function createFullBrain(repoPath?: string): BrainBank {
+    const rp = repoPath ?? getFlag('repo') ?? '.';
+    return new BrainBank({ repoPath: rp })
+        .use(code({ repoPath: rp }))
+        .use(git())
+        .use(memory())
+        .use(conversations())
+        .use(docs());
+}
+
+/** Create a docs-only BrainBank. */
+function createDocsBrain(): BrainBank {
+    const repoPath = getFlag('repo') ?? '.';
+    return new BrainBank({ repoPath })
+        .use(docs())
+        .use(conversations());
 }
 
 // ── Commands ────────────────────────────────────────
@@ -55,7 +101,7 @@ async function cmdIndex() {
     console.log(c.dim(`  Force: ${force}`));
     console.log(c.dim(`  Git depth: ${depth}`));
 
-    const brain = new BrainBank({ repoPath });
+    const brain = createFullBrain(repoPath);
 
     const result = await brain.index({
         forceReindex: force,
@@ -66,32 +112,129 @@ async function cmdIndex() {
     });
 
     console.log('\n');
-    console.log(`  ${c.green('Code')}: ${result.code.indexed} indexed, ${result.code.skipped} skipped, ${result.code.chunks ?? 0} chunks`);
-    console.log(`  ${c.green('Git')}:  ${result.git.indexed} indexed, ${result.git.skipped} skipped`);
+    if (result.code) {
+        console.log(`  ${c.green('Code')}: ${result.code.indexed} indexed, ${result.code.skipped} skipped, ${result.code.chunks ?? 0} chunks`);
+    }
+    if (result.git) {
+        console.log(`  ${c.green('Git')}:  ${result.git.indexed} indexed, ${result.git.skipped} skipped`);
+    }
 
     const stats = brain.stats();
     console.log(`\n  ${c.bold('Totals')}:`);
-    console.log(`    Code chunks:  ${stats.code.chunks}`);
-    console.log(`    Git commits:  ${stats.git.commits}`);
-    console.log(`    Co-edit pairs: ${stats.git.coEdits}`);
-    console.log(`    Patterns:     ${stats.memory.patterns}`);
+    if (stats.code) console.log(`    Code chunks:  ${stats.code.chunks}`);
+    if (stats.git) console.log(`    Git commits:  ${stats.git.commits}`);
+    if (stats.git) console.log(`    Co-edit pairs: ${stats.git.coEdits}`);
+    if (stats.memory) console.log(`    Patterns:     ${stats.memory.patterns}`);
 
     brain.close();
 }
 
-async function cmdSearch() {
-    const query = args.slice(1).join(' ');
+// ── Collection Commands ─────────────────────────────
+
+async function cmdCollection() {
+    const sub = args[1];
+
+    if (sub === 'add') {
+        const path = args[2];
+        const name = getFlag('name');
+        const pattern = getFlag('pattern') ?? '**/*.md';
+        const context = getFlag('context');
+        const ignoreRaw = getFlag('ignore');
+
+        if (!path || !name) {
+            console.log(c.red('Usage: brainbank collection add <path> --name <name> [--pattern "**/*.md"] [--ignore "glob"] [--context "description"]'));
+            process.exit(1);
+        }
+
+        const brain = createFullBrain();
+        await brain.addCollection({
+            name,
+            path,
+            pattern,
+            ignore: ignoreRaw ? ignoreRaw.split(',') : [],
+            context: context ?? undefined,
+        });
+        console.log(c.green(`✓ Collection '${name}' added: ${path} (${pattern})`));
+        if (context) console.log(c.dim(`  Context: ${context}`));
+        brain.close();
+        return;
+    }
+
+    if (sub === 'list') {
+        const brain = createFullBrain();
+        await brain.initialize();
+        const collections = brain.listCollections();
+        if (collections.length === 0) {
+            console.log(c.yellow('  No collections registered.'));
+        } else {
+            console.log(c.bold('\n━━━ Collections ━━━\n'));
+            for (const col of collections) {
+                console.log(`  ${c.cyan(col.name)} ${c.dim('→')} ${col.path}`);
+                console.log(`    Pattern: ${col.pattern ?? '**/*.md'}`);
+                if (col.context) console.log(`    Context: ${c.dim(col.context)}`);
+            }
+        }
+        brain.close();
+        return;
+    }
+
+    if (sub === 'remove') {
+        const name = args[2];
+        if (!name) {
+            console.log(c.red('Usage: brainbank collection remove <name>'));
+            process.exit(1);
+        }
+        const brain = createFullBrain();
+        await brain.removeCollection(name);
+        console.log(c.green(`✓ Collection '${name}' removed.`));
+        brain.close();
+        return;
+    }
+
+    console.log(c.red('Usage: brainbank collection <add|list|remove>'));
+    process.exit(1);
+}
+
+// ── Document Indexing ───────────────────────────────
+
+async function cmdDocs() {
+    const collection = getFlag('collection');
+    const brain = createFullBrain();
+
+    console.log(c.bold('\n━━━ BrainBank Docs Index ━━━\n'));
+
+    const opts: { collections?: string[]; onProgress?: any } = {};
+    if (collection) opts.collections = [collection];
+    opts.onProgress = (col: string, file: string, cur: number, total: number) => {
+        process.stdout.write(`\r  ${c.cyan(col)} [${cur}/${total}] ${file}                    `);
+    };
+
+    const results = await brain.indexDocs(opts);
+
+    console.log('\n');
+    for (const [name, stat] of Object.entries(results)) {
+        console.log(`  ${c.green(name)}: ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
+    }
+
+    brain.close();
+}
+
+// ── Document Search ─────────────────────────────────
+
+async function cmdDocSearch() {
+    const query = args.slice(1).filter(a => !a.startsWith('--')).join(' ');
     if (!query) {
-        console.log(c.red('Usage: brainbank search <query>'));
+        console.log(c.red('Usage: brainbank dsearch <query>'));
         process.exit(1);
     }
 
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
+    const brain = createFullBrain();
+    const collection = getFlag('collection');
+    const k = parseInt(getFlag('k') || '8', 10);
 
-    console.log(c.bold(`\n━━━ BrainBank Search: "${query}" ━━━\n`));
+    console.log(c.bold(`\n━━━ BrainBank Doc Search: "${query}" ━━━\n`));
 
-    const results = await brain.search(query);
+    const results = await brain.searchDocs(query, { collection: collection ?? undefined, k });
 
     if (results.length === 0) {
         console.log(c.yellow('  No results found.'));
@@ -101,25 +244,87 @@ async function cmdSearch() {
 
     for (const r of results) {
         const score = Math.round(r.score * 100);
-        if (r.type === 'code') {
-            const m = r.metadata;
-            console.log(`${c.green(`[CODE ${score}%]`)} ${c.bold(r.filePath!)} — ${m.name || m.chunkType} ${c.dim(`L${m.startLine}-${m.endLine}`)}`);
-            const preview = r.content.split('\n').slice(0, 5).join('\n');
-            console.log(c.dim(preview));
-            console.log('');
-        } else if (r.type === 'commit') {
-            const m = r.metadata;
-            console.log(`${c.cyan(`[COMMIT ${score}%]`)} ${c.bold(m.shortHash)} ${r.content} ${c.dim(`(${m.author})`)}`);
-            if (m.files?.length) console.log(c.dim(`  Files: ${m.files.slice(0, 4).join(', ')}`));
-            console.log('');
-        } else if (r.type === 'pattern') {
-            const m = r.metadata;
-            console.log(`${c.yellow(`[PATTERN ${score}%]`)} ${c.bold(m.taskType)} — ${Math.round(m.successRate * 100)}% success`);
-            console.log(c.dim(`  ${r.content}`));
-            console.log('');
-        }
+        const ctx = r.context ? ` — ${c.dim(r.context)}` : '';
+        console.log(`${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} [${r.metadata.collection}]${ctx}`);
+        const preview = r.content.split('\n').slice(0, 4).join('\n');
+        console.log(c.dim(preview));
+        console.log('');
     }
 
+    brain.close();
+}
+
+// ── Context Commands ────────────────────────────────
+
+async function cmdContext() {
+    const sub = args[1];
+
+    // brainbank context add <collection> <path> <description>
+    if (sub === 'add') {
+        const collection = args[2];
+        const path = args[3];
+        const desc = args.slice(4).join(' ');
+
+        if (!collection || !path || !desc) {
+            console.log(c.red('Usage: brainbank context add <collection> <path> <description>'));
+            process.exit(1);
+        }
+
+        const brain = createFullBrain();
+        await brain.initialize();
+        brain.addContext(collection, path, desc);
+        console.log(c.green(`✓ Context added: ${collection}:${path} → "${desc}"`));
+        brain.close();
+        return;
+    }
+
+    // brainbank context list
+    if (sub === 'list') {
+        const brain = createFullBrain();
+        await brain.initialize();
+        const contexts = brain.listContexts();
+        if (contexts.length === 0) {
+            console.log(c.yellow('  No contexts configured.'));
+        } else {
+            console.log(c.bold('\n━━━ Contexts ━━━\n'));
+            for (const ctx of contexts) {
+                console.log(`  ${c.cyan(ctx.collection)}:${ctx.path} → ${c.dim(ctx.context)}`);
+            }
+        }
+        brain.close();
+        return;
+    }
+
+    // brainbank context <task> — get formatted context
+    const task = args.slice(1).join(' ');
+    if (!task) {
+        console.log(c.red('Usage: brainbank context <task description>'));
+        console.log(c.dim('       brainbank context add <collection> <path> <description>'));
+        console.log(c.dim('       brainbank context list'));
+        process.exit(1);
+    }
+
+    const brain = createFullBrain();
+    const context = await brain.getContext(task);
+    console.log(context);
+    brain.close();
+}
+
+// ── Search Commands ─────────────────────────────────
+
+async function cmdSearch() {
+    const query = args.slice(1).join(' ');
+    if (!query) {
+        console.log(c.red('Usage: brainbank search <query>'));
+        process.exit(1);
+    }
+
+    const brain = createFullBrain();
+
+    console.log(c.bold(`\n━━━ BrainBank Search: "${query}" ━━━\n`));
+
+    const results = await brain.search(query);
+    printResults(results);
     brain.close();
 }
 
@@ -130,8 +335,7 @@ async function cmdHybridSearch() {
         process.exit(1);
     }
 
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
+    const brain = createFullBrain();
 
     console.log(c.bold(`\n━━━ BrainBank Hybrid Search: "${query}" ━━━`));
     console.log(c.dim(`  Mode: vector + BM25 → Reciprocal Rank Fusion\n`));
@@ -148,8 +352,7 @@ async function cmdKeywordSearch() {
         process.exit(1);
     }
 
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
+    const brain = createFullBrain();
     await brain.initialize();
 
     console.log(c.bold(`\n━━━ BrainBank Keyword Search: "${query}" ━━━`));
@@ -184,101 +387,98 @@ function printResults(results: any[]) {
             console.log(`${c.yellow(`[PATTERN ${score}%]`)} ${c.bold(m.taskType)} — ${Math.round(m.successRate * 100)}% success`);
             console.log(c.dim(`  ${r.content}`));
             console.log('');
+        } else if (r.type === 'document') {
+            const ctx = r.context ? ` — ${c.dim(r.context)}` : '';
+            console.log(`${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} [${r.metadata.collection}]${ctx}`);
+            const preview = r.content.split('\n').slice(0, 4).join('\n');
+            console.log(c.dim(preview));
+            console.log('');
         }
     }
 }
 
-async function cmdContext() {
-    const task = args.slice(1).join(' ');
-    if (!task) {
-        console.log(c.red('Usage: brainbank context <task description>'));
-        process.exit(1);
+// ── Memory Commands ─────────────────────────────────
+
+async function cmdMemory() {
+    const sub = args[1];
+
+    if (sub === 'learn') {
+        const taskType = getFlag('type') || 'general';
+        const task = getFlag('task');
+        const approach = getFlag('approach');
+        const rate = parseFloat(getFlag('rate') || '0.8');
+
+        if (!task || !approach) {
+            console.log(c.red('Usage: brainbank memory learn --type <type> --task <task> --approach <approach> --rate <0-1>'));
+            process.exit(1);
+        }
+
+        const brain = createFullBrain();
+        const id = await brain.learn({
+            taskType,
+            task,
+            approach,
+            successRate: rate,
+            outcome: getFlag('outcome'),
+            critique: getFlag('critique'),
+        });
+
+        console.log(c.green(`✓ Pattern #${id} stored (${taskType}, ${Math.round(rate * 100)}% success)`));
+        brain.close();
+        return;
     }
 
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
+    if (sub === 'search') {
+        const query = args.slice(2).filter(a => !a.startsWith('--')).join(' ');
+        if (!query) {
+            console.log(c.red('Usage: brainbank memory search <query>'));
+            process.exit(1);
+        }
 
-    const context = await brain.getContext(task);
-    console.log(context);
-
-    brain.close();
-}
-
-async function cmdStats() {
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
-    await brain.initialize();
-
-    const s = brain.stats();
-
-    console.log(c.bold('\n━━━ BrainBank Stats ━━━\n'));
-    console.log(`  ${c.cyan('Code')}`);
-    console.log(`    Files indexed:  ${s.code.files}`);
-    console.log(`    Code chunks:    ${s.code.chunks}`);
-    console.log(`    HNSW vectors:   ${s.code.hnswSize}`);
-    console.log('');
-    console.log(`  ${c.cyan('Git History')}`);
-    console.log(`    Commits:        ${s.git.commits}`);
-    console.log(`    Files tracked:  ${s.git.filesTracked}`);
-    console.log(`    Co-edit pairs:  ${s.git.coEdits}`);
-    console.log(`    HNSW vectors:   ${s.git.hnswSize}`);
-    console.log('');
-    console.log(`  ${c.cyan('Agent Memory')}`);
-    console.log(`    Patterns:       ${s.memory.patterns}`);
-    console.log(`    Avg success:    ${Math.round(s.memory.avgSuccess * 100)}%`);
-    console.log(`    HNSW vectors:   ${s.memory.hnswSize}`);
-    console.log('');
-    console.log(`  ${c.cyan('Conversations')}`);
-    console.log(`    Total memories: ${s.conversations.total}`);
-    console.log(`    Short-term:     ${s.conversations.short}`);
-    console.log(`    Long-term:      ${s.conversations.long}`);
-
-    brain.close();
-}
-
-async function cmdLearn() {
-    const taskType = getFlag('type') || 'general';
-    const task = getFlag('task');
-    const approach = getFlag('approach');
-    const rate = parseFloat(getFlag('rate') || '0.8');
-
-    if (!task || !approach) {
-        console.log(c.red('Usage: brainbank learn --type <type> --task <task> --approach <approach> --rate <0-1>'));
-        process.exit(1);
+        const brain = createFullBrain();
+        const patterns = await brain.searchPatterns(query);
+        if (patterns.length === 0) {
+            console.log(c.yellow('  No patterns found.'));
+        } else {
+            console.log(c.bold(`\n━━━ Memory Patterns: "${query}" ━━━\n`));
+            for (const p of patterns) {
+                const score = Math.round(p.score * 100);
+                console.log(`  ${c.yellow(`[${score}%]`)} ${c.bold(p.taskType)} — ${Math.round(p.successRate * 100)}% success`);
+                console.log(`    Task: ${p.task}`);
+                console.log(`    Approach: ${c.dim(p.approach)}`);
+                if (p.critique) console.log(`    Lesson: ${c.dim(p.critique)}`);
+                console.log('');
+            }
+        }
+        brain.close();
+        return;
     }
 
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
+    if (sub === 'consolidate') {
+        const brain = createFullBrain();
+        await brain.initialize();
+        const result = brain.consolidate();
+        console.log(c.green(`✓ Consolidated: ${result.pruned} pruned, ${result.deduped} deduped`));
+        brain.close();
+        return;
+    }
 
-    const id = await brain.learn({
-        taskType,
-        task,
-        approach,
-        successRate: rate,
-        outcome: getFlag('outcome'),
-        critique: getFlag('critique'),
-    });
-
-    console.log(c.green(`✓ Pattern #${id} stored (${taskType}, ${Math.round(rate * 100)}% success)`));
-    brain.close();
+    console.log(c.red('Usage: brainbank memory <learn|search|consolidate>'));
+    process.exit(1);
 }
 
-async function cmdServe() {
-    await import('./mcp-server.ts');
-}
+// ── Conversation Memory ─────────────────────────────
 
 async function cmdRemember() {
     const title = getFlag('title');
     const summary = getFlag('summary');
 
     if (!title || !summary) {
-        console.log(c.red('Usage: brainbank remember --title <title> --summary <summary> [--decisions "a,b"] [--files "a.ts,b.ts"] [--patterns "a,b"] [--tags "a,b"]'));
+        console.log(c.red('Usage: brainbank remember --title <title> --summary <summary> [--decisions "a,b"] [--files "a.ts,b.ts"] [--tags "a,b"]'));
         process.exit(1);
     }
 
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
-
+    const brain = createFullBrain();
     const id = await brain.remember({
         title,
         summary,
@@ -288,7 +488,7 @@ async function cmdRemember() {
         tags: (getFlag('tags') || '').split(',').filter(Boolean),
     });
 
-    console.log(c.green(`\u2713 Memory #${id} stored: "${title}"`));
+    console.log(c.green(`✓ Memory #${id} stored: "${title}"`));
     brain.close();
 }
 
@@ -299,10 +499,9 @@ async function cmdRecall() {
         process.exit(1);
     }
 
-    const repoPath = getFlag('repo') || '.';
-    const brain = new BrainBank({ repoPath });
+    const brain = createFullBrain();
 
-    console.log(c.bold(`\n\u2501\u2501\u2501 BrainBank Recall: "${query}" \u2501\u2501\u2501\n`));
+    console.log(c.bold(`\n━━━ BrainBank Recall: "${query}" ━━━\n`));
 
     const memories = await brain.recall(query);
 
@@ -326,60 +525,142 @@ async function cmdRecall() {
     brain.close();
 }
 
+// ── Stats ───────────────────────────────────────────
+
+async function cmdStats() {
+    const brain = createFullBrain();
+    await brain.initialize();
+
+    const s = brain.stats();
+
+    console.log(c.bold('\n━━━ BrainBank Stats ━━━\n'));
+    console.log(`  ${c.cyan('Modules')}: ${brain.modules.join(', ')}\n`);
+
+    if (s.code) {
+        console.log(`  ${c.cyan('Code')}`);
+        console.log(`    Files indexed:  ${s.code.files}`);
+        console.log(`    Code chunks:    ${s.code.chunks}`);
+        console.log(`    HNSW vectors:   ${s.code.hnswSize}`);
+        console.log('');
+    }
+
+    if (s.git) {
+        console.log(`  ${c.cyan('Git History')}`);
+        console.log(`    Commits:        ${s.git.commits}`);
+        console.log(`    Files tracked:  ${s.git.filesTracked}`);
+        console.log(`    Co-edit pairs:  ${s.git.coEdits}`);
+        console.log(`    HNSW vectors:   ${s.git.hnswSize}`);
+        console.log('');
+    }
+
+    if (s.memory) {
+        console.log(`  ${c.cyan('Agent Memory')}`);
+        console.log(`    Patterns:       ${s.memory.patterns}`);
+        console.log(`    Avg success:    ${Math.round(s.memory.avgSuccess * 100)}%`);
+        console.log(`    HNSW vectors:   ${s.memory.hnswSize}`);
+        console.log('');
+    }
+
+    if (s.documents) {
+        console.log(`  ${c.cyan('Documents')}`);
+        console.log(`    Collections:    ${s.documents.collections}`);
+        console.log(`    Documents:      ${s.documents.documents}`);
+        console.log(`    Chunks:         ${s.documents.chunks}`);
+        console.log(`    HNSW vectors:   ${s.documents.hnswSize}`);
+        console.log('');
+    }
+
+    if (s.conversations) {
+        console.log(`  ${c.cyan('Conversations')}`);
+        console.log(`    Total memories: ${s.conversations.total}`);
+        console.log(`    Short-term:     ${s.conversations.short}`);
+        console.log(`    Long-term:      ${s.conversations.long}`);
+    }
+
+    brain.close();
+}
+
+async function cmdServe() {
+    await import('./mcp-server.ts');
+}
+
+// ── Help ────────────────────────────────────────────
+
 function showHelp() {
     console.log(c.bold('\n━━━ BrainBank — Semantic Knowledge Bank ━━━\n'));
-    console.log('Commands:');
-    console.log(`  ${c.cyan('index')} [path]            Index repository code + git history`);
-    console.log(`  ${c.cyan('search')} <query>          Semantic search (vector only)`);
-    console.log(`  ${c.cyan('hsearch')} <query>         Hybrid search (vector + BM25, ${c.bold('best quality')})`);
-    console.log(`  ${c.cyan('ksearch')} <query>         Keyword search (BM25 only, instant)`);
-    console.log(`  ${c.cyan('context')} <task>           Get formatted context for a task`);
-    console.log(`  ${c.cyan('stats')}                   Show index statistics`);
-    console.log(`  ${c.cyan('learn')}                   Store a learned pattern`);
-    console.log(`  ${c.cyan('remember')}                Store a conversation memory digest`);
-    console.log(`  ${c.cyan('recall')} <query>          Recall relevant conversation memories`);
-    console.log(`  ${c.cyan('serve')}                   Start MCP server (stdio)`);
+    console.log(c.bold('Indexing:'));
+    console.log(`  ${c.cyan('index')} [path]                      Index code + git history`);
+    console.log(`  ${c.cyan('collection add')} <path> --name      Add a document collection`);
+    console.log(`  ${c.cyan('collection list')}                    List collections`);
+    console.log(`  ${c.cyan('collection remove')} <name>           Remove a collection`);
+    console.log(`  ${c.cyan('docs')} [--collection <name>]         Index document collections`);
     console.log('');
-    console.log('Options:');
+    console.log(c.bold('Search:'));
+    console.log(`  ${c.cyan('search')} <query>                     Semantic search (vector)`);
+    console.log(`  ${c.cyan('hsearch')} <query>                    Hybrid search (${c.bold('best quality')})`);
+    console.log(`  ${c.cyan('ksearch')} <query>                    Keyword search (BM25, instant)`);
+    console.log(`  ${c.cyan('dsearch')} <query>                    Document search`);
+    console.log('');
+    console.log(c.bold('Context:'));
+    console.log(`  ${c.cyan('context')} <task>                     Get formatted context for a task`);
+    console.log(`  ${c.cyan('context add')} <col> <path> <desc>    Add context metadata`);
+    console.log(`  ${c.cyan('context list')}                       List all context metadata`);
+    console.log('');
+    console.log(c.bold('Memory:'));
+    console.log(`  ${c.cyan('memory learn')}                       Store a learned pattern`);
+    console.log(`  ${c.cyan('memory search')} <query>              Search patterns`);
+    console.log(`  ${c.cyan('memory consolidate')}                 Prune + deduplicate patterns`);
+    console.log(`  ${c.cyan('remember')}                           Store conversation memory`);
+    console.log(`  ${c.cyan('recall')} <query>                     Recall conversation memories`);
+    console.log('');
+    console.log(c.bold('Utility:'));
+    console.log(`  ${c.cyan('stats')}                              Show index statistics`);
+    console.log(`  ${c.cyan('serve')}                              Start MCP server (stdio)`);
+    console.log('');
+    console.log(c.bold('Options:'));
     console.log(`  ${c.dim('--repo <path>')}           Repository path (default: .)`);
-    console.log(`  ${c.dim('--force')}                 Force re-index of all files`);
+    console.log(`  ${c.dim('--force')}                 Force re-index all files`);
     console.log(`  ${c.dim('--depth <n>')}             Git history depth (default: 500)`);
+    console.log(`  ${c.dim('--collection <name>')}     Filter by collection`);
+    console.log(`  ${c.dim('--pattern <glob>')}        Collection glob (default: **/*.md)`);
+    console.log(`  ${c.dim('--context <desc>')}        Context description`);
     console.log('');
-    console.log('Examples:');
+    console.log(c.bold('Examples:'));
     console.log(c.dim('  brainbank index .'));
+    console.log(c.dim('  brainbank collection add ~/notes --name notes --pattern "**/*.md" --context "Personal notes"'));
+    console.log(c.dim('  brainbank docs'));
+    console.log(c.dim('  brainbank dsearch "project timeline"'));
     console.log(c.dim('  brainbank hsearch "authentication middleware"'));
-    console.log(c.dim('  brainbank search "how does auth work"'));
-    console.log(c.dim('  brainbank ksearch "express-rate-limit"'));
     console.log(c.dim('  brainbank context "add rate limiting to the API"'));
-    console.log(c.dim('  brainbank stats'));
-    console.log(c.dim('  brainbank learn --type api --task "add auth" --approach "JWT middleware" --rate 0.9'));
-    console.log(c.dim('  brainbank remember --title "Added BM25" --summary "Implemented FTS5 hybrid search" --tags "search,bm25"'));
+    console.log(c.dim('  brainbank context add notes /work "Work-related notes"'));
+    console.log(c.dim('  brainbank memory learn --type api --task "add auth" --approach "JWT middleware" --rate 0.9'));
+    console.log(c.dim('  brainbank memory search "authentication"'));
+    console.log(c.dim('  brainbank remember --title "Added BM25" --summary "Implemented hybrid search" --tags "search,bm25"'));
     console.log(c.dim('  brainbank recall "search improvements"'));
     console.log(c.dim('  brainbank serve'));
-    console.log('');
-    console.log('Antigravity MCP config:');
-    console.log(c.dim('  Add to ~/.gemini/antigravity/mcp_config.json:'));
-    console.log(c.dim('  { "mcpServers": { "brainbank": {'));
-    console.log(c.dim('    "command": "npx",'));
-    console.log(c.dim('    "args": ["tsx", "<path>/mcp-server.ts"],'));
-    console.log(c.dim('    "env": { "BRAINBANK_REPO": "/your/repo" }'));
-    console.log(c.dim('  }}}'));
 }
 
 // ── Main ────────────────────────────────────────────
 
 async function main() {
     switch (command) {
-        case 'index':    return cmdIndex();
-        case 'search':   return cmdSearch();
-        case 'hsearch':  return cmdHybridSearch();
-        case 'ksearch':  return cmdKeywordSearch();
-        case 'context':  return cmdContext();
-        case 'stats':    return cmdStats();
-        case 'learn':    return cmdLearn();
-        case 'remember': return cmdRemember();
-        case 'recall':   return cmdRecall();
-        case 'serve':    return cmdServe();
+        case 'index':       return cmdIndex();
+        case 'collection':  return cmdCollection();
+        case 'docs':        return cmdDocs();
+        case 'dsearch':     return cmdDocSearch();
+        case 'search':      return cmdSearch();
+        case 'hsearch':     return cmdHybridSearch();
+        case 'ksearch':     return cmdKeywordSearch();
+        case 'context':     return cmdContext();
+        case 'memory':      return cmdMemory();
+        case 'learn':
+            // Backward compat: redirect to memory learn
+            args.splice(0, 1, 'memory', 'learn');
+            return cmdMemory();
+        case 'remember':    return cmdRemember();
+        case 'recall':      return cmdRecall();
+        case 'stats':       return cmdStats();
+        case 'serve':       return cmdServe();
         case 'help':
         case '--help':
         case '-h':

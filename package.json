@@ -8,7 +8,12 @@
         "brainbank": "./src/integrations/cli.ts"
     },
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./src/index.ts",
+        "./code": "./src/modules/code.ts",
+        "./git": "./src/modules/git.ts",
+        "./docs": "./src/modules/docs.ts",
+        "./conversations": "./src/modules/conversations.ts",
+        "./memory": "./src/modules/memory.ts"
     },
     "scripts": {
         "test": "node --import tsx test/run.ts",

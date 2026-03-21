@@ -2,7 +2,7 @@
  * Unit Tests — Configuration
  */
 
-import { resolveConfig, DEFAULTS, DEFAULT_FEATURES } from '../../src/core/config.ts';
+import { resolveConfig, DEFAULTS } from '../../src/core/config.ts';
 
 export const name = 'Configuration';
 
@@ -15,38 +15,6 @@ export const tests = {
         assert.equal(cfg.maxFileSize, 512_000);
         assert.equal(cfg.hnswM, 16);
         assert.equal(cfg.embeddingDims, 384);
-    },
-
-    'default features are correct'(assert: any) {
-        const cfg = resolveConfig();
-        assert.equal(cfg.features.code, true);
-        assert.equal(cfg.features.git, true);
-        assert.equal(cfg.features.documents, false);
-        assert.equal(cfg.features.conversations, true);
-        assert.equal(cfg.features.patterns, true);
-    },
-
-    'partial feature override works'(assert: any) {
-        const cfg = resolveConfig({
-            features: { code: false, documents: true },
-        });
-        assert.equal(cfg.features.code, false);
-        assert.equal(cfg.features.documents, true);
-        // Unspecified keep defaults
-        assert.equal(cfg.features.git, true);
-        assert.equal(cfg.features.conversations, true);
-        assert.equal(cfg.features.patterns, true);
-    },
-
-    'conversations-only mode'(assert: any) {
-        const cfg = resolveConfig({
-            features: { code: false, git: false, documents: false, patterns: false, conversations: true },
-        });
-        assert.equal(cfg.features.code, false);
-        assert.equal(cfg.features.git, false);
-        assert.equal(cfg.features.documents, false);
-        assert.equal(cfg.features.patterns, false);
-        assert.equal(cfg.features.conversations, true);
     },
 
     'partial config override works'(assert: any) {
@@ -63,7 +31,10 @@ export const tests = {
         assert.equal(cfg.embeddingProvider!.dims, 768);
     },
 
-    'DEFAULT_FEATURES export matches DEFAULTS.features'(assert: any) {
-        assert.deepEqual(DEFAULT_FEATURES, DEFAULTS.features);
+    'config without features field succeeds'(assert: any) {
+        const cfg = resolveConfig({});
+        assert.equal(cfg.repoPath, '.');
+        // No features field — modules are composed via .use() now
+        assert.ok(!('features' in cfg), 'should not have features field');
     },
 };

@@ -4,28 +4,7 @@
  * All interfaces and types for the semantic knowledge bank.
  */
 
-// ── Feature Flags ───────────────────────────────────
 
-export interface FeatureFlags {
-    /** Enable code indexing (30+ languages). Default: true */
-    code?: boolean;
-    /** Enable git history indexing. Default: true */
-    git?: boolean;
-    /** Enable generic document collections. Default: false */
-    documents?: boolean;
-    /** Enable conversation memory. Default: true */
-    conversations?: boolean;
-    /** Enable agent memory patterns. Default: true */
-    patterns?: boolean;
-}
-
-export interface ResolvedFeatureFlags {
-    code: boolean;
-    git: boolean;
-    documents: boolean;
-    conversations: boolean;
-    patterns: boolean;
-}
 
 // ── Configuration ───────────────────────────────────
 
@@ -34,8 +13,7 @@ export interface BrainBankConfig {
     repoPath?: string;
     /** SQLite database path. Default: '.brainbank/brainbank.db' */
     dbPath?: string;
-    /** Feature flags — selectively enable/disable subsystems. */
-    features?: FeatureFlags;
+
     /** Max git commits to index. Default: 500 */
     gitDepth?: number;
     /** Max file size in bytes to index. Default: 512_000 (500KB) */
@@ -59,7 +37,6 @@ export interface BrainBankConfig {
 export interface ResolvedConfig {
     repoPath: string;
     dbPath: string;
-    features: ResolvedFeatureFlags;
     gitDepth: number;
     maxFileSize: number;
     maxDiffBytes: number;

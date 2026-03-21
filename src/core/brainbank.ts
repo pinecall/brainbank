@@ -1,25 +1,20 @@
 /**
  * BrainBank — Main Orchestrator
  * 
- * The single entry point for semantic knowledge operations.
- * Ties together: indexing, search, memory, and context building.
+ * Composable semantic knowledge bank for AI agents.
+ * Enable only the modules you need via .use():
  * 
- * Features are modular — enable only what you need:
- * 
- *   // Full (coding agent)
- *   const brain = new BrainBank({ repoPath: '.' });
- * 
- *   // Documents + conversations only (non-coding agent)
- *   const brain = new BrainBank({
- *     dbPath: './knowledge.db',
- *     features: { code: false, git: false, documents: true, conversations: true, patterns: false },
- *   });
- * 
- *   // Conversation memory only
- *   const brain = new BrainBank({
- *     dbPath: './memory.db',
- *     features: { code: false, git: false, documents: false, conversations: true, patterns: false },
- *   });
+ *   import { BrainBank } from 'brainbank';
+ *   import { code } from 'brainbank/code';
+ *   import { docs } from 'brainbank/docs';
+ *   import { conversations } from 'brainbank/conversations';
+ *   import { memory } from 'brainbank/memory';
+ *   
+ *   const brain = new BrainBank()
+ *     .use(code({ repoPath: '.' }))
+ *     .use(docs())
+ *     .use(conversations())
+ *     .use(memory());
  */
 
 import { EventEmitter } from 'node:events';
@@ -27,57 +22,31 @@ import { resolveConfig } from './config.ts';
 import { Database } from '../storage/database.ts';
 import { HNSWIndex } from '../vector/hnsw.ts';
 import { LocalEmbedding } from '../embeddings/local.ts';
-import { CodeIndexer } from '../indexers/code-indexer.ts';
-import { GitIndexer } from '../indexers/git-indexer.ts';
-import { DocIndexer } from '../indexers/doc-indexer.ts';
-import { PatternStore } from '../memory/pattern-store.ts';
-import { Consolidator } from '../memory/consolidator.ts';
-import { StrategyDistiller } from '../memory/strategy-distiller.ts';
-import { ConversationStore } from '../memory/conversation-store.ts';
-import type { ConversationDigest, StoredMemory, RecallOptions } from '../memory/conversation-store.ts';
 import { UnifiedSearch } from '../query/search.ts';
 import { BM25Search } from '../query/bm25.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
 import { ContextBuilder } from '../query/context-builder.ts';
-import { CoEditAnalyzer } from '../query/co-edits.ts';
+import type { BrainBankModule, ModuleContext } from '../modules/types.ts';
 import type {
-    BrainBankConfig, ResolvedConfig, EmbeddingProvider, ResolvedFeatureFlags,
-    IndexResult, IndexStats, MemoryPattern, SearchResult, DocumentCollection,
+    BrainBankConfig, ResolvedConfig, EmbeddingProvider,
+    IndexResult, IndexStats, MemoryPattern, SearchResult,
     ContextOptions, CoEditSuggestion, ProgressCallback,
-    DistilledStrategy,
+    DistilledStrategy, DocumentCollection,
 } from '../types.ts';
+
+// Module implementations (for typed access)
+import type { ConversationDigest, StoredMemory, RecallOptions } from '../memory/conversation-store.ts';
 
 export class BrainBank extends EventEmitter {
     private _config: ResolvedConfig;
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
+    private _modules = new Map<string, BrainBankModule>();
 
-    // HNSW indices (one per domain, created on demand)
-    private _codeHnsw?: HNSWIndex;
-    private _gitHnsw?: HNSWIndex;
-    private _memHnsw?: HNSWIndex;
-    private _convHnsw?: HNSWIndex;
-    private _docHnsw?: HNSWIndex;
-
-    // Vector caches (id → Float32Array)
-    private _codeVecs = new Map<number, Float32Array>();
-    private _gitVecs  = new Map<number, Float32Array>();
-    private _memVecs  = new Map<number, Float32Array>();
-    private _convVecs = new Map<number, Float32Array>();
-    private _docVecs  = new Map<number, Float32Array>();
-
-    // Sub-systems (created on demand)
-    private _codeIndexer?: CodeIndexer;
-    private _gitIndexer?: GitIndexer;
-    private _docIndexer?: DocIndexer;
-    private _patternStore?: PatternStore;
-    private _consolidator?: Consolidator;
-    private _distiller?: StrategyDistiller;
+    // Cross-module search (created if code/git/memory are present)
     private _search?: UnifiedSearch;
     private _bm25?: BM25Search;
     private _contextBuilder?: ContextBuilder;
-    private _coEdits?: CoEditAnalyzer;
-    private _conversations?: ConversationStore;
 
     private _initialized = false;
 
@@ -86,135 +55,117 @@ export class BrainBank extends EventEmitter {
         this._config = resolveConfig(config);
     }
 
-    // ── Feature Helpers ─────────────────────────────
+    // ── Module Registration ─────────────────────────
 
-    /** Get the resolved feature flags. */
-    get features(): Readonly<ResolvedFeatureFlags> {
-        return this._config.features;
-    }
-
-    /** Throw if a feature is disabled. */
-    private _require(feature: keyof ResolvedFeatureFlags, method: string): void {
-        if (!this._config.features[feature]) {
+    /**
+     * Register a module. Chainable.
+     * 
+     *   brain.use(code({ repoPath: '.' })).use(docs()).use(memory());
+     */
+    use(module: BrainBankModule): this {
+        if (this._initialized) {
             throw new Error(
-                `BrainBank: '${method}' requires the '${feature}' feature to be enabled. ` +
-                `Set features.${feature}: true in your config.`
+                `BrainBank: Cannot add module '${module.name}' after initialization. ` +
+                `Call .use() before any operations.`
             );
         }
+        this._modules.set(module.name, module);
+        return this;
+    }
+
+    /** Get the list of registered module names. */
+    get modules(): string[] {
+        return [...this._modules.keys()];
+    }
+
+    /** Check if a module is loaded. */
+    has(name: string): boolean {
+        return this._modules.has(name);
+    }
+
+    /** Get a module instance. Throws if not loaded. */
+    module(name: string): any {
+        const mod = this._modules.get(name);
+        if (!mod) {
+            throw new Error(
+                `BrainBank: Module '${name}' is not loaded. ` +
+                `Add .use(${name}()) to your BrainBank instance.`
+            );
+        }
+        return mod;
     }
 
     // ── Initialization ──────────────────────────────
 
     /**
      * Initialize database, HNSW indices, and load existing vectors.
-     * Only initializes sub-systems for enabled features.
+     * Only initializes registered modules.
      * Automatically called by index/search methods if not yet initialized.
      */
     async initialize(): Promise<void> {
         if (this._initialized) return;
 
-        const { features } = this._config;
-        const dims = this._config.embeddingDims;
-        const M = this._config.hnswM;
-        const efC = this._config.hnswEfConstruction;
-        const efS = this._config.hnswEfSearch;
-        const max = this._config.maxElements;
+        const config = this._config;
 
         // Database (always needed)
-        this._db = new Database(this._config.dbPath);
+        this._db = new Database(config.dbPath);
 
-        // Embedding provider (needed if any vector feature is enabled)
-        const needsEmbeddings = features.code || features.git || features.patterns || features.conversations || features.documents;
-        if (needsEmbeddings) {
-            this._embedding = this._config.embeddingProvider ?? new LocalEmbedding();
+        // Embedding provider (needed if any modules are registered)
+        if (this._modules.size > 0) {
+            this._embedding = config.embeddingProvider ?? new LocalEmbedding();
         }
 
-        // ── Code ──
-        if (features.code) {
-            this._codeHnsw = await new HNSWIndex(dims, max, M, efC, efS).init();
-            this._loadVectors('code_vectors', 'chunk_id', this._codeHnsw, this._codeVecs);
+        // Create the shared context for modules
+        const ctx: ModuleContext = {
+            db: this._db,
+            embedding: this._embedding,
+            config: config,
+            createHnsw: async (maxElements?: number) => {
+                return new HNSWIndex(
+                    config.embeddingDims,
+                    maxElements ?? config.maxElements,
+                    config.hnswM,
+                    config.hnswEfConstruction,
+                    config.hnswEfSearch,
+                ).init();
+            },
+            loadVectors: (table, idCol, hnsw, cache) => {
+                this._loadVectors(table, idCol, hnsw, cache);
+            },
+        };
 
-            this._codeIndexer = new CodeIndexer(this._config.repoPath, {
-                db: this._db,
-                hnsw: this._codeHnsw,
-                vectorCache: this._codeVecs,
-                embedding: this._embedding,
-            }, this._config.maxFileSize);
+        // Initialize all registered modules
+        for (const mod of this._modules.values()) {
+            await mod.initialize(ctx);
         }
 
-        // ── Git ──
-        if (features.git) {
-            this._gitHnsw = await new HNSWIndex(dims, 500_000, M, efC, efS).init();
-            this._loadVectors('git_vectors', 'commit_id', this._gitHnsw, this._gitVecs);
+        // Cross-module search (needs code, git, or memory)
+        const codeMod = this._modules.get('code') as any;
+        const gitMod = this._modules.get('git') as any;
+        const memMod = this._modules.get('memory') as any;
 
-            this._gitIndexer = new GitIndexer(this._config.repoPath, {
-                db: this._db,
-                hnsw: this._gitHnsw,
-                vectorCache: this._gitVecs,
-                embedding: this._embedding,
-            }, this._config.maxDiffBytes);
-        }
-
-        // ── Patterns (Agent Memory) ──
-        if (features.patterns) {
-            this._memHnsw = await new HNSWIndex(dims, 100_000, M, efC, efS).init();
-            this._loadVectors('memory_vectors', 'pattern_id', this._memHnsw, this._memVecs);
-
-            this._patternStore = new PatternStore({
-                db: this._db,
-                hnsw: this._memHnsw,
-                vectorCache: this._memVecs,
-                embedding: this._embedding,
-            });
-
-            this._consolidator = new Consolidator(this._db, this._memVecs);
-            this._distiller = new StrategyDistiller(this._db);
-        }
-
-        // ── Conversations ──
-        if (features.conversations) {
-            this._convHnsw = await new HNSWIndex(dims, 100_000, M, efC, efS).init();
-            this._loadVectors('conversation_vectors', 'memory_id', this._convHnsw, this._convVecs);
-
-            this._conversations = new ConversationStore(this._db, this._embedding, this._convHnsw, this._convVecs);
-        }
-
-        // ── Documents ──
-        if (features.documents) {
-            this._docHnsw = await new HNSWIndex(dims, max, M, efC, efS).init();
-            this._loadVectors('doc_vectors', 'chunk_id', this._docHnsw, this._docVecs);
-
-            this._docIndexer = new DocIndexer(this._db, this._embedding, this._docHnsw, this._docVecs);
-        }
-
-        // ── Search (cross-feature) ──
-        if (features.code || features.git || features.patterns) {
+        if (codeMod || gitMod || memMod) {
             this._search = new UnifiedSearch({
                 db: this._db,
-                codeHnsw: this._codeHnsw!,
-                gitHnsw: this._gitHnsw!,
-                memHnsw: this._memHnsw!,
-                codeVecs: this._codeVecs,
-                gitVecs: this._gitVecs,
-                memVecs: this._memVecs,
+                codeHnsw: codeMod?.hnsw,
+                gitHnsw: gitMod?.hnsw,
+                memHnsw: memMod?.hnsw,
+                codeVecs: codeMod?.vecCache ?? new Map(),
+                gitVecs: gitMod?.vecCache ?? new Map(),
+                memVecs: memMod?.vecCache ?? new Map(),
                 embedding: this._embedding,
             });
 
             this._bm25 = new BM25Search(this._db);
         }
 
-        // ── Co-edits (needs git) ──
-        if (features.git) {
-            this._coEdits = new CoEditAnalyzer(this._db);
-        }
-
-        // ── Context Builder ──
+        // Context builder (needs search + optional co-edits)
         if (this._search) {
-            this._contextBuilder = new ContextBuilder(this._search, this._coEdits!);
+            this._contextBuilder = new ContextBuilder(this._search, gitMod?.coEdits);
         }
 
         this._initialized = true;
-        this.emit('initialized', { features });
+        this.emit('initialized', { modules: this.modules });
     }
 
     // ── Indexing ─────────────────────────────────────
@@ -231,20 +182,22 @@ export class BrainBank extends EventEmitter {
         await this.initialize();
 
         const result: { code?: IndexResult; git?: IndexResult } = {};
+        const codeMod = this._modules.get('code') as any;
+        const gitMod = this._modules.get('git') as any;
 
-        if (this._config.features.code) {
+        if (codeMod) {
             options.onProgress?.('code', 'Starting...');
-            result.code = await this._codeIndexer!.index({
+            result.code = await codeMod.index({
                 forceReindex: options.forceReindex,
-                onProgress: (f, i, t) => options.onProgress?.('code', `[${i}/${t}] ${f}`),
+                onProgress: (f: string, i: number, t: number) => options.onProgress?.('code', `[${i}/${t}] ${f}`),
             });
         }
 
-        if (this._config.features.git) {
+        if (gitMod) {
             options.onProgress?.('git', 'Starting...');
-            result.git = await this._gitIndexer!.index({
+            result.git = await gitMod.index({
                 depth: options.gitDepth ?? this._config.gitDepth,
-                onProgress: (f, i, t) => options.onProgress?.('git', `[${i}/${t}] ${f}`),
+                onProgress: (f: string, i: number, t: number) => options.onProgress?.('git', `[${i}/${t}] ${f}`),
             });
         }
 
@@ -257,9 +210,8 @@ export class BrainBank extends EventEmitter {
         forceReindex?: boolean;
         onProgress?: ProgressCallback;
     } = {}): Promise<IndexResult> {
-        this._require('code', 'indexCode');
         await this.initialize();
-        return this._codeIndexer!.index(options);
+        return this.module('code').index(options);
     }
 
     /** Index only git history. */
@@ -267,83 +219,36 @@ export class BrainBank extends EventEmitter {
         depth?: number;
         onProgress?: ProgressCallback;
     } = {}): Promise<IndexResult> {
-        this._require('git', 'indexGit');
         await this.initialize();
-        return this._gitIndexer!.index(options);
+        return this.module('git').index(options);
     }
 
     // ── Document Collections ────────────────────────
 
-    /**
-     * Register a document collection.
-     * Collections group files by directory for targeted indexing and search.
-     */
+    /** Register a document collection. */
     async addCollection(collection: DocumentCollection): Promise<void> {
-        this._require('documents', 'addCollection');
         await this.initialize();
-
-        this._db.prepare(`
-            INSERT OR REPLACE INTO collections (name, path, pattern, ignore_json, context)
-            VALUES (?, ?, ?, ?, ?)
-        `).run(
-            collection.name,
-            collection.path,
-            collection.pattern ?? '**/*.md',
-            JSON.stringify(collection.ignore ?? []),
-            collection.context ?? null,
-        );
+        this.module('docs').addCollection(collection);
     }
 
-    /**
-     * Remove a collection and all its indexed data.
-     */
+    /** Remove a collection and all its indexed data. */
     async removeCollection(name: string): Promise<void> {
-        this._require('documents', 'removeCollection');
         await this.initialize();
-        this._docIndexer!.removeCollection(name);
+        this.module('docs').removeCollection(name);
     }
 
     /** List all registered collections. */
     listCollections(): DocumentCollection[] {
-        return (this._db.prepare('SELECT * FROM collections').all() as any[]).map(row => ({
-            name: row.name,
-            path: row.path,
-            pattern: row.pattern,
-            ignore: JSON.parse(row.ignore_json),
-            context: row.context,
-        }));
+        return this.module('docs').listCollections();
     }
 
-    /**
-     * Index all registered collections (or specific ones).
-     * Incremental — only re-indexes changed files.
-     */
+    /** Index all (or specific) document collections. */
     async indexDocs(options: {
         collections?: string[];
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
-    } = {}): Promise<{ [collection: string]: { indexed: number; skipped: number; chunks: number } }> {
-        this._require('documents', 'indexDocs');
+    } = {}): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>> {
         await this.initialize();
-
-        const allCollections = this.listCollections();
-        const toIndex = options.collections
-            ? allCollections.filter(c => options.collections!.includes(c.name))
-            : allCollections;
-
-        const results: Record<string, { indexed: number; skipped: number; chunks: number }> = {};
-
-        for (const coll of toIndex) {
-            results[coll.name] = await this._docIndexer!.indexCollection(
-                coll.name,
-                coll.path,
-                coll.pattern,
-                {
-                    ignore: coll.ignore,
-                    onProgress: (file, cur, total) => options.onProgress?.(coll.name, file, cur, total),
-                },
-            );
-        }
-
+        const results = await this.module('docs').indexCollections(options);
         this.emit('docsIndexed', results);
         return results;
     }
@@ -354,83 +259,25 @@ export class BrainBank extends EventEmitter {
         k?: number;
         minScore?: number;
     }): Promise<SearchResult[]> {
-        this._require('documents', 'searchDocs');
         await this.initialize();
-
-        const k = options?.k ?? 8;
-        const queryVec = await this._embedding.embed(query);
-        const hits = this._docHnsw!.search(queryVec, k);
-
-        const results: SearchResult[] = [];
-        for (const hit of hits) {
-            if (options?.minScore && hit.score < options.minScore) continue;
-
-            const chunk = this._db.prepare(
-                'SELECT * FROM doc_chunks WHERE id = ?'
-            ).get(hit.id) as any;
-
-            if (!chunk) continue;
-            if (options?.collection && chunk.collection !== options.collection) continue;
-
-            // Get context from collection or path_contexts
-            const ctx = this._getDocContext(chunk.collection, chunk.file_path);
-
-            results.push({
-                type: 'document',
-                score: hit.score,
-                filePath: chunk.file_path,
-                content: chunk.content,
-                context: ctx,
-                metadata: {
-                    collection: chunk.collection,
-                    title: chunk.title,
-                    seq: chunk.seq,
-                },
-            });
-        }
-
-        return results;
+        return this.module('docs').search(query, options);
     }
 
     // ── Context Metadata ────────────────────────────
 
     /** Add context description for a collection path. */
     addContext(collection: string, path: string, context: string): void {
-        this._db.prepare(`
-            INSERT OR REPLACE INTO path_contexts (collection, path, context)
-            VALUES (?, ?, ?)
-        `).run(collection, path, context);
+        this.module('docs').addContext(collection, path, context);
     }
 
     /** Remove context for a collection path. */
     removeContext(collection: string, path: string): void {
-        this._db.prepare(
-            'DELETE FROM path_contexts WHERE collection = ? AND path = ?'
-        ).run(collection, path);
+        this.module('docs').removeContext(collection, path);
     }
 
     /** List all context entries. */
     listContexts(): { collection: string; path: string; context: string }[] {
-        return this._db.prepare('SELECT * FROM path_contexts').all() as any[];
-    }
-
-    /** Resolve context for a document (checks path_contexts tree + collection context). */
-    private _getDocContext(collection: string, filePath: string): string | undefined {
-        // Check specific path contexts (most specific first)
-        const parts = filePath.split('/');
-        for (let i = parts.length; i >= 0; i--) {
-            const checkPath = i === 0 ? '/' : '/' + parts.slice(0, i).join('/');
-            const ctx = this._db.prepare(
-                'SELECT context FROM path_contexts WHERE collection = ? AND path = ?'
-            ).get(collection, checkPath) as any;
-            if (ctx) return ctx.context;
-        }
-
-        // Fall back to collection-level context
-        const coll = this._db.prepare(
-            'SELECT context FROM collections WHERE name = ?'
-        ).get(collection) as any;
-        return coll?.context ?? undefined;
+        return this.module('docs').listContexts();
     }
 
     // ── Context ─────────────────────────────────────
@@ -444,30 +291,32 @@ export class BrainBank extends EventEmitter {
 
         const sections: string[] = [];
 
-        // Code/git/patterns context (if available)
+        // Code/git/patterns context
         if (this._contextBuilder) {
             const coreContext = await this._contextBuilder.build(task, options);
             if (coreContext) sections.push(coreContext);
         }
 
-        // Document context (if enabled)
-        if (this._config.features.documents) {
+        // Document context
+        if (this.has('docs')) {
             const docResults = await this.searchDocs(task, { k: options.codeResults ?? 4 });
             if (docResults.length > 0) {
                 const docSection = docResults.map(r => {
-                    const header = r.context ? `**[${r.metadata.collection}]** ${r.metadata.title} — _${r.context}_` : `**[${r.metadata.collection}]** ${r.metadata.title}`;
+                    const header = r.context
+                        ? `**[${r.metadata.collection}]** ${r.metadata.title} — _${r.context}_`
+                        : `**[${r.metadata.collection}]** ${r.metadata.title}`;
                     return `${header}\n\n${r.content}`;
                 }).join('\n\n---\n\n');
                 sections.push(`## Relevant Documents\n\n${docSection}`);
             }
         }
 
-        // Conversation context (if enabled)
-        if (this._config.features.conversations) {
+        // Conversation context
+        if (this.has('conversations')) {
             const memories = await this.recall(task, { k: 3 });
             if (memories.length > 0) {
                 const convSection = memories.map(m =>
-                    `**${m.title}** (${new Date(m.created_at * 1000).toLocaleDateString()})\n${m.summary}`
+                    `**${m.title}** (${new Date(m.createdAt * 1000).toLocaleDateString()})\n${m.summary}`
                 ).join('\n\n');
                 sections.push(`## Relevant Conversations\n\n${convSection}`);
             }
@@ -478,17 +327,15 @@ export class BrainBank extends EventEmitter {
 
     // ── Search ──────────────────────────────────────
 
-    /** Semantic search across all enabled indices. */
+    /** Semantic search across all loaded modules. */
     async search(query: string, options?: {
         codeK?: number; gitK?: number; memoryK?: number;
         minScore?: number; useMMR?: boolean;
     }): Promise<SearchResult[]> {
         await this.initialize();
         if (!this._search) {
-            // No code/git/patterns search — fall back to doc search if enabled
-            if (this._config.features.documents) {
-                return this.searchDocs(query, { k: 8 });
-            }
+            // No code/git/memory — fall back to doc search
+            if (this.has('docs')) return this.searchDocs(query, { k: 8 });
             return [];
         }
         return this._search.search(query, options);
@@ -496,14 +343,14 @@ export class BrainBank extends EventEmitter {
 
     /** Semantic search over code only. */
     async searchCode(query: string, k: number = 8): Promise<SearchResult[]> {
-        this._require('code', 'searchCode');
+        this.module('code'); // throws if not loaded
         await this.initialize();
         return this._search!.search(query, { codeK: k, gitK: 0, memoryK: 0 });
     }
 
     /** Semantic search over commits only. */
     async searchCommits(query: string, k: number = 8): Promise<SearchResult[]> {
-        this._require('git', 'searchCommits');
+        this.module('git'); // throws if not loaded
         await this.initialize();
         return this._search!.search(query, { codeK: 0, gitK: k, memoryK: 0 });
     }
@@ -511,7 +358,7 @@ export class BrainBank extends EventEmitter {
     // ── Hybrid Search ───────────────────────────────
 
     /**
-     * Hybrid search: vector (semantic) + BM25 (keyword) fused with Reciprocal Rank Fusion.
+     * Hybrid search: vector + BM25 fused with Reciprocal Rank Fusion.
      * Best quality — catches both exact keyword matches and conceptual similarities.
      */
     async hybridSearch(query: string, options?: {
@@ -522,7 +369,6 @@ export class BrainBank extends EventEmitter {
 
         const resultLists: SearchResult[][] = [];
 
-        // Code/git/patterns search
         if (this._search) {
             const [vectorResults, bm25Results] = await Promise.all([
                 this._search.search(query, options),
@@ -531,8 +377,7 @@ export class BrainBank extends EventEmitter {
             resultLists.push(vectorResults, bm25Results);
         }
 
-        // Documents search
-        if (this._config.features.documents) {
+        if (this.has('docs')) {
             const docResults = await this.searchDocs(query, { k: 8 });
             if (docResults.length > 0) resultLists.push(docResults);
         }
@@ -549,7 +394,7 @@ export class BrainBank extends EventEmitter {
         return this._bm25.search(query, options);
     }
 
-    /** Rebuild FTS5 indices (after bulk import or if out of sync). */
+    /** Rebuild FTS5 indices. */
     rebuildFTS(): void {
         this._bm25?.rebuild();
     }
@@ -558,73 +403,61 @@ export class BrainBank extends EventEmitter {
 
     /** Store a learned pattern from a completed task. */
     async learn(pattern: MemoryPattern): Promise<number> {
-        this._require('patterns', 'learn');
         await this.initialize();
-        const id = await this._patternStore!.learn(pattern);
-
-        // Auto-consolidate every 50 patterns
-        if (this._patternStore!.count % 50 === 0) {
-            this._consolidator!.consolidate();
-        }
-
+        const mod = this.module('memory') as any;
+        const id = await mod.learn(pattern);
         this.emit('learned', { id, pattern });
         return id;
     }
 
     /** Search for similar learned patterns. */
     async searchPatterns(query: string, k: number = 4): Promise<(MemoryPattern & { score: number })[]> {
-        this._require('patterns', 'searchPatterns');
         await this.initialize();
-        return this._patternStore!.search(query, k);
+        return this.module('memory').search(query, k);
     }
 
     /** Consolidate memory: prune old failures + deduplicate. */
     consolidate(): { pruned: number; deduped: number } {
-        this._require('patterns', 'consolidate');
-        return this._consolidator!.consolidate();
+        return this.module('memory').consolidate();
     }
 
     /** Distill top patterns into a strategy for a task type. */
     distill(taskType: string): DistilledStrategy | null {
-        this._require('patterns', 'distill');
-        return this._distiller!.distill(taskType);
+        return this.module('memory').distill(taskType);
     }
 
     // ── Conversation Memory ─────────────────────────
 
     /** Store a conversation digest for long-term memory. */
     async remember(digest: ConversationDigest): Promise<number> {
-        this._require('conversations', 'remember');
         await this.initialize();
-        const id = await this._conversations!.remember(digest);
+        const mod = this.module('conversations') as any;
+        const id = await mod.remember(digest);
         this.emit('remembered', { id, digest });
         return id;
     }
 
-    /** Recall relevant conversation memories (hybrid search by default). */
+    /** Recall relevant conversation memories. */
     async recall(query: string, options?: RecallOptions): Promise<StoredMemory[]> {
-        this._require('conversations', 'recall');
         await this.initialize();
-        return this._conversations!.recall(query, options);
+        return this.module('conversations').recall(query, options);
     }
 
     /** List recent conversation memories. */
     listMemories(limit?: number, tier?: 'short' | 'long'): StoredMemory[] {
-        this._require('conversations', 'listMemories');
-        return this._conversations!.list(limit, tier);
+        return this.module('conversations').list(limit, tier);
     }
 
     /** Consolidate old conversation memories (short → long tier). */
     consolidateMemories(keepRecent?: number): { promoted: number } {
-        this._require('conversations', 'consolidateMemories');
-        return this._conversations!.consolidate(keepRecent);
+        return this.module('conversations').consolidate(keepRecent);
     }
 
     // ── Query ───────────────────────────────────────
 
     /** Get git history for a specific file. */
     async fileHistory(filePath: string, limit: number = 20): Promise<any[]> {
-        this._require('git', 'fileHistory');
+        this.module('git');
         await this.initialize();
         return this._db.prepare(`
             SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions
@@ -637,52 +470,54 @@ export class BrainBank extends EventEmitter {
 
     /** Get co-edit suggestions for a file. */
     coEdits(filePath: string, limit: number = 5): CoEditSuggestion[] {
-        this._require('git', 'coEdits');
-        return this._coEdits!.suggest(filePath, limit);
+        const gitMod = this.module('git') as any;
+        return gitMod.suggest(filePath, limit);
     }
 
     // ── Stats ───────────────────────────────────────
 
-    /** Get statistics for all enabled features. */
+    /** Get statistics for all loaded modules. */
     stats(): IndexStats {
         const result: IndexStats = {};
 
-        if (this._config.features.code) {
+        if (this.has('code')) {
+            const mod = this.module('code') as any;
             result.code = {
                 files: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM code_chunks').get() as any).c,
                 chunks: (this._db.prepare('SELECT COUNT(*) as c FROM code_chunks').get() as any).c,
-                hnswSize: this._codeHnsw?.size ?? 0,
+                hnswSize: mod.hnsw?.size ?? 0,
             };
         }
 
-        if (this._config.features.git) {
+        if (this.has('git')) {
+            const mod = this.module('git') as any;
             result.git = {
                 commits: (this._db.prepare('SELECT COUNT(*) as c FROM git_commits').get() as any).c,
                 filesTracked: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM commit_files').get() as any).c,
                 coEdits: (this._db.prepare('SELECT COUNT(*) as c FROM co_edits').get() as any).c,
-                hnswSize: this._gitHnsw?.size ?? 0,
+                hnswSize: mod.hnsw?.size ?? 0,
             };
         }
 
-        if (this._config.features.patterns) {
+        if (this.has('memory')) {
+            const mod = this.module('memory') as any;
+            const count = (this._db.prepare('SELECT COUNT(*) as c FROM memory_patterns').get() as any).c;
+            const avg = (this._db.prepare('SELECT AVG(success_rate) as a FROM memory_patterns').get() as any).a ?? 0;
             result.memory = {
-                patterns: (this._db.prepare('SELECT COUNT(*) as c FROM memory_patterns').get() as any).c,
-                avgSuccess: (this._db.prepare('SELECT AVG(success_rate) as a FROM memory_patterns').get() as any).a ?? 0,
-                hnswSize: this._memHnsw?.size ?? 0,
+                patterns: count,
+                avgSuccess: avg,
+                hnswSize: mod.hnsw?.size ?? 0,
             };
         }
 
-        if (this._config.features.documents) {
-            result.documents = {
-                collections: (this._db.prepare('SELECT COUNT(*) as c FROM collections').get() as any).c,
-                documents: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM doc_chunks').get() as any).c,
-                chunks: (this._db.prepare('SELECT COUNT(*) as c FROM doc_chunks').get() as any).c,
-                hnswSize: this._docHnsw?.size ?? 0,
-            };
+        if (this.has('docs')) {
+            const mod = this.module('docs') as any;
+            result.documents = mod.stats();
         }
 
-        if (this._config.features.conversations) {
-            result.conversations = this._conversations!.count();
+        if (this.has('conversations')) {
+            const mod = this.module('conversations') as any;
+            result.conversations = mod.count();
         }
 
         return result;
@@ -692,6 +527,9 @@ export class BrainBank extends EventEmitter {
 
     /** Close database and release resources. */
     close(): void {
+        for (const mod of this._modules.values()) {
+            mod.close?.();
+        }
         if (this._db) this._db.close();
         this._initialized = false;
     }
@@ -708,10 +546,7 @@ export class BrainBank extends EventEmitter {
 
     // ── Internals ───────────────────────────────────
 
-    /**
-     * Load existing vectors from SQLite into HNSW index.
-     * Called during initialization to restore state.
-     */
+    /** Load vectors from SQLite into HNSW index. */
     private _loadVectors(
         table: string,
         idCol: string,
