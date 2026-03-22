@@ -28,6 +28,9 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - [Configuration](#configuration)
   - [Embedding Providers](#embedding-providers)
   - [Reranker](#reranker-optional)
+- [Indexing](#indexing-1)
+  - [Incremental Indexing](#incremental-indexing)
+  - [Re-embedding](#re-embedding)
 - [Architecture](#architecture)
   - [Search Pipeline](#search-pipeline)
 - [Testing](#testing)
@@ -92,6 +95,7 @@ brainbank kv clear <coll>                   # Clear all items
 
 ```bash
 brainbank stats                             # Show index statistics
+brainbank reembed                           # Re-embed all vectors (provider switch)
 brainbank serve                             # Start MCP server (stdio)
 ```
 
@@ -400,6 +404,80 @@ Without a reranker, BrainBank uses pure RRF fusion (still good quality).
 
 ---
 
+## Indexing
+
+### Incremental Indexing
+
+All indexing is **incremental by default** — only new or changed content is processed:
+
+| Indexer | How it detects changes | What gets skipped |
+|---------|----------------------|-------------------|
+| **Code** | FNV-1a hash of file content | Unchanged files |
+| **Git** | Unique commit hash | Already-indexed commits |
+| **Docs** | SHA-256 of file content | Unchanged documents |
+
+```typescript
+// First run: indexes everything
+await brain.index();  // → { indexed: 500, skipped: 0 }
+
+// Second run: skips everything unchanged
+await brain.index();  // → { indexed: 0, skipped: 500 }
+
+// Changed 1 file? Only that file re-indexes
+await brain.index();  // → { indexed: 1, skipped: 499 }
+```
+
+Use `--force` to re-index everything:
+
+```bash
+brainbank index --force
+```
+
+### Re-embedding
+
+When switching embedding providers (e.g. Local → OpenAI), you **don't need to re-index**. The `reembed()` method regenerates only the vectors — no file I/O, no git parsing, no re-chunking:
+
+```typescript
+import { BrainBank, OpenAIEmbedding } from 'brainbank';
+
+// Previously indexed with local embeddings.
+// Now switch to OpenAI:
+const brain = new BrainBank({
+  embeddingProvider: new OpenAIEmbedding(),
+});
+await brain.initialize();
+
+// ⚠ BrainBank emits 'warning' event if provider changed.
+brain.on('warning', (w) => console.warn(w.message));
+// → "Embedding provider changed (LocalEmbedding/384 → OpenAIEmbedding/1536). Run brain.reembed()"
+
+const result = await brain.reembed({
+  onProgress: (table, current, total) => {
+    console.log(`${table}: ${current}/${total}`);
+  },
+});
+// → { code: 1200, git: 500, docs: 80, kv: 45, notes: 12, total: 1837 }
+```
+
+Or from the CLI:
+
+```bash
+brainbank reembed
+```
+
+| Full re-index | `reembed()` |
+|---|---|
+| Walks all files | **Skipped** |
+| Parses git history | **Skipped** |
+| Re-chunks documents | **Skipped** |
+| Embeds text | ✓ |
+| Replaces vectors | ✓ |
+| Rebuilds HNSW | ✓ |
+
+> BrainBank tracks provider metadata in `embedding_meta` table. It auto-detects mismatches and warns you to run `reembed()`.
+
+---
+
 ## Architecture
 
 ```
@@ -465,7 +543,7 @@ Final results (sorted by blended score)
 ## Testing
 
 ```bash
-npm test                    # Unit tests (110 tests)
+npm test                    # Unit tests (115 tests)
 npm test -- --integration   # Include integration tests (downloads model)
 npm test -- --filter bm25   # Filter by test name
 npm test -- --verbose       # Show assertion details
@@ -489,6 +567,7 @@ test/
     ├── mmr.test.ts         # Maximal Marginal Relevance
     ├── notes.test.ts       # Note memory store
     ├── openai-embedding.test.ts  # OpenAI embedding provider
+    ├── reembed.test.ts     # Re-embedding engine
     ├── reranker.test.ts    # Pluggable reranker integration
     ├── rrf.test.ts         # Reciprocal Rank Fusion
     └── schema.test.ts      # SQLite schema & migrations

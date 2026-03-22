@@ -34,6 +34,7 @@
  * 
  *   UTILITY
  *   brainbank stats                           Show index statistics
+ *   brainbank reembed                         Re-embed all vectors (provider switch)
  *   brainbank serve                           Start MCP server (stdio)
  */
 
@@ -675,6 +676,32 @@ async function cmdStats() {
     brain.close();
 }
 
+async function cmdReembed() {
+    const brain = await createBrain();
+    await brain.initialize();
+
+    console.log(c.bold('\n━━━ BrainBank Re-embed ━━━\n'));
+    console.log(c.dim('  Regenerating vectors with current embedding provider...'));
+    console.log(c.dim('  Text, FTS, and metadata remain unchanged.\n'));
+
+    const result = await brain.reembed({
+        onProgress: (table, current, total) => {
+            process.stdout.write(`\r  ${c.cyan(table.padEnd(8))} ${current}/${total}`);
+        },
+    });
+
+    console.log('\n');
+    if (result.code > 0)   console.log(`  ${c.green('✓')} Code:    ${result.code} vectors`);
+    if (result.git > 0)    console.log(`  ${c.green('✓')} Git:     ${result.git} vectors`);
+    if (result.docs > 0)   console.log(`  ${c.green('✓')} Docs:    ${result.docs} vectors`);
+    if (result.kv > 0)     console.log(`  ${c.green('✓')} KV:      ${result.kv} vectors`);
+    if (result.notes > 0)  console.log(`  ${c.green('✓')} Notes:   ${result.notes} vectors`);
+    if (result.memory > 0) console.log(`  ${c.green('✓')} Memory:  ${result.memory} vectors`);
+    console.log(`\n  ${c.bold('Total')}: ${result.total} vectors regenerated\n`);
+
+    brain.close();
+}
+
 async function cmdServe() {
     await import('./mcp-server.ts');
 }
@@ -744,6 +771,7 @@ async function main() {
         case 'ksearch':     return cmdKeywordSearch();
         case 'context':     return cmdContext();
         case 'stats':       return cmdStats();
+        case 'reembed':     return cmdReembed();
         case 'serve':       return cmdServe();
         case 'help':
         case '--help':

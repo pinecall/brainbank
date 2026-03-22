@@ -310,6 +310,12 @@ export function createSchema(db: Database.Database): void {
 
         CREATE INDEX IF NOT EXISTS idx_kv_collection ON kv_data(collection);
         CREATE INDEX IF NOT EXISTS idx_kv_created    ON kv_data(created_at DESC);
+
+        -- ── Embedding Metadata ───────────────────────
+        CREATE TABLE IF NOT EXISTS embedding_meta (
+            key     TEXT PRIMARY KEY,
+            value   TEXT NOT NULL
+        );
     `);
 }
 

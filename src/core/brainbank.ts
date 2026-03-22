@@ -27,6 +27,8 @@ import { BM25Search } from '../query/bm25.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
 import { ContextBuilder } from '../query/context-builder.ts';
 import { Collection } from './collection.ts';
+import { reembedAll, setEmbeddingMeta, detectProviderMismatch } from './reembed.ts';
+import type { ReembedResult, ReembedOptions } from './reembed.ts';
 import type { Indexer, IndexerContext } from '../modules/types.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
@@ -186,6 +188,19 @@ export class BrainBank extends EventEmitter {
         // Context builder (needs search + optional co-edits)
         if (this._search) {
             this._contextBuilder = new ContextBuilder(this._search, gitMod?.coEdits);
+        }
+
+        // Track embedding provider metadata
+        setEmbeddingMeta(this._db, this._embedding);
+
+        // Check for provider mismatch
+        const mismatch = detectProviderMismatch(this._db, this._embedding);
+        if (mismatch?.mismatch) {
+            this.emit('warning', {
+                type: 'provider_mismatch',
+                message: `Embedding provider changed (${mismatch.stored} → ${mismatch.current}). ` +
+                    `Run brain.reembed() to regenerate vectors.`,
+            });
         }
 
         this._initialized = true;
@@ -520,6 +535,56 @@ export class BrainBank extends EventEmitter {
             result.documents = mod.stats();
         }
 
+        return result;
+    }
+
+    // ── Re-embedding ────────────────────────────────
+
+    /**
+     * Re-embed all existing text with the current embedding provider.
+     * Use this when switching providers (e.g. Local → OpenAI).
+     * Does NOT re-parse files, git history, or documents — only regenerates vectors.
+     *
+     * @example
+     *   const brain = new BrainBank({ embeddingProvider: new OpenAIEmbedding() });
+     *   await brain.initialize();
+     *   const result = await brain.reembed();
+     *   // → { code: 1200, git: 500, docs: 80, kv: 45, notes: 12, total: 1837 }
+     */
+    async reembed(options: ReembedOptions = {}): Promise<ReembedResult> {
+        if (!this._initialized) {
+            throw new Error('BrainBank: Not initialized. Call initialize() before reembed().');
+        }
+
+        // Build HNSW map for rebuild
+        const hnswMap = new Map<string, { hnsw: HNSWIndex; vecs: Map<number, Float32Array> }>();
+
+        // KV collections HNSW
+        if (this._kvHnsw) {
+            hnswMap.set('kv', { hnsw: this._kvHnsw, vecs: this._kvVecs });
+        }
+
+        // Indexer-managed HNSW indices
+        const codeMod = this._modules.get('code') as any;
+        const gitMod = this._modules.get('git') as any;
+        const memMod = this._modules.get('memory') as any;
+        const docsMod = this._modules.get('docs') as any;
+        const notesMod = this._modules.get('notes') as any;
+
+        if (codeMod?.hnsw) hnswMap.set('code', { hnsw: codeMod.hnsw, vecs: codeMod.vecCache });
+        if (gitMod?.hnsw) hnswMap.set('git', { hnsw: gitMod.hnsw, vecs: gitMod.vecCache });
+        if (memMod?.hnsw) hnswMap.set('memory', { hnsw: memMod.hnsw, vecs: memMod.vecCache });
+        if (notesMod?.hnsw) hnswMap.set('notes', { hnsw: notesMod.hnsw, vecs: notesMod.vecCache });
+        if (docsMod?.hnsw) hnswMap.set('docs', { hnsw: docsMod.hnsw, vecs: docsMod.vecCache });
+
+        const result = await reembedAll(
+            this._db,
+            this._embedding,
+            hnswMap,
+            options,
+        );
+
+        this.emit('reembedded', result);
         return result;
     }
 
