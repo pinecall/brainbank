@@ -18,8 +18,6 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 npm install brainbank
 ```
 
-### Code + Git indexing
-
 ```typescript
 import { BrainBank } from 'brainbank';
 import { code } from 'brainbank/code';
@@ -33,52 +31,54 @@ await brain.index();
 const context = await brain.getContext('add rate limiting');
 ```
 
-### Document collections
+---
 
-```typescript
-import { BrainBank } from 'brainbank';
-import { docs } from 'brainbank/docs';
+## CLI
 
-const brain = new BrainBank().use(docs());
+```bash
+# Indexing
+brainbank index [path]                      # Index code + git
+brainbank collection add <path> --name docs # Add document collection
+brainbank collection list                   # List collections
+brainbank collection remove <name>          # Remove collection
+brainbank docs [--collection <name>]        # Index documents
 
-await brain.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
-await brain.indexDocs();
+# Search
+brainbank search <query>                    # Semantic search (vector)
+brainbank hsearch <query>                   # Hybrid search (best quality)
+brainbank ksearch <query>                   # Keyword search (BM25, instant)
+brainbank dsearch <query>                   # Document search
 
-const results = await brain.searchDocs('authentication');
+# Context
+brainbank context <task>                    # Get formatted context
+brainbank context add <col> <path> <desc>   # Add context metadata
+brainbank context list                      # List context metadata
+
+# KV Store (dynamic collections)
+brainbank kv add <coll> <content>           # Add item to a collection
+brainbank kv search <coll> <query>          # Search a collection
+brainbank kv list [coll]                    # List collections or items
+brainbank kv trim <coll> --keep <n>         # Keep only N most recent
+brainbank kv clear <coll>                   # Clear all items
+
+# Utility
+brainbank stats                             # Index statistics
+brainbank serve                             # Start MCP server (stdio)
 ```
 
-### Dynamic collections (the universal primitive)
-
-```typescript
-// Collections are created on the fly — store anything
-const errors = brain.collection('debug_errors');
-await errors.add('Null pointer in api.ts line 42', { file: 'api.ts' });
-await errors.add('Timeout on /users endpoint', { file: 'routes.ts' });
-
-const hits = await errors.search('null pointer');
-// → [{ content: 'Null pointer in api.ts...', score: 0.92, metadata: {...} }]
-
-errors.trim({ keep: 100 });   // keep only 100 most recent
-errors.prune('30d');           // remove items older than 30 days
-```
+**Options:** `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`
 
 ---
 
 ## Indexers
 
-BrainBank uses a pluggable indexer pattern. Register only what you need:
+BrainBank uses pluggable indexers. Register only what you need:
 
 | Indexer | Import | What it does |
 |---------|--------|--------------|
 | `code` | `brainbank/code` | Language-aware code chunking (30+ languages), HNSW index |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
 | `docs` | `brainbank/docs` | Document collections (markdown, wikis), heading-aware chunking |
-
-```typescript
-import { code } from 'brainbank/code';
-
-brain.use(code({ repoPath: '/my/repo' }));
-```
 
 ### Custom indexers
 
@@ -164,8 +164,6 @@ const codeHits = await brain.searchCode('parse JSON config', 8);
 const commitHits = await brain.searchCommits('fix auth bug', 5);
 ```
 
-### Score interpretation
-
 | Score | Meaning |
 |-------|---------|
 | 0.8+ | Near-exact match |
@@ -189,7 +187,6 @@ await brain.addCollection({
 });
 
 await brain.indexDocs();
-await brain.indexDocs({ collections: ['docs'] });
 
 const results = await brain.searchDocs('authentication', { collection: 'docs', k: 5 });
 
@@ -209,45 +206,8 @@ const context = await brain.getContext('add rate limiting to the API', {
   affectedFiles: ['src/api/routes.ts'],
   useMMR: true,
 });
-// Returns markdown sections: ## Relevant Code, ## Git History, ## Relevant Documents
+// Returns markdown: ## Relevant Code, ## Git History, ## Relevant Documents
 ```
-
----
-
-## CLI
-
-```bash
-# Indexing
-brainbank index [path]                      # Index code + git
-brainbank collection add <path> --name docs # Add document collection
-brainbank collection list                   # List collections
-brainbank collection remove <name>          # Remove collection
-brainbank docs [--collection <name>]        # Index documents
-
-# Search
-brainbank search <query>                    # Semantic search (vector)
-brainbank hsearch <query>                   # Hybrid search (best quality)
-brainbank ksearch <query>                   # Keyword search (BM25, instant)
-brainbank dsearch <query>                   # Document search
-
-# Context
-brainbank context <task>                    # Get formatted context
-brainbank context add <col> <path> <desc>   # Add context metadata
-brainbank context list                      # List context metadata
-
-# KV Store (dynamic collections)
-brainbank kv add <coll> <content>           # Add item to a collection
-brainbank kv search <coll> <query>          # Search a collection
-brainbank kv list [coll]                    # List collections or items
-brainbank kv trim <coll> --keep <n>         # Keep only N most recent
-brainbank kv clear <coll>                   # Clear all items
-
-# Utility
-brainbank stats                             # Index statistics
-brainbank serve                             # Start MCP server (stdio)
-```
-
-Options: `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`.
 
 ---
 
@@ -270,8 +230,6 @@ brainbank serve
   }
 }
 ```
-
-**Tools exposed:**
 
 | Tool | Description |
 |------|-------------|
