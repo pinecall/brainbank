@@ -1,13 +1,14 @@
 # 🧠 BrainBank
 
-**Semantic knowledge bank for AI agents** — indexes code, documents, git history, notes, and learned patterns into a single SQLite file with hybrid search (vector + BM25 + RRF).
+**Semantic knowledge bank for AI agents** — indexes code, documents, and git history into a single SQLite file with hybrid search (vector + BM25 + RRF).
 
-BrainBank solves a specific problem: LLMs forget everything between sessions. BrainBank gives them a searchable long-term memory.
+BrainBank gives LLMs a searchable long-term memory that persists between sessions.
 
-- **Modular** — `.use()` only the modules you need
-- **Local** — embeddings run locally via WASM, no API keys
-- **Portable** — everything lives in one `.brainbank/brainbank.db` file
-- **Hybrid search** — vector (semantic) + BM25 (keyword) fused with RRF
+- **Pluggable indexers** — `.use()` only what you need (code, git, docs)
+- **Dynamic collections** — `brain.collection('errors')` for any structured data
+- **Local embeddings** — WASM-based, no API keys needed
+- **Portable** — single `.brainbank/brainbank.db` file
+- **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 
 ---
 
@@ -17,145 +18,129 @@ BrainBank solves a specific problem: LLMs forget everything between sessions. Br
 npm install brainbank
 ```
 
-### Coding agent — code + git + memory
+### Code + Git indexing
 
 ```typescript
 import { BrainBank } from 'brainbank';
 import { code } from 'brainbank/code';
 import { git } from 'brainbank/git';
-import { memory } from 'brainbank/memory';
-import { notes } from 'brainbank/notes';
 
 const brain = new BrainBank({ repoPath: '.' })
   .use(code())
-  .use(git())
-  .use(memory())
-  .use(notes());
+  .use(git());
 
-await brain.index();                                    // index code + git
-const context = await brain.getContext('add auth');      // system prompt context
+await brain.index();
+const context = await brain.getContext('add rate limiting');
 ```
 
-### Non-coding agent — docs + conversations only
+### Document collections
 
 ```typescript
 import { BrainBank } from 'brainbank';
 import { docs } from 'brainbank/docs';
-import { notes } from 'brainbank/notes';
 
-const brain = new BrainBank({ dbPath: './knowledge.db' })
-  .use(docs())
-  .use(notes());
+const brain = new BrainBank().use(docs());
 
-await brain.addCollection({ name: 'notes', path: '~/notes', pattern: '**/*.md' });
+await brain.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
 await brain.indexDocs();
+
+const results = await brain.searchDocs('authentication');
 ```
 
-### Conversation memory only
+### Dynamic collections (the universal primitive)
 
 ```typescript
-import { BrainBank } from 'brainbank';
-import { notes } from 'brainbank/notes';
+// Collections are created on the fly — store anything
+const errors = brain.collection('debug_errors');
+await errors.add('Null pointer in api.ts line 42', { file: 'api.ts' });
+await errors.add('Timeout on /users endpoint', { file: 'routes.ts' });
 
-const brain = new BrainBank({ dbPath: './memory.db' })
-  .use(notes());
+const hits = await errors.search('null pointer');
+// → [{ content: 'Null pointer in api.ts...', score: 0.92, metadata: {...} }]
 
-await brain.remember({ title: 'Deployed v2', summary: 'Shipped auth rewrite...', decisions: ['JWT > sessions'] });
-const memories = await brain.recall('authentication approach');
+errors.trim({ keep: 100 });   // keep only 100 most recent
+errors.prune('30d');           // remove items older than 30 days
 ```
 
 ---
 
-## Modules
+## Indexers
 
-BrainBank is composed of 5 independent modules. Enable only what you need:
+BrainBank uses a pluggable indexer pattern. Register only what you need:
 
-| Module | Import | What it does |
-|--------|--------|--------------|
+| Indexer | Import | What it does |
+|---------|--------|--------------|
 | `code` | `brainbank/code` | Language-aware code chunking (30+ languages), HNSW index |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
-| `docs` | `brainbank/docs` | Document collections (markdown, notes, wikis), heading-aware chunking |
-| `notes` | `brainbank/notes` | Note digests with structured recall, short/long tier |
-| `memory` | `brainbank/memory` | Agent learn/search patterns, auto-consolidation, strategy distillation |
-
-Each module is a factory function:
+| `docs` | `brainbank/docs` | Document collections (markdown, wikis), heading-aware chunking |
 
 ```typescript
 import { code } from 'brainbank/code';
 
-code({ repoPath: '/my/repo' })   // options are optional
+brain.use(code({ repoPath: '/my/repo' }));
 ```
 
----
+### Custom indexers
 
-## CLI
-
-```bash
-# Index
-brainbank index [path]                      # Index code + git history
-brainbank collection add <path> --name docs # Add a document collection
-brainbank collection list                   # List collections
-brainbank collection remove <name>          # Remove a collection
-brainbank docs [--collection <name>]        # Index document collections
-
-# Search
-brainbank search <query>                    # Semantic search (vector)
-brainbank hsearch <query>                   # Hybrid search (best quality)
-brainbank ksearch <query>                   # Keyword search (BM25, instant)
-brainbank dsearch <query>                   # Document search
-
-# Context
-brainbank context <task>                    # Get formatted context for a task
-brainbank context add <col> <path> <desc>   # Add context metadata
-brainbank context list                      # List all context metadata
-
-# Memory
-brainbank memory learn --type api --task "add auth" --approach "JWT" --rate 0.9
-brainbank memory search "authentication"    # Search learned patterns
-brainbank memory consolidate                # Prune + deduplicate
-brainbank remember --title "..." --summary "..." --tags "a,b"
-brainbank recall <query>                    # Recall conversation memories
-
-# Utility
-brainbank stats                             # Index statistics
-brainbank serve                             # Start MCP server (stdio)
-```
-
-Options: `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`.
-
----
-
-## Document Collections
-
-Register folders of documents. Files are chunked by heading structure (inspired by [qmd](https://github.com/tobi/qmd)):
+Implement the `Indexer` interface to create your own:
 
 ```typescript
-// Register
-await brain.addCollection({
-  name: 'docs',
-  path: '~/project/docs',
-  pattern: '**/*.md',         // default
-  ignore: ['**/drafts/**'],
-  context: 'Project documentation',
+import type { Indexer, IndexerContext } from 'brainbank';
+
+const myIndexer: Indexer = {
+  name: 'custom',
+  async initialize(ctx: IndexerContext) {
+    // ctx.db        — shared SQLite database
+    // ctx.embedding — shared embedding provider
+    // ctx.collection('name') — create dynamic collections
+    const store = ctx.collection('my_data');
+    await store.add('indexed content', { source: 'custom' });
+  },
+};
+
+brain.use(myIndexer);
+```
+
+---
+
+## Collections
+
+The universal data primitive. Any indexer or consumer can create collections on the fly:
+
+```typescript
+const coll = brain.collection('decisions');
+
+// Add items (auto-embedded for vector search)
+const id = await coll.add('Use JWT over sessions', { context: 'auth' });
+await coll.addMany([
+  { content: 'Redis for token blacklist', metadata: {} },
+  { content: 'Rate limit at 100 req/min', metadata: {} },
+]);
+
+// Search (hybrid: vector + keyword)
+const results = await coll.search('authentication tokens', {
+  k: 5,
+  mode: 'hybrid',      // 'hybrid' | 'vector' | 'keyword'
+  minScore: 0.3,
 });
 
-// Index (incremental — only changed files)
-await brain.indexDocs();
-await brain.indexDocs({ collections: ['docs'] });  // specific collection
+// Manage
+coll.list({ limit: 20 });      // list items
+coll.count();                    // total items
+coll.trim({ keep: 50 });        // keep N most recent
+coll.prune('7d');                // remove older than 7 days
+coll.remove(id);                 // remove specific item
+coll.clear();                    // remove all
 
-// Search
-const results = await brain.searchDocs('authentication', { collection: 'docs', k: 5 });
-
-// Context metadata (helps LLM understand what documents are about)
-brain.addContext('docs', '/api', 'REST API reference');
-brain.addContext('docs', '/guides', 'Step-by-step tutorials');
+// List all collections
+brain.listCollectionNames();     // → ['decisions', 'errors', ...]
 ```
 
 ---
 
 ## Search
 
-Three search modes, from fastest to best quality:
+Three modes, from fastest to best quality:
 
 | Mode | Method | Speed | Quality |
 |------|--------|-------|---------|
@@ -169,15 +154,14 @@ const results = await brain.hybridSearch('authentication middleware');
 
 // Vector search with options
 const results = await brain.search('JWT validation', {
-  codeK: 10,     // max code results
-  gitK: 5,       // max git results
-  memoryK: 3,    // max memory results
+  codeK: 10,
+  gitK: 5,
   useMMR: true,  // diversity via Maximal Marginal Relevance
 });
 
 // Code-only or commit-only
-const code = await brain.searchCode('parse JSON config', 8);
-const commits = await brain.searchCommits('fix auth bug', 5);
+const codeHits = await brain.searchCode('parse JSON config', 8);
+const commitHits = await brain.searchCommits('fix auth bug', 5);
 ```
 
 ### Score interpretation
@@ -187,56 +171,31 @@ const commits = await brain.searchCommits('fix auth bug', 5);
 | 0.8+ | Near-exact match |
 | 0.5–0.8 | Strongly related |
 | 0.3–0.5 | Somewhat related |
-| <0.3 | Weak match |
+| < 0.3 | Weak match |
 
 ---
 
-## Agent Memory
+## Document Collections
+
+Register folders of documents. Files are chunked by heading structure:
 
 ```typescript
-// Learn from a completed task
-await brain.learn({
-  taskType: 'api',
-  task: 'Add rate limiting to /login',
-  approach: 'Express middleware with redis store',
-  successRate: 0.95,
-  critique: 'Should have added tests first',
+await brain.addCollection({
+  name: 'docs',
+  path: '~/project/docs',
+  pattern: '**/*.md',
+  ignore: ['**/drafts/**'],
+  context: 'Project documentation',
 });
 
-// Search patterns
-const patterns = await brain.searchPatterns('rate limiting');
+await brain.indexDocs();
+await brain.indexDocs({ collections: ['docs'] });
 
-// Distill patterns into a strategy
-const strategy = brain.distill('api');
-// → { taskType: 'api', strategy: '...', confidence: 0.87 }
-```
+const results = await brain.searchDocs('authentication', { collection: 'docs', k: 5 });
 
----
-
-## Note Memory
-
-```typescript
-// Store a conversation digest
-await brain.remember({
-  title: 'Auth rewrite discussion',
-  summary: 'Decided to migrate from sessions to JWT...',
-  decisions: ['JWT over sessions', 'Redis for token blacklist'],
-  filesChanged: ['src/auth.ts', 'src/middleware.ts'],
-  patterns: ['middleware-first', 'test-driven'],
-  tags: ['auth', 'refactor'],
-});
-
-// Recall relevant past conversations
-const memories = await brain.recall('authentication approach');
-for (const m of memories) {
-  console.log(m.title, m.summary, m.score);
-}
-
-// List recent
-const recent = brain.listMemories(10, 'short');
-
-// Auto-promote old short-term → long-term
-brain.consolidateMemories(20);  // keep 20 most recent as short-term
+// Context metadata (helps LLM understand what documents are about)
+brain.addContext('docs', '/api', 'REST API reference');
+brain.addContext('docs', '/guides', 'Step-by-step tutorials');
 ```
 
 ---
@@ -244,28 +203,61 @@ brain.consolidateMemories(20);  // keep 20 most recent as short-term
 ## Context Generation
 
 ```typescript
-// Get formatted markdown context for system prompt injection
 const context = await brain.getContext('add rate limiting to the API', {
   codeResults: 6,
   gitResults: 5,
-  memoryResults: 4,
   affectedFiles: ['src/api/routes.ts'],
   useMMR: true,
 });
-// Returns sections: ## Relevant Code, ## Git History, ## Relevant Documents, ## Relevant Conversations
+// Returns markdown sections: ## Relevant Code, ## Git History, ## Relevant Documents
 ```
+
+---
+
+## CLI
+
+```bash
+# Indexing
+brainbank index [path]                      # Index code + git
+brainbank collection add <path> --name docs # Add document collection
+brainbank collection list                   # List collections
+brainbank collection remove <name>          # Remove collection
+brainbank docs [--collection <name>]        # Index documents
+
+# Search
+brainbank search <query>                    # Semantic search (vector)
+brainbank hsearch <query>                   # Hybrid search (best quality)
+brainbank ksearch <query>                   # Keyword search (BM25, instant)
+brainbank dsearch <query>                   # Document search
+
+# Context
+brainbank context <task>                    # Get formatted context
+brainbank context add <col> <path> <desc>   # Add context metadata
+brainbank context list                      # List context metadata
+
+# KV Store (dynamic collections)
+brainbank kv add <coll> <content>           # Add item to a collection
+brainbank kv search <coll> <query>          # Search a collection
+brainbank kv list [coll]                    # List collections or items
+brainbank kv trim <coll> --keep <n>         # Keep only N most recent
+brainbank kv clear <coll>                   # Clear all items
+
+# Utility
+brainbank stats                             # Index statistics
+brainbank serve                             # Start MCP server (stdio)
+```
+
+Options: `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`.
 
 ---
 
 ## MCP Server
 
-BrainBank ships with an MCP-compatible server (stdio transport):
+BrainBank ships with an MCP server (stdio transport) for AI tool integration:
 
 ```bash
 brainbank serve
 ```
-
-Register in your AI tool config:
 
 ```json
 {
@@ -279,30 +271,47 @@ Register in your AI tool config:
 }
 ```
 
+**Tools exposed:**
+
+| Tool | Description |
+|------|-------------|
+| `brainbank_search` | Semantic vector search |
+| `brainbank_hybrid_search` | Best quality: vector + BM25 fused |
+| `brainbank_keyword_search` | Instant BM25 full-text |
+| `brainbank_context` | Formatted context for a task |
+| `brainbank_index` | Trigger code/git indexing |
+| `brainbank_stats` | Index statistics |
+| `brainbank_history` | Git history for a file |
+| `brainbank_coedits` | Files that change together |
+| `brainbank_collection_add` | Add item to a KV collection |
+| `brainbank_collection_search` | Search a KV collection |
+| `brainbank_collection_trim` | Trim a KV collection |
+
 ---
 
 ## Configuration
 
 ```typescript
 const brain = new BrainBank({
-  repoPath: '.',                    // Repository root
-  dbPath: '.brainbank/brainbank.db', // SQLite path
-  gitDepth: 500,                    // Max commits to index
-  maxFileSize: 512_000,             // Skip files > 500KB
-  maxDiffBytes: 8192,               // Max diff per commit
-  embeddingDims: 384,               // Vector dimensions
-  maxElements: 2_000_000,           // HNSW capacity
-  hnswM: 16,                        // HNSW connections/node
-  hnswEfConstruction: 200,          // Build-time candidates
-  hnswEfSearch: 50,                 // Query-time candidates
-  embeddingProvider: customProvider, // Custom embeddings (default: local WASM)
+  repoPath: '.',
+  dbPath: '.brainbank/brainbank.db',
+  gitDepth: 500,
+  maxFileSize: 512_000,
+  maxDiffBytes: 8192,
+  embeddingDims: 384,
+  maxElements: 2_000_000,
+  hnswM: 16,
+  hnswEfConstruction: 200,
+  hnswEfSearch: 50,
+  embeddingProvider: customProvider,  // default: local WASM
 });
 ```
 
-Environment variables:
-- `BRAINBANK_REPO` — repository path (default: `process.cwd()`)
-- `BRAINBANK_DB` — database path (default: `.brainbank/brainbank.db`)
-- `BRAINBANK_DEBUG` — show full stack traces
+| Env Variable | Description |
+|-------------|-------------|
+| `BRAINBANK_REPO` | Repository path (default: cwd) |
+| `BRAINBANK_DB` | Database path |
+| `BRAINBANK_DEBUG` | Show full stack traces |
 
 ---
 
@@ -311,24 +320,24 @@ Environment variables:
 ```
 ┌──────────────────────────────────────────────────────┐
 │                   BrainBank Core                     │
-│  .use(code)  .use(git)  .use(docs)  .use(memory)    │
-│  .use(notes)                                     │
+│  .use(code)  .use(git)  .use(docs)                   │
+│  .collection('name')                                 │
 ├──────────────────────────────────────────────────────┤
 │                                                      │
-│  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ │
-│  │ Code  │ │  Git  │ │ Docs  │ │Memory │ │Notes │ │
-│  │Module │ │Module │ │Module │ │Module │ │Module│ │
-│  └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ │
-│      │         │         │         │         │      │
-│  ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ │
-│  │ HNSW  │ │ HNSW  │ │ HNSW  │ │ HNSW  │ │ HNSW  │ │
-│  │ Index │ │ Index │ │ Index │ │ Index │ │ Index │ │
-│  └───────┘ └───────┘ └───────┘ └───────┘ └───────┘ │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────────┐│
+│  │  Code   │ │   Git   │ │  Docs   │ │ Collection ││
+│  │ Indexer │ │ Indexer │ │ Indexer │ │ (dynamic)  ││
+│  └────┬────┘ └────┬────┘ └────┬────┘ └─────┬──────┘│
+│       │           │           │             │        │
+│  ┌────▼────┐ ┌────▼────┐ ┌────▼────┐ ┌─────▼──────┐│
+│  │  HNSW   │ │  HNSW   │ │  HNSW   │ │ Shared KV  ││
+│  │  Index  │ │  Index  │ │  Index  │ │ HNSW Index ││
+│  └─────────┘ └─────────┘ └─────────┘ └────────────┘│
 │                                                      │
 │  ┌──────────────────────────────────────────────────┐│
 │  │         SQLite (.brainbank/brainbank.db)         ││
-│  │  code_chunks │ git_commits │ doc_chunks │ ...    ││
-│  │  FTS5 full-text │ vectors │ co_edits │ patterns  ││
+│  │  code_chunks │ git_commits │ doc_chunks          ││
+│  │  kv_data │ FTS5 full-text │ vectors │ co_edits   ││
 │  └──────────────────────────────────────────────────┘│
 │                                                      │
 │  ┌──────────────────────────────────────────────────┐│
@@ -339,32 +348,22 @@ Environment variables:
 
 ### Data Flow
 
-1. **Index** → Code/Git/Doc indexers parse files into chunks
-2. **Embed** → Each chunk gets a 384-dim vector (local WASM)
-3. **Store** → Chunks + vectors → SQLite, vectors → HNSW index
-4. **Search** → Query vector → HNSW k-NN + BM25 keyword → RRF fusion
-5. **Context** → Top results formatted as markdown for system prompts
-6. **Learn** → Agent stores task outcomes → memory patterns → distilled strategies
+1. **Index** — Code/Git/Doc indexers parse files into chunks
+2. **Embed** — Each chunk gets a 384-dim vector (local WASM)
+3. **Store** — Chunks + vectors → SQLite, vectors → HNSW index
+4. **Search** — Query vector → HNSW k-NN + BM25 keyword → RRF fusion
+5. **Context** — Top results formatted as markdown for system prompts
 
 ### Storage Schema
 
 | Table | What it stores |
 |-------|---------------|
-| `code_chunks` | Source code chunks (file, function, class, block) |
-| `code_vectors` | Code HNSW embeddings |
-| `git_commits` | Commit metadata and diffs |
-| `git_vectors` | Commit HNSW embeddings |
-| `commit_files` | Files changed per commit |
-| `co_edits` | File co-edit relationships |
-| `doc_chunks` | Document chunks |
-| `doc_vectors` | Document HNSW embeddings |
-| `collections` | Registered document collections |
-| `path_contexts` | Context metadata per path |
-| `memory_patterns` | Agent learned patterns |
-| `memory_vectors` | Pattern HNSW embeddings |
-| `note_memories` | Note digests |
-| `note_vectors` | Note HNSW embeddings |
-| `distilled_strategies` | Consolidated strategies |
+| `code_chunks` / `code_vectors` | Source code chunks and embeddings |
+| `git_commits` / `git_vectors` | Commit metadata, diffs, embeddings |
+| `commit_files` / `co_edits` | Files per commit, co-edit relationships |
+| `doc_chunks` / `doc_vectors` | Document chunks and embeddings |
+| `collections` / `path_contexts` | Registered doc collections, context metadata |
+| `kv_data` / `kv_vectors` / `fts_kv` | Dynamic collection items, embeddings, FTS |
 
 ---
 
@@ -375,24 +374,24 @@ brainbank/
 ├── src/
 │   ├── core/
 │   │   ├── brainbank.ts       # Main orchestrator (.use() builder)
-│   │   └── config.ts          # Config defaults + resolver
+│   │   ├── collection.ts      # Dynamic collection primitive
+│   │   ├── config.ts          # Config defaults + resolver
+│   │   └── schema.ts          # SQLite schema
 │   ├── modules/
-│   │   ├── types.ts           # BrainBankModule interface
-│   │   ├── code.ts            # Code indexing module
-│   │   ├── git.ts             # Git history module
-│   │   ├── docs.ts            # Document collections module
-│   │   ├── notes.ts           # Note memory module
-│   │   └── memory.ts          # Agent memory module
+│   │   ├── types.ts           # Indexer / IndexerContext interfaces
+│   │   ├── code.ts            # Code indexer
+│   │   ├── git.ts             # Git history indexer
+│   │   └── docs.ts            # Document collections indexer
 │   ├── embeddings/            # Local WASM embedding provider
 │   ├── indexers/              # Code chunker, git parser, doc parser
 │   ├── memory/                # Pattern store, consolidator, note store
 │   ├── query/                 # UnifiedSearch, BM25, RRF, context builder
-│   ├── storage/               # SQLite database + schema
+│   ├── storage/               # SQLite database wrapper
 │   ├── vector/                # HNSW index + MMR
 │   ├── integrations/          # CLI, MCP server
 │   └── index.ts               # Public API barrel
 ├── test/
-│   └── unit/                  # 87 unit tests
+│   └── unit/                  # 96 unit tests
 └── package.json
 ```
 
