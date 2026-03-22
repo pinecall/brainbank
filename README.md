@@ -644,7 +644,7 @@ Final results (sorted by blended score)
 
 ```bash
 npm test                    # Unit tests (129 tests)
-npm test -- --integration   # Full suite (157 tests, includes real model)
+npm test -- --integration   # Full suite (176 tests, includes real models + indexers)
 npm test -- --filter bm25   # Filter by test name
 npm test -- --verbose       # Show assertion details
 ```
@@ -680,6 +680,7 @@ test/
 │       ├── hnsw.test.ts            # HNSW vector index
 │       └── mmr.test.ts             # Maximal Marginal Relevance
 └── integration/
+    ├── indexers.test.ts        # Real code, git, docs indexer (temp repo fixtures)
     ├── pipeline.test.ts            # Full pipeline: search, tags, TTL, watch
     └── real-model.test.ts          # Real MiniLM embedding + cross-encoder reranker
 ```
