@@ -2,6 +2,7 @@
  * Unit Tests — Configuration
  */
 
+import * as path from 'node:path';
 import { resolveConfig, DEFAULTS } from '../../../src/core/config.ts';
 
 export const name = 'Configuration';
@@ -9,8 +10,9 @@ export const name = 'Configuration';
 export const tests = {
     'defaults are correct'(assert: any) {
         const cfg = resolveConfig();
-        assert.equal(cfg.repoPath, '.');
-        assert.equal(cfg.dbPath, '.brainbank/brainbank.db');
+        // repoPath is resolved to absolute, dbPath is relative to repoPath
+        assert.equal(cfg.repoPath, path.resolve('.'));
+        assert.equal(cfg.dbPath, path.join(path.resolve('.'), '.brainbank/brainbank.db'));
         assert.equal(cfg.gitDepth, 500);
         assert.equal(cfg.maxFileSize, 512_000);
         assert.equal(cfg.hnswM, 16);
@@ -33,7 +35,7 @@ export const tests = {
 
     'config without features field succeeds'(assert: any) {
         const cfg = resolveConfig({});
-        assert.equal(cfg.repoPath, '.');
+        assert.equal(cfg.repoPath, path.resolve('.'));
         // No features field — modules are composed via .use() now
         assert.ok(!('features' in cfg), 'should not have features field');
     },

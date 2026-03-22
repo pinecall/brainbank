@@ -1,10 +1,5 @@
-/**
- * BrainBank — Configuration
- * 
- * Sensible defaults + merge utility.
- */
-
 import type { BrainBankConfig, ResolvedConfig } from '../types.ts';
+import * as path from 'node:path';
 
 // ── Defaults ────────────────────────────────────────
 
@@ -26,11 +21,17 @@ export const DEFAULTS: ResolvedConfig = {
 /**
  * Merge partial config with defaults.
  * All fields become required.
+ * Relative dbPath is resolved against repoPath.
  */
 export function resolveConfig(partial: BrainBankConfig = {}): ResolvedConfig {
+    const repoPath = path.resolve(partial.repoPath ?? DEFAULTS.repoPath);
+    const rawDbPath = partial.dbPath ?? DEFAULTS.dbPath;
+    // Resolve relative dbPath against repoPath so DB lives alongside the repo
+    const dbPath = path.isAbsolute(rawDbPath) ? rawDbPath : path.join(repoPath, rawDbPath);
+
     return {
-        repoPath:          partial.repoPath          ?? DEFAULTS.repoPath,
-        dbPath:            partial.dbPath            ?? DEFAULTS.dbPath,
+        repoPath,
+        dbPath,
         gitDepth:          partial.gitDepth          ?? DEFAULTS.gitDepth,
         maxFileSize:       partial.maxFileSize       ?? DEFAULTS.maxFileSize,
         maxDiffBytes:      partial.maxDiffBytes      ?? DEFAULTS.maxDiffBytes,
@@ -43,3 +44,4 @@ export function resolveConfig(partial: BrainBankConfig = {}): ResolvedConfig {
         reranker: partial.reranker,
     };
 }
+
