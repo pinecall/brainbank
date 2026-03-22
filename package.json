@@ -45,9 +45,10 @@
     "author": "Bernardo Castro <bernardo@pinecall.io>",
     "license": "MIT",
     "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.27.1",
         "better-sqlite3": "^11.8.1",
         "hnswlib-node": "^3.0.0",
-        "simple-git": "^3.33.0"
+        "zod": "^4.3.6"
     },
     "optionalDependencies": {
         "@xenova/transformers": "^2.17.2",

@@ -35,6 +35,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { BrainBank } from '../core/brainbank.ts';
+import { code } from '../plugins/code.ts';
+import { git } from '../plugins/git.ts';
+import { docs } from '../plugins/docs.ts';
 
 // ── Configuration from env ──────────────────────────
 
@@ -50,7 +53,10 @@ async function getBrainBank(): Promise<BrainBank> {
         _brainbank = new BrainBank({
             repoPath,
             ...(dbPath ? { dbPath } : {}),
-        });
+        })
+            .use(code({ repoPath }))
+            .use(git({ repoPath }))
+            .use(docs());
         await _brainbank.initialize();
     }
     return _brainbank;
