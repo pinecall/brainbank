@@ -748,6 +748,7 @@ test/
     ├── memory.test.ts          # Memory: learn → search → consolidate → distill
     ├── collections.test.ts     # KV collections: vector/hybrid/BM25 search, TTL, trim
     ├── search.test.ts          # Unified search: brain.search() + getContext
+    ├── reranker.test.ts        # Qwen3 reranker: real model, relevance scoring, pipeline
     └── real-model.test.ts      # Real MiniLM embedding + cross-encoder reranker
 ```
 
