@@ -60,10 +60,12 @@ function findRepoRoot(startDir: string): string {
 
 const repoPath = process.env.BRAINBANK_REPO || findRepoRoot(process.cwd());
 
-// ── Reranker (optional) ─────────────────────────────
+// ── Reranker (default: qwen3, set BRAINBANK_RERANKER=none to disable) ──
 
 async function createReranker() {
-    if (process.env.BRAINBANK_RERANKER === 'qwen3') {
+    const rerankerEnv = process.env.BRAINBANK_RERANKER ?? 'qwen3';
+    if (rerankerEnv === 'none') return undefined;
+    if (rerankerEnv === 'qwen3') {
         const { Qwen3Reranker } = await import('../rerankers/qwen3-reranker.ts');
         return new Qwen3Reranker();
     }

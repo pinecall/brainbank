@@ -7,7 +7,7 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - **Pluggable indexers** — `.use()` only what you need (code, git, docs)
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
 - **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
-- **Optional reranker** — pluggable cross-encoder re-ranking for search
+- **Built-in reranker** — Qwen3-Reranker-0.6B local cross-encoder (default in MCP)
 - **Portable** — single `.brainbank/brainbank.db` file
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 
@@ -28,7 +28,7 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - [MCP Server](#mcp-server)
 - [Configuration](#configuration)
   - [Embedding Providers](#embedding-providers)
-  - [Reranker](#reranker-optional)
+  - [Reranker](#reranker)
 - [Indexing](#indexing-1)
   - [Incremental Indexing](#incremental-indexing)
   - [Re-embedding](#re-embedding)
@@ -100,7 +100,7 @@ brainbank reembed                           # Re-embed all vectors (provider swi
 brainbank serve                             # Start MCP server (stdio)
 ```
 
-**Global options:** `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`
+**Global options:** `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`, `--reranker <name>`
 
 ---
 
@@ -401,27 +401,43 @@ No folder and no config file? The CLI uses the built-in indexers (`code`, `git`,
 
 ## MCP Server
 
-BrainBank ships with an MCP server (stdio) for AI tool integration:
+BrainBank ships with an MCP server (stdio) for AI tool integration. The Qwen3 reranker is **enabled by default** in MCP mode.
 
 ```bash
 brainbank serve
 ```
+
+### Antigravity / Claude Desktop
+
+Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Desktop settings):
 
 ```json
 {
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["brainbank", "serve"],
-      "env": { "BRAINBANK_REPO": "/path/to/repo" }
+      "args": ["-y", "brainbank", "serve"],
+      "env": { "BRAINBANK_REPO": "/path/to/your/project" }
     }
   }
 }
 ```
 
+> `BRAINBANK_REPO` is required for IDE integrations since they launch MCP servers from `/` as cwd. For CLI usage (`brainbank serve` from your project dir), it auto-detects the repo root.
+
+To disable the reranker in MCP mode:
+
+```json
+"env": { "BRAINBANK_REPO": "/path/to/repo", "BRAINBANK_RERANKER": "none" }
+```
+
+The first search after startup will download the Qwen3-Reranker-0.6B model (~640MB, cached at `~/.cache/brainbank/models/`).
+
+### Available Tools
+
 | Tool | Description |
 |------|-------------|
-| `brainbank_hybrid_search` | Best quality: vector + BM25 fused |
+| `brainbank_hybrid_search` | Best quality: vector + BM25 + reranker |
 | `brainbank_search` | Semantic vector search |
 | `brainbank_keyword_search` | Instant BM25 full-text |
 | `brainbank_context` | Formatted context for a task |
@@ -476,9 +492,37 @@ new OpenAIEmbedding({
 
 > ⚠️ Switching embedding provider requires re-indexing — vectors are not cross-compatible.
 
-### Reranker (optional)
+### Reranker
 
-Improves search quality by using a cross-encoder to evaluate each result against the query. Applied after RRF fusion (60% RRF + 40% reranker score):
+BrainBank includes a built-in cross-encoder reranker using **Qwen3-Reranker-0.6B** via `node-llama-cpp`. It runs 100% locally — no API keys needed.
+
+```typescript
+import { BrainBank, Qwen3Reranker } from 'brainbank';
+
+const brain = new BrainBank({
+  reranker: new Qwen3Reranker(),  // ~640MB model, auto-downloaded
+});
+```
+
+Or from the CLI:
+
+```bash
+brainbank hsearch "auth middleware" --reranker qwen3
+```
+
+#### Position-Aware Score Blending
+
+The reranker uses position-aware blending — trusting retrieval scores more for top results and the reranker more for lower-ranked results:
+
+| Position | Retrieval (RRF) | Reranker | Rationale |
+|----------|----------------|----------|----------|
+| 1–3 | **75%** | 25% | Preserves exact keyword matches |
+| 4–10 | **60%** | 40% | Balanced blend |
+| 11+ | 40% | **60%** | Trust reranker for uncertain results |
+
+#### Custom Reranker
+
+Implement the `Reranker` interface to use your own:
 
 ```typescript
 import type { Reranker } from 'brainbank';
@@ -486,19 +530,19 @@ import type { Reranker } from 'brainbank';
 const myReranker: Reranker = {
   async rank(query: string, documents: string[]): Promise<number[]> {
     // Return relevance scores 0.0-1.0 for each document
-    // Example: call an LLM, use a cross-encoder model, etc.
   },
+  async close() { /* optional cleanup */ },
 };
-
-const brain = new BrainBank({ reranker: myReranker });
 ```
 
 Without a reranker, BrainBank uses pure RRF fusion (still good quality).
 
-| Env Variable | Description |
-|-------------|-------------|
-| `BRAINBANK_REPO` | Repository path (default: cwd) |
-| `BRAINBANK_DB` | Database path |
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BRAINBANK_REPO` | Repository path (default: auto-detected from `.git/`) |
+| `BRAINBANK_RERANKER` | Reranker to use: `qwen3` (default in MCP), `none` to disable |
 | `BRAINBANK_DEBUG` | Show full stack traces |
 | `OPENAI_API_KEY` | Required when using `OpenAIEmbedding` provider |
 
@@ -624,7 +668,13 @@ Query
 Reciprocal Rank Fusion (RRF, k=60)
   │
   ▼
-Reranker (optional, 60% RRF + 40% reranker)
+Qwen3-Reranker (yes/no + logprobs → score 0-1)
+  │
+  ▼
+Position-Aware Blend
+  Top 1-3:  75% RRF / 25% reranker
+  Top 4-10: 60% RRF / 40% reranker
+  Top 11+:  40% RRF / 60% reranker
   │
   ▼
 Final results (sorted by blended score)
