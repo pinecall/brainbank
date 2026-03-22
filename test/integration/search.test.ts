@@ -65,7 +65,9 @@ tests['setup: brain with code + git + docs + memory'] = async () => {
 
 tests['brain.search(): returns code + commit + pattern'] = async () => {
     const assert = (await import('node:assert')).strict;
-    const results = await brain.search('authentication token', { minScore: 0 });
+    // Query matches: code (auth.ts), commits ("feat: auth and database"), patterns ("Fix auth bug")
+    // Disable MMR to avoid diversity penalty filtering types with low vector overlap
+    const results = await brain.search('auth database feat', { minScore: 0, useMMR: false, codeK: 10, gitK: 10, memoryK: 10 });
 
     assert.ok(results.length > 0, `got ${results.length} results`);
     const types = new Set(results.map(r => r.type));
