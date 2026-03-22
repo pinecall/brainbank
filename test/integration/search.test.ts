@@ -10,27 +10,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
-import { BrainBank } from '../../src/core/brainbank.ts';
-import { code } from '../../src/plugins/code.ts';
-import { git } from '../../src/plugins/git.ts';
-import { docs } from '../../src/plugins/docs.ts';
-import { memory } from '../../src/plugins/memory.ts';
-import type { EmbeddingProvider } from '../../src/types.ts';
+import { BrainBank, code, git, docs, memory, hashEmbedding } from '../helpers.ts';
 
 export const name = 'Unified Search + Context';
-
-function hashEmb(dims = 384): EmbeddingProvider {
-    function embed(text: string): Float32Array {
-        const vec = new Float32Array(dims);
-        let h = 2166136261;
-        for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-        for (let i = 0; i < dims; i++) { h ^= (h >>> 13); h = Math.imul(h, 0x5bd1e995) >>> 0; vec[i] = (h / 0xFFFFFFFF) * 2 - 1; }
-        let n = 0; for (let i = 0; i < dims; i++) n += vec[i] * vec[i]; n = Math.sqrt(n);
-        for (let i = 0; i < dims; i++) vec[i] /= n;
-        return vec;
-    }
-    return { dims, embed: async (t: string) => embed(t), embedBatch: async (ts: string[]) => ts.map(t => embed(t)), close() {} };
-}
 
 let tmpDir: string;
 let brain: BrainBank;
@@ -64,7 +46,7 @@ tests['setup: brain with code + git + docs + memory'] = async () => {
     const assert = (await import('node:assert')).strict;
     const { repoDir, docsDir } = setup();
 
-    brain = new BrainBank({ repoPath: repoDir, dbPath: path.join(tmpDir, 'test.db'), embeddingProvider: hashEmb() })
+    brain = new BrainBank({ repoPath: repoDir, dbPath: path.join(tmpDir, 'test.db'), embeddingProvider: hashEmbedding() })
         .use(code({ repoPath: repoDir }))
         .use(git({ repoPath: repoDir }))
         .use(docs())

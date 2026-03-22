@@ -26,6 +26,12 @@ import {
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,
 } from '../src/indexers/languages.ts';
 
+// Plugins
+import { code } from '../src/plugins/code.ts';
+import { git } from '../src/plugins/git.ts';
+import { docs } from '../src/plugins/docs.ts';
+import { memory } from '../src/plugins/memory.ts';
+
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 
 // ── Mock Embedding Provider ─────────────────────────
@@ -37,6 +43,41 @@ export function mockEmbedding(dims = 384): EmbeddingProvider {
         async embed(_: string) { return new Float32Array(dims).fill(0.1); },
         async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(dims).fill(0.1)); },
         async close() {},
+    };
+}
+
+// ── Hash Embedding Provider ─────────────────────────
+
+/**
+ * Creates a deterministic hash-based embedding provider.
+ * Produces unique vectors per input text using FNV-1a hashing.
+ * Used in integration tests to exercise real search paths
+ * without downloading ML models.
+ */
+export function hashEmbedding(dims = 384): EmbeddingProvider {
+    function embed(text: string): Float32Array {
+        const vec = new Float32Array(dims);
+        let h = 2166136261;
+        for (let i = 0; i < text.length; i++) {
+            h ^= text.charCodeAt(i);
+            h = Math.imul(h, 16777619) >>> 0;
+        }
+        for (let i = 0; i < dims; i++) {
+            h ^= (h >>> 13);
+            h = Math.imul(h, 0x5bd1e995) >>> 0;
+            vec[i] = (h / 0xFFFFFFFF) * 2 - 1;
+        }
+        let norm = 0;
+        for (let i = 0; i < dims; i++) norm += vec[i] * vec[i];
+        norm = Math.sqrt(norm);
+        for (let i = 0; i < dims; i++) vec[i] /= norm;
+        return vec;
+    }
+    return {
+        dims,
+        embed: async (t: string) => embed(t),
+        embedBatch: async (ts: string[]) => ts.map(t => embed(t)),
+        close: async () => {},
     };
 }
 
@@ -71,6 +112,12 @@ export {
     isIgnoredFile,
     SUPPORTED_EXTENSIONS,
     IGNORE_DIRS,
+    // Plugins
+    code,
+    git,
+    docs,
+    memory,
 };
 
 export type { EmbeddingProvider, Reranker };
+
