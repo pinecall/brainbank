@@ -62,7 +62,7 @@ export class UnifiedSearch {
         const results: SearchResult[] = [];
 
         // ── Code search ────────────────────────────
-        if (this._deps.codeHnsw.size > 0) {
+        if (this._deps.codeHnsw && this._deps.codeHnsw.size > 0) {
             const hits = useMMR
                 ? searchMMR(this._deps.codeHnsw, queryVec, this._deps.codeVecs, codeK, mmrLambda)
                 : this._deps.codeHnsw.search(queryVec, codeK);
@@ -98,7 +98,7 @@ export class UnifiedSearch {
         }
 
         // ── Git search ─────────────────────────────
-        if (this._deps.gitHnsw.size > 0) {
+        if (this._deps.gitHnsw && this._deps.gitHnsw.size > 0) {
             const hits = this._deps.gitHnsw.search(queryVec, gitK * 2);
 
             if (hits.length > 0) {
@@ -134,7 +134,7 @@ export class UnifiedSearch {
         }
 
         // ── Memory search ──────────────────────────
-        if (this._deps.memHnsw.size > 0) {
+        if (this._deps.memHnsw && this._deps.memHnsw.size > 0) {
             const hits = useMMR
                 ? searchMMR(this._deps.memHnsw, queryVec, this._deps.memVecs, memoryK, mmrLambda)
                 : this._deps.memHnsw.search(queryVec, memoryK);
