@@ -83,26 +83,42 @@ async function createEmbeddingProvider() {
     return undefined; // BrainBank defaults to local WASM
 }
 
-// ── Lazy BrainBank Instance ────────────────────────────
+// ── Multi-Workspace BrainBank Pool ─────────────────────
+// Reranker + embedding provider are shared; each repo gets its own DB.
 
-let _brainbank: BrainBank | null = null;
+const _pool = new Map<string, BrainBank>();
+let _sharedReranker: any = undefined;
+let _sharedEmbedding: any = undefined;
+let _sharedReady = false;
 
-async function getBrainBank(): Promise<BrainBank> {
-    if (!_brainbank) {
-        const reranker = await createReranker();
-        const embeddingProvider = await createEmbeddingProvider();
-        const opts: Record<string, any> = { repoPath, reranker };
-        if (embeddingProvider) {
-            opts.embeddingProvider = embeddingProvider;
-            opts.embeddingDims = embeddingProvider.dims;
-        }
-        _brainbank = new BrainBank(opts)
-            .use(code({ repoPath }))
-            .use(git({ repoPath }))
-            .use(docs());
-        await _brainbank.initialize();
+async function ensureShared() {
+    if (_sharedReady) return;
+    _sharedReranker = await createReranker();
+    _sharedEmbedding = await createEmbeddingProvider();
+    _sharedReady = true;
+}
+
+async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
+    const rp = targetRepo ?? repoPath;
+    const resolved = rp.replace(/\/+$/, ''); // normalize
+
+    if (_pool.has(resolved)) return _pool.get(resolved)!;
+
+    await ensureShared();
+
+    const opts: Record<string, any> = { repoPath: resolved, reranker: _sharedReranker };
+    if (_sharedEmbedding) {
+        opts.embeddingProvider = _sharedEmbedding;
+        opts.embeddingDims = _sharedEmbedding.dims;
     }
-    return _brainbank;
+    const brain = new BrainBank(opts)
+        .use(code({ repoPath: resolved }))
+        .use(git({ repoPath: resolved }))
+        .use(docs());
+    await brain.initialize();
+
+    _pool.set(resolved, brain);
+    return brain;
 }
 
 // ── MCP Server Setup ────────────────────────────────
@@ -124,10 +140,11 @@ server.registerTool(
             codeK: z.number().optional().default(6).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
             minScore: z.number().optional().default(0.25).describe('Minimum similarity score threshold (0-1)'),
+            repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ query, codeK, gitK, minScore }) => {
-        const brainbank = await getBrainBank();
+    async ({ query, codeK, gitK, minScore, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const results = await brainbank.search(query, { codeK, gitK, minScore });
 
         if (results.length === 0) {
@@ -150,10 +167,11 @@ server.registerTool(
             affectedFiles: z.array(z.string()).optional().default([]).describe('Files you plan to modify (improves co-edit suggestions)'),
             codeResults: z.number().optional().default(6).describe('Max code results'),
             gitResults: z.number().optional().default(5).describe('Max git commit results'),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ task, affectedFiles, codeResults, gitResults }) => {
-        const brainbank = await getBrainBank();
+    async ({ task, affectedFiles, codeResults, gitResults, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const context = await brainbank.getContext(task, {
             affectedFiles,
             codeResults,
@@ -174,10 +192,11 @@ server.registerTool(
         inputSchema: z.object({
             forceReindex: z.boolean().optional().default(false).describe('Force re-index of all files, even unchanged ones'),
             gitDepth: z.number().optional().default(500).describe('Number of git commits to index'),
+            repo: z.string().optional().describe('Repository path to index (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ forceReindex, gitDepth }) => {
-        const brainbank = await getBrainBank();
+    async ({ forceReindex, gitDepth, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const result = await brainbank.index({ forceReindex, gitDepth });
 
         const lines = [
@@ -202,10 +221,12 @@ server.registerTool(
     {
         title: 'BrainBank Stats',
         description: 'Get statistics about the indexed knowledge base: file count, code chunks, git commits, HNSW index sizes, and KV collections.',
-        inputSchema: z.object({}),
+        inputSchema: z.object({
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
+        }),
     },
-    async () => {
-        const brainbank = await getBrainBank();
+    async ({ repo }) => {
+        const brainbank = await getBrainBank(repo);
         const s = brainbank.stats();
 
         const lines = [
@@ -261,10 +282,11 @@ server.registerTool(
         inputSchema: z.object({
             filePath: z.string().describe('File path (relative or partial match, e.g. "auth.ts" or "src/core/agent.ts")'),
             limit: z.number().optional().default(20).describe('Max commits to return'),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ filePath, limit }) => {
-        const brainbank = await getBrainBank();
+    async ({ filePath, limit, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const history = await brainbank.fileHistory(filePath, limit);
 
         if (history.length === 0) {
@@ -290,10 +312,11 @@ server.registerTool(
         inputSchema: z.object({
             filePath: z.string().describe('File path to check co-edit relationships for'),
             limit: z.number().optional().default(5).describe('Max co-edit suggestions'),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ filePath, limit }) => {
-        const brainbank = await getBrainBank();
+    async ({ filePath, limit, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const suggestions = brainbank.coEdits(filePath, limit);
 
         if (suggestions.length === 0) {
@@ -321,10 +344,11 @@ server.registerTool(
             query: z.string().describe('Search query — works with both keywords and natural language'),
             codeK: z.number().optional().default(8).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
+            repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ query, codeK, gitK }) => {
-        const brainbank = await getBrainBank();
+    async ({ query, codeK, gitK, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const results = await brainbank.hybridSearch(query, { codeK, gitK });
 
         if (results.length === 0) {
@@ -346,10 +370,11 @@ server.registerTool(
             query: z.string().describe('Keywords to search for'),
             codeK: z.number().optional().default(8).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
+            repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ query, codeK, gitK }) => {
-        const brainbank = await getBrainBank();
+    async ({ query, codeK, gitK, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const results = brainbank.searchBM25(query, { codeK, gitK });
 
         if (results.length === 0) {
@@ -371,10 +396,11 @@ server.registerTool(
             collection: z.string().describe('Collection name (e.g. "errors", "decisions", "context")'),
             content: z.string().describe('Content to store'),
             metadata: z.record(z.any()).optional().default({}).describe('Optional metadata object'),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ collection, content, metadata }) => {
-        const brainbank = await getBrainBank();
+    async ({ collection, content, metadata, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const coll = brainbank.collection(collection);
         const id = await coll.add(content, metadata);
 
@@ -396,10 +422,11 @@ server.registerTool(
             query: z.string().describe('Search query'),
             k: z.number().optional().default(5).describe('Max results'),
             mode: z.enum(['hybrid', 'vector', 'keyword']).optional().default('hybrid').describe('Search mode'),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ collection, query, k, mode }) => {
-        const brainbank = await getBrainBank();
+    async ({ collection, query, k, mode, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const coll = brainbank.collection(collection);
         const results = await coll.search(query, { k, mode: mode as any });
 
@@ -431,10 +458,11 @@ server.registerTool(
         inputSchema: z.object({
             collection: z.string().describe('Collection name'),
             keep: z.number().describe('Number of most recent items to keep'),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ collection, keep }) => {
-        const brainbank = await getBrainBank();
+    async ({ collection, keep, repo }) => {
+        const brainbank = await getBrainBank(repo);
         const coll = brainbank.collection(collection);
         const result = await coll.trim({ keep });
 
