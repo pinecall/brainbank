@@ -177,6 +177,7 @@ export class BrainBank extends EventEmitter {
                 gitVecs: gitMod?.vecCache ?? new Map(),
                 memVecs: memMod?.vecCache ?? new Map(),
                 embedding: this._embedding,
+                reranker: this._config.reranker,
             });
 
             this._bm25 = new BM25Search(this._db);
@@ -217,7 +218,7 @@ export class BrainBank extends EventEmitter {
             throw new Error('BrainBank: Collections HNSW not initialized. Call initialize() first.');
         }
 
-        coll = new Collection(name, this._db, this._embedding, this._kvHnsw, this._kvVecs);
+        coll = new Collection(name, this._db, this._embedding, this._kvHnsw, this._kvVecs, this._config.reranker);
         this._collections.set(name, coll);
         return coll;
     }
@@ -436,7 +437,21 @@ export class BrainBank extends EventEmitter {
         }
 
         if (resultLists.length === 0) return [];
-        return reciprocalRankFusion(resultLists);
+
+        const fused = reciprocalRankFusion(resultLists);
+
+        // Apply re-ranking if available
+        if (this._config.reranker && fused.length > 1) {
+            const documents = fused.map(r => r.content);
+            const scores = await this._config.reranker.rank(query, documents);
+            const blended = fused.map((r, i) => ({
+                ...r,
+                score: 0.6 * r.score + 0.4 * (scores[i] ?? 0),
+            }));
+            return blended.sort((a, b) => b.score - a.score);
+        }
+
+        return fused;
     }
 
     /** BM25 keyword search only (no embeddings needed). */

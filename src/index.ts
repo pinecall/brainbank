@@ -36,6 +36,7 @@ export type { CollectionItem, CollectionSearchOptions } from './core/collection.
 export type {
     BrainBankConfig, ResolvedConfig,
     EmbeddingProvider,
+    Reranker,
     VectorIndex, SearchHit,
     CodeChunk,
     GitCommitRecord,
@@ -50,6 +51,8 @@ export type {
 
 // Embeddings
 export { LocalEmbedding } from './embeddings/local.ts';
+export { OpenAIEmbedding } from './embeddings/openai.ts';
+export type { OpenAIEmbeddingOptions } from './embeddings/openai.ts';
 export { cosineSimilarity, normalize } from './embeddings/math.ts';
 
 // Vector

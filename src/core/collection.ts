@@ -10,7 +10,7 @@
  */
 
 import type { Database } from '../storage/database.ts';
-import type { EmbeddingProvider } from '../types.ts';
+import type { EmbeddingProvider, Reranker } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
 
@@ -39,6 +39,7 @@ export class Collection {
         private _embedding: EmbeddingProvider,
         private _hnsw: HNSWIndex,
         private _vecs: Map<number, Float32Array>,
+        private _reranker?: Reranker,
     ) {}
 
     /** Collection name. */
@@ -101,6 +102,18 @@ export class Collection {
             if (scored.score >= minScore) results.push(scored);
             if (results.length >= k) break;
         }
+
+        // Apply re-ranking if available
+        if (this._reranker && results.length > 1) {
+            const documents = results.map(r => r.content);
+            const scores = await this._reranker.rank(query, documents);
+            const blended = results.map((r, i) => ({
+                ...r,
+                score: 0.6 * (r.score ?? 0) + 0.4 * (scores[i] ?? 0),
+            }));
+            return blended.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        }
+
         return results;
     }
 

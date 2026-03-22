@@ -6,7 +6,7 @@
  */
 
 import type { Database } from '../storage/database.ts';
-import type { EmbeddingProvider, SearchResult } from '../types.ts';
+import type { EmbeddingProvider, Reranker, SearchResult } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { searchMMR } from '../vector/mmr.ts';
 
@@ -19,6 +19,7 @@ export interface SearchDeps {
     gitVecs: Map<number, Float32Array>;
     memVecs: Map<number, Float32Array>;
     embedding: EmbeddingProvider;
+    reranker?: Reranker;
 }
 
 export interface SearchOptions {
@@ -168,6 +169,28 @@ export class UnifiedSearch {
         }
 
         // Sort by score descending
-        return results.sort((a, b) => b.score - a.score);
+        results.sort((a, b) => b.score - a.score);
+
+        // Apply re-ranking if available
+        if (this._deps.reranker && results.length > 1) {
+            return this._rerank(query, results);
+        }
+
+        return results;
+    }
+
+    /** Re-rank results by blending original score with reranker score. */
+    private async _rerank(query: string, results: SearchResult[]): Promise<SearchResult[]> {
+        const reranker = this._deps.reranker!;
+        const documents = results.map(r => r.content);
+        const scores = await reranker.rank(query, documents);
+
+        // Blend: 60% original, 40% reranker
+        const blended = results.map((r, i) => ({
+            ...r,
+            score: 0.6 * r.score + 0.4 * (scores[i] ?? 0),
+        }));
+
+        return blended.sort((a, b) => b.score - a.score);
     }
 }

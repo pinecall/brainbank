@@ -25,6 +25,8 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
   - [Custom Indexers](#custom-indexers)
 - [MCP Server](#mcp-server)
 - [Configuration](#configuration)
+  - [Embedding Providers](#embedding-providers)
+  - [Reranker](#reranker-optional)
 - [Architecture](#architecture)
 
 ---
@@ -329,17 +331,62 @@ brainbank serve
 ## Configuration
 
 ```typescript
+import { BrainBank, OpenAIEmbedding } from 'brainbank';
+
 const brain = new BrainBank({
   repoPath: '.',
   dbPath: '.brainbank/brainbank.db',
   gitDepth: 500,
   maxFileSize: 512_000,
-  maxDiffBytes: 8192,
   embeddingDims: 384,
   maxElements: 2_000_000,
-  embeddingProvider: customProvider,  // default: local WASM
+  embeddingProvider: new OpenAIEmbedding(),  // or: default local WASM
+  reranker: myReranker,                       // optional, improves search quality
 });
 ```
+
+### Embedding Providers
+
+| Provider | Import | Dims | Speed | Cost |
+|----------|--------|------|-------|------|
+| **Local (default)** | built-in | 384 | ⚡ 0ms | Free |
+| **OpenAI** | `OpenAIEmbedding` | 1536 | ~100ms | $0.02/1M tokens |
+
+```typescript
+import { OpenAIEmbedding } from 'brainbank';
+
+// Uses OPENAI_API_KEY env var by default
+new OpenAIEmbedding();
+
+// Custom options
+new OpenAIEmbedding({
+  model: 'text-embedding-3-large',
+  dims: 512,                          // custom dims (text-embedding-3 only)
+  apiKey: 'sk-...',
+  baseUrl: 'https://my-proxy.com/v1/embeddings',  // Azure, proxies
+});
+```
+
+> ⚠️ Switching embedding provider requires re-indexing — vectors are not cross-compatible.
+
+### Reranker (optional)
+
+Improves search quality by using a cross-encoder to evaluate each result against the query. Applied after RRF fusion (60% RRF + 40% reranker score):
+
+```typescript
+import type { Reranker } from 'brainbank';
+
+const myReranker: Reranker = {
+  async rank(query: string, documents: string[]): Promise<number[]> {
+    // Return relevance scores 0.0-1.0 for each document
+    // Example: call an LLM, use a cross-encoder model, etc.
+  },
+};
+
+const brain = new BrainBank({ reranker: myReranker });
+```
+
+Without a reranker, BrainBank uses pure RRF fusion (still good quality).
 
 | Env Variable | Description |
 |-------------|-------------|

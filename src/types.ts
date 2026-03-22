@@ -32,6 +32,8 @@ export interface BrainBankConfig {
     maxElements?: number;
     /** Custom embedding provider (default: local WASM model) */
     embeddingProvider?: EmbeddingProvider;
+    /** Optional reranker for improved search quality */
+    reranker?: Reranker;
 }
 
 export interface ResolvedConfig {
@@ -46,6 +48,7 @@ export interface ResolvedConfig {
     embeddingDims: number;
     maxElements: number;
     embeddingProvider?: EmbeddingProvider;
+    reranker?: Reranker;
 }
 
 // ── Embedding Provider ──────────────────────────────
@@ -59,6 +62,20 @@ export interface EmbeddingProvider {
     embedBatch(texts: string[]): Promise<Float32Array[]>;
     /** Release resources. */
     close(): Promise<void>;
+}
+
+// ── Reranker ────────────────────────────────────────
+
+export interface Reranker {
+    /**
+     * Score each document's relevance to the query.
+     * @param query - The search query
+     * @param documents - Document contents to rank
+     * @returns Relevance scores (0.0 - 1.0) in same order as documents
+     */
+    rank(query: string, documents: string[]): Promise<number[]>;
+    /** Release resources (e.g. unload model). */
+    close?(): Promise<void>;
 }
 
 // ── Vector Index ────────────────────────────────────
