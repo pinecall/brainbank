@@ -291,7 +291,7 @@ export class BrainBank extends EventEmitter {
         onProgress?: ProgressCallback;
     } = {}): Promise<IndexResult> {
         await this.initialize();
-        return this.module('code').index(options);
+        return this.module('code').index!(options);
     }
 
     /** Index only git history. */
@@ -300,7 +300,7 @@ export class BrainBank extends EventEmitter {
         onProgress?: ProgressCallback;
     } = {}): Promise<IndexResult> {
         await this.initialize();
-        return this.module('git').index(options);
+        return this.module('git').index!(options);
     }
 
     // ── Document Collections ────────────────────────
@@ -308,18 +308,18 @@ export class BrainBank extends EventEmitter {
     /** Register a document collection. */
     async addCollection(collection: DocumentCollection): Promise<void> {
         await this.initialize();
-        this.module('docs').addCollection(collection);
+        this.module('docs').addCollection!(collection);
     }
 
     /** Remove a collection and all its indexed data. */
     async removeCollection(name: string): Promise<void> {
         await this.initialize();
-        this.module('docs').removeCollection(name);
+        this.module('docs').removeCollection!(name);
     }
 
     /** List all registered collections. */
     listCollections(): DocumentCollection[] {
-        return this.module('docs').listCollections();
+        return this.module('docs').listCollections!();
     }
 
     /** Index all (or specific) document collections. */
@@ -328,7 +328,7 @@ export class BrainBank extends EventEmitter {
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
     } = {}): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>> {
         await this.initialize();
-        const results = await this.module('docs').indexCollections(options);
+        const results = await this.module('docs').indexCollections!(options);
         this.emit('docsIndexed', results);
         return results;
     }
@@ -340,24 +340,24 @@ export class BrainBank extends EventEmitter {
         minScore?: number;
     }): Promise<SearchResult[]> {
         await this.initialize();
-        return this.module('docs').search(query, options);
+        return this.module('docs').search!(query, options);
     }
 
     // ── Context Metadata ────────────────────────────
 
     /** Add context description for a collection path. */
     addContext(collection: string, path: string, context: string): void {
-        this.module('docs').addContext(collection, path, context);
+        this.module('docs').addContext!(collection, path, context);
     }
 
     /** Remove context for a collection path. */
     removeContext(collection: string, path: string): void {
-        this.module('docs').removeContext(collection, path);
+        this.module('docs').removeContext!(collection, path);
     }
 
     /** List all context entries. */
     listContexts(): { collection: string; path: string; context: string }[] {
-        return this.module('docs').listContexts();
+        return this.module('docs').listContexts!();
     }
 
     // ── Context ─────────────────────────────────────

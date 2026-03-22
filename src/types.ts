@@ -206,7 +206,7 @@ export interface DocumentCollection {
     name: string;
     /** Directory path to index */
     path: string;
-    /** Glob pattern for files. Default: '**/*.md' */
+    /** Glob pattern for files (default: all markdown) */
     pattern?: string;
     /** Glob patterns to ignore */
     ignore?: string[];

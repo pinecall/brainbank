@@ -3,27 +3,51 @@
     "version": "0.1.0",
     "description": "Semantic knowledge bank for AI agents — code indexing, git history, learned patterns, vector search",
     "type": "module",
-    "main": "src/index.ts",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "bin": {
-        "brainbank": "./bin/brainbank"
+        "brainbank": "./dist/cli.js"
     },
     "exports": {
-        ".": "./src/index.ts",
-        "./code": "./src/plugins/code.ts",
-        "./git": "./src/plugins/git.ts",
-        "./docs": "./src/plugins/docs.ts",
-        "./notes": "./src/plugins/notes.ts",
-        "./memory": "./src/plugins/memory.ts"
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        },
+        "./code": {
+            "import": "./dist/code.js",
+            "types": "./dist/code.d.ts"
+        },
+        "./git": {
+            "import": "./dist/git.js",
+            "types": "./dist/git.d.ts"
+        },
+        "./docs": {
+            "import": "./dist/docs.js",
+            "types": "./dist/docs.d.ts"
+        },
+        "./notes": {
+            "import": "./dist/notes.js",
+            "types": "./dist/notes.d.ts"
+        },
+        "./memory": {
+            "import": "./dist/memory.js",
+            "types": "./dist/memory.d.ts"
+        }
     },
     "files": [
-        "src/",
+        "dist/",
+        "bin/",
         "LICENSE",
-        "README.md"
+        "README.md",
+        "docs/"
     ],
     "scripts": {
+        "build": "tsup",
+        "prepublishOnly": "npm run build",
         "test": "node --import tsx test/run.ts",
         "test:integration": "node --import tsx test/run.ts --integration",
-        "test:verbose": "node --import tsx test/run.ts --verbose"
+        "test:verbose": "node --import tsx test/run.ts --verbose",
+        "dev": "tsx src/integrations/cli.ts"
     },
     "engines": {
         "node": ">=18"
@@ -58,6 +82,7 @@
     "devDependencies": {
         "@types/better-sqlite3": "^7.6.13",
         "@types/node": "^22.0.0",
+        "tsup": "^8.4.0",
         "tsx": "^4.19.0",
         "typescript": "^5.7.0"
     }
