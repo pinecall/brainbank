@@ -12,133 +12,150 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 
 ---
 
-## Quick Start
+### Table of Contents
+
+- [Installation](#installation)
+- [CLI](#cli)
+- [Programmatic API](#programmatic-api)
+  - [Indexers](#indexers)
+  - [Collections](#collections)
+  - [Search](#search)
+  - [Document Collections](#document-collections)
+  - [Context Generation](#context-generation)
+  - [Custom Indexers](#custom-indexers)
+- [MCP Server](#mcp-server)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+
+---
+
+## Installation
 
 ```bash
 npm install brainbank
-```
-
-```typescript
-import { BrainBank } from 'brainbank';
-import { code } from 'brainbank/code';
-import { git } from 'brainbank/git';
-
-const brain = new BrainBank({ repoPath: '.' })
-  .use(code())
-  .use(git());
-
-await brain.index();
-const context = await brain.getContext('add rate limiting');
 ```
 
 ---
 
 ## CLI
 
-```bash
-# Indexing
-brainbank index [path]                      # Index code + git
-brainbank collection add <path> --name docs # Add document collection
-brainbank collection list                   # List collections
-brainbank collection remove <name>          # Remove collection
-brainbank docs [--collection <name>]        # Index documents
+BrainBank can be used entirely from the command line — no config file needed.
 
-# Search
+### Indexing
+
+```bash
+brainbank index [path]                      # Index code + git history
+brainbank docs [--collection <name>]        # Index document collections
+```
+
+### Document Collections
+
+```bash
+brainbank collection add <path> --name docs # Register a document folder
+brainbank collection list                   # List registered collections
+brainbank collection remove <name>          # Remove a collection
+```
+
+### Search
+
+```bash
 brainbank search <query>                    # Semantic search (vector)
 brainbank hsearch <query>                   # Hybrid search (best quality)
 brainbank ksearch <query>                   # Keyword search (BM25, instant)
 brainbank dsearch <query>                   # Document search
+```
 
-# Context
-brainbank context <task>                    # Get formatted context
+### Context
+
+```bash
+brainbank context <task>                    # Get formatted context for a task
 brainbank context add <col> <path> <desc>   # Add context metadata
 brainbank context list                      # List context metadata
+```
 
-# KV Store (dynamic collections)
+### KV Store (dynamic collections)
+
+```bash
 brainbank kv add <coll> <content>           # Add item to a collection
 brainbank kv search <coll> <query>          # Search a collection
 brainbank kv list [coll]                    # List collections or items
 brainbank kv trim <coll> --keep <n>         # Keep only N most recent
 brainbank kv clear <coll>                   # Clear all items
+```
 
-# Utility
-brainbank stats                             # Index statistics
+### Utility
+
+```bash
+brainbank stats                             # Show index statistics
 brainbank serve                             # Start MCP server (stdio)
 ```
 
-**Options:** `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`
+**Global options:** `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`
 
 ---
 
-## Indexers
+## Programmatic API
 
-BrainBank uses pluggable indexers. Register only what you need:
+Use BrainBank as a library in your TypeScript/Node.js project.
 
-| Indexer | Import | What it does |
-|---------|--------|--------------|
-| `code` | `brainbank/code` | Language-aware code chunking (30+ languages), HNSW index |
+### Indexers
+
+BrainBank uses pluggable indexers. Register only what you need with `.use()`:
+
+| Indexer | Import | Description |
+|---------|--------|-------------|
+| `code` | `brainbank/code` | Language-aware code chunking (30+ languages) |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
-| `docs` | `brainbank/docs` | Document collections (markdown, wikis), heading-aware chunking |
-
-### Custom indexers
-
-Implement the `Indexer` interface to create your own:
+| `docs` | `brainbank/docs` | Document collections (markdown, wikis) |
 
 ```typescript
-import type { Indexer, IndexerContext } from 'brainbank';
+import { BrainBank } from 'brainbank';
+import { code } from 'brainbank/code';
+import { git } from 'brainbank/git';
+import { docs } from 'brainbank/docs';
 
-const myIndexer: Indexer = {
-  name: 'custom',
-  async initialize(ctx: IndexerContext) {
-    // ctx.db        — shared SQLite database
-    // ctx.embedding — shared embedding provider
-    // ctx.collection('name') — create dynamic collections
-    const store = ctx.collection('my_data');
-    await store.add('indexed content', { source: 'custom' });
-  },
-};
+// Pick only the indexers you need
+const brain = new BrainBank({ repoPath: '.' })
+  .use(code())
+  .use(git())
+  .use(docs());
 
-brain.use(myIndexer);
+// Index code + git (incremental — only processes changes)
+await brain.index();
+
+// Index document collections
+await brain.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
+await brain.indexDocs();
 ```
 
----
+### Collections
 
-## Collections
-
-The universal data primitive. Any indexer or consumer can create collections on the fly:
+The universal data primitive. Store anything, search semantically:
 
 ```typescript
-const coll = brain.collection('decisions');
+const errors = brain.collection('debug_errors');
 
 // Add items (auto-embedded for vector search)
-const id = await coll.add('Use JWT over sessions', { context: 'auth' });
-await coll.addMany([
-  { content: 'Redis for token blacklist', metadata: {} },
-  { content: 'Rate limit at 100 req/min', metadata: {} },
-]);
+await errors.add('Null pointer in api.ts line 42', { file: 'api.ts' });
+await errors.add('Timeout on /users endpoint', { file: 'routes.ts' });
 
-// Search (hybrid: vector + keyword)
-const results = await coll.search('authentication tokens', {
-  k: 5,
-  mode: 'hybrid',      // 'hybrid' | 'vector' | 'keyword'
-  minScore: 0.3,
-});
+// Search (hybrid: vector + keyword by default)
+const hits = await errors.search('null pointer', { k: 5 });
+// → [{ content: 'Null pointer in api.ts...', score: 0.92, metadata: {...} }]
 
 // Manage
-coll.list({ limit: 20 });      // list items
-coll.count();                    // total items
-coll.trim({ keep: 50 });        // keep N most recent
-coll.prune('7d');                // remove older than 7 days
-coll.remove(id);                 // remove specific item
-coll.clear();                    // remove all
+errors.list({ limit: 20 });     // list items
+errors.count();                   // total items
+errors.trim({ keep: 50 });       // keep N most recent
+errors.prune('7d');               // remove older than 7 days
+errors.remove(id);                // remove by id
+errors.clear();                   // remove all
 
-// List all collections
-brain.listCollectionNames();     // → ['decisions', 'errors', ...]
+// List all collection names
+brain.listCollectionNames();      // → ['debug_errors', 'decisions', ...]
 ```
 
----
-
-## Search
+### Search
 
 Three modes, from fastest to best quality:
 
@@ -146,22 +163,16 @@ Three modes, from fastest to best quality:
 |------|--------|-------|---------|
 | Keyword | `searchBM25(q)` | ⚡ instant | Good for exact terms |
 | Vector | `search(q)` | ~50ms | Good for concepts |
-| Hybrid | `hybridSearch(q)` | ~100ms | **Best** — catches both |
+| **Hybrid** | `hybridSearch(q)` | ~100ms | **Best — catches both** |
 
 ```typescript
-// Hybrid search (recommended)
+// Hybrid search (recommended default)
 const results = await brain.hybridSearch('authentication middleware');
 
-// Vector search with options
-const results = await brain.search('JWT validation', {
-  codeK: 10,
-  gitK: 5,
-  useMMR: true,  // diversity via Maximal Marginal Relevance
-});
-
-// Code-only or commit-only
+// Scoped search
 const codeHits = await brain.searchCode('parse JSON config', 8);
 const commitHits = await brain.searchCommits('fix auth bug', 5);
+const docHits = await brain.searchDocs('getting started', { collection: 'wiki' });
 ```
 
 | Score | Meaning |
@@ -171,9 +182,7 @@ const commitHits = await brain.searchCommits('fix auth bug', 5);
 | 0.3–0.5 | Somewhat related |
 | < 0.3 | Weak match |
 
----
-
-## Document Collections
+### Document Collections
 
 Register folders of documents. Files are chunked by heading structure:
 
@@ -188,16 +197,14 @@ await brain.addCollection({
 
 await brain.indexDocs();
 
-const results = await brain.searchDocs('authentication', { collection: 'docs', k: 5 });
-
-// Context metadata (helps LLM understand what documents are about)
+// Add context metadata (helps LLM understand what documents are about)
 brain.addContext('docs', '/api', 'REST API reference');
 brain.addContext('docs', '/guides', 'Step-by-step tutorials');
 ```
 
----
+### Context Generation
 
-## Context Generation
+Get formatted markdown ready for system prompt injection:
 
 ```typescript
 const context = await brain.getContext('add rate limiting to the API', {
@@ -206,14 +213,35 @@ const context = await brain.getContext('add rate limiting to the API', {
   affectedFiles: ['src/api/routes.ts'],
   useMMR: true,
 });
-// Returns markdown: ## Relevant Code, ## Git History, ## Relevant Documents
+// Returns: ## Relevant Code, ## Git History, ## Relevant Documents
+```
+
+### Custom Indexers
+
+Implement the `Indexer` interface to build your own:
+
+```typescript
+import type { Indexer, IndexerContext } from 'brainbank';
+
+const myIndexer: Indexer = {
+  name: 'custom',
+  async initialize(ctx: IndexerContext) {
+    // ctx.db            — shared SQLite database
+    // ctx.embedding     — shared embedding provider
+    // ctx.collection()  — create dynamic collections
+    const store = ctx.collection('my_data');
+    await store.add('indexed content', { source: 'custom' });
+  },
+};
+
+brain.use(myIndexer);
 ```
 
 ---
 
 ## MCP Server
 
-BrainBank ships with an MCP server (stdio transport) for AI tool integration:
+BrainBank ships with an MCP server (stdio) for AI tool integration:
 
 ```bash
 brainbank serve
@@ -233,8 +261,8 @@ brainbank serve
 
 | Tool | Description |
 |------|-------------|
-| `brainbank_search` | Semantic vector search |
 | `brainbank_hybrid_search` | Best quality: vector + BM25 fused |
+| `brainbank_search` | Semantic vector search |
 | `brainbank_keyword_search` | Instant BM25 full-text |
 | `brainbank_context` | Formatted context for a task |
 | `brainbank_index` | Trigger code/git indexing |
@@ -258,9 +286,6 @@ const brain = new BrainBank({
   maxDiffBytes: 8192,
   embeddingDims: 384,
   maxElements: 2_000_000,
-  hnswM: 16,
-  hnswEfConstruction: 200,
-  hnswEfSearch: 50,
   embeddingProvider: customProvider,  // default: local WASM
 });
 ```
@@ -306,52 +331,11 @@ const brain = new BrainBank({
 
 ### Data Flow
 
-1. **Index** — Code/Git/Doc indexers parse files into chunks
+1. **Index** — Indexers parse files into chunks
 2. **Embed** — Each chunk gets a 384-dim vector (local WASM)
 3. **Store** — Chunks + vectors → SQLite, vectors → HNSW index
-4. **Search** — Query vector → HNSW k-NN + BM25 keyword → RRF fusion
+4. **Search** — Query → HNSW k-NN + BM25 keyword → RRF fusion
 5. **Context** — Top results formatted as markdown for system prompts
-
-### Storage Schema
-
-| Table | What it stores |
-|-------|---------------|
-| `code_chunks` / `code_vectors` | Source code chunks and embeddings |
-| `git_commits` / `git_vectors` | Commit metadata, diffs, embeddings |
-| `commit_files` / `co_edits` | Files per commit, co-edit relationships |
-| `doc_chunks` / `doc_vectors` | Document chunks and embeddings |
-| `collections` / `path_contexts` | Registered doc collections, context metadata |
-| `kv_data` / `kv_vectors` / `fts_kv` | Dynamic collection items, embeddings, FTS |
-
----
-
-## Project Structure
-
-```
-brainbank/
-├── src/
-│   ├── core/
-│   │   ├── brainbank.ts       # Main orchestrator (.use() builder)
-│   │   ├── collection.ts      # Dynamic collection primitive
-│   │   ├── config.ts          # Config defaults + resolver
-│   │   └── schema.ts          # SQLite schema
-│   ├── modules/
-│   │   ├── types.ts           # Indexer / IndexerContext interfaces
-│   │   ├── code.ts            # Code indexer
-│   │   ├── git.ts             # Git history indexer
-│   │   └── docs.ts            # Document collections indexer
-│   ├── embeddings/            # Local WASM embedding provider
-│   ├── indexers/              # Code chunker, git parser, doc parser
-│   ├── memory/                # Pattern store, consolidator, note store
-│   ├── query/                 # UnifiedSearch, BM25, RRF, context builder
-│   ├── storage/               # SQLite database wrapper
-│   ├── vector/                # HNSW index + MMR
-│   ├── integrations/          # CLI, MCP server
-│   └── index.ts               # Public API barrel
-├── test/
-│   └── unit/                  # 96 unit tests
-└── package.json
-```
 
 ---
 
