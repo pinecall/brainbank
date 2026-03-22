@@ -11,6 +11,8 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - **Portable** — single `.brainbank/brainbank.db` file
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 
+![BrainBank Architecture](docs/architecture.png)
+
 ---
 
 ### Table of Contents
@@ -630,6 +632,9 @@ brainbank reembed
 
 ## Architecture
 
+<details>
+<summary>Text version</summary>
+
 ```
 ┌──────────────────────────────────────────────────────┐
 │                   BrainBank Core                     │
@@ -661,6 +666,7 @@ brainbank reembed
 │  └──────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────┘
 ```
+</details>
 
 ### Search Pipeline
 
