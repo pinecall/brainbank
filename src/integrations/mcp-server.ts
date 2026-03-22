@@ -34,6 +34,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod/v3';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { BrainBank } from '../core/brainbank.ts';
 import { code } from '../plugins/code.ts';
 import { git } from '../plugins/git.ts';
@@ -41,8 +43,22 @@ import { docs } from '../plugins/docs.ts';
 
 // ── Configuration from env ──────────────────────────
 
-const repoPath = process.env.BRAINBANK_REPO || process.env.REPO_PATH || process.cwd();
-const dbPath = process.env.BRAINBANK_DB || undefined;
+/**
+ * Detect repo root by walking up from startDir until we find `.git/`.
+ * Returns startDir itself if no `.git/` is found (mono-repo or non-git project).
+ */
+function findRepoRoot(startDir: string): string {
+    let dir = path.resolve(startDir);
+    while (true) {
+        if (fs.existsSync(path.join(dir, '.git'))) return dir;
+        const parent = path.dirname(dir);
+        if (parent === dir) break; // filesystem root
+        dir = parent;
+    }
+    return path.resolve(startDir); // fallback: use startDir as-is
+}
+
+const repoPath = process.env.BRAINBANK_REPO || findRepoRoot(process.cwd());
 
 // ── Lazy BrainBank Instance ────────────────────────────
 
@@ -50,10 +66,7 @@ let _brainbank: BrainBank | null = null;
 
 async function getBrainBank(): Promise<BrainBank> {
     if (!_brainbank) {
-        _brainbank = new BrainBank({
-            repoPath,
-            ...(dbPath ? { dbPath } : {}),
-        })
+        _brainbank = new BrainBank({ repoPath })
             .use(code({ repoPath }))
             .use(git({ repoPath }))
             .use(docs());
