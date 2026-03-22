@@ -86,9 +86,9 @@ interface BrainBankCliConfig {
 }
 
 const CONFIG_NAMES = [
-    'brainbank.config.ts',
-    'brainbank.config.js',
-    'brainbank.config.mjs',
+    'config.ts',
+    'config.js',
+    'config.mjs',
 ];
 
 const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
@@ -96,22 +96,22 @@ const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
 let _configCache: BrainBankCliConfig | null | undefined = undefined;
 let _folderIndexersCache: Indexer[] | undefined = undefined;
 
-/** Load brainbank.config.ts if present. */
+/** Load .brainbank/config.ts if present. */
 async function loadConfig(): Promise<BrainBankCliConfig | null> {
     if (_configCache !== undefined) return _configCache;
 
     const repoPath = getFlag('repo') ?? '.';
-    const root = path.resolve(repoPath);
+    const brainbankDir = path.resolve(repoPath, '.brainbank');
 
     for (const name of CONFIG_NAMES) {
-        const configPath = path.join(root, name);
+        const configPath = path.join(brainbankDir, name);
         if (fs.existsSync(configPath)) {
             try {
                 const mod = await import(configPath);
                 _configCache = (mod.default ?? mod) as BrainBankCliConfig;
                 return _configCache;
             } catch (err: any) {
-                console.error(c.red(`Error loading ${name}: ${err.message}`));
+                console.error(c.red(`Error loading .brainbank/${name}: ${err.message}`));
                 process.exit(1);
             }
         }

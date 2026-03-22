@@ -372,16 +372,27 @@ brainbank kv search slack_messages "deploy"  # search slack data
 
 #### Advanced: config file
 
-For fine-grained control, create a `brainbank.config.ts` in your project root:
+For fine-grained control, create a `.brainbank/config.ts`:
 
 ```typescript
-// brainbank.config.ts
+// .brainbank/config.ts
 export default {
   builtins: ['code', 'docs'],   // exclude git (default: all three)
   brainbank: {                   // BrainBank constructor options
-    dbPath: '.data/brain.db',
+    dbPath: '.brainbank/brain.db',
   },
 };
+```
+
+Everything lives in `.brainbank/` — DB, config, and custom indexers:
+
+```
+.brainbank/
+├── brainbank.db        # SQLite database (auto-created)
+├── config.ts           # Optional project config
+└── indexers/           # Optional custom indexer files
+    ├── slack.ts
+    └── jira.ts
 ```
 
 No folder and no config file? The CLI uses the built-in indexers (`code`, `git`, `docs`).
