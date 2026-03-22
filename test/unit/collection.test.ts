@@ -2,13 +2,13 @@
  * BrainBank — Collection Tests
  */
 
+import { BrainBank, Database, mockEmbedding, tmpDb } from '../helpers.ts';
+
 export const name = 'Collections';
 
 export const tests = {
     async 'kv tables exist'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const path = `/tmp/brainbank-kv-schema-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('kv-schema'));
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'kv_%'"
@@ -27,17 +27,7 @@ export const tests = {
     },
 
     async 'add stores item and returns id'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const path = `/tmp/brainbank-coll-add-${Date.now()}.db`;
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const brain = new BrainBank({ dbPath: path, embeddingProvider: embedding, embeddingDims: 384 });
+        const brain = new BrainBank({ dbPath: tmpDb('coll-add'), embeddingProvider: mockEmbedding(), embeddingDims: 384 });
         await brain.initialize();
 
         const errors = brain.collection('errors');
@@ -56,17 +46,7 @@ export const tests = {
     },
 
     async 'search finds items by keyword'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const path = `/tmp/brainbank-coll-search-${Date.now()}.db`;
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const brain = new BrainBank({ dbPath: path, embeddingProvider: embedding, embeddingDims: 384 });
+        const brain = new BrainBank({ dbPath: tmpDb('coll-search'), embeddingProvider: mockEmbedding(), embeddingDims: 384 });
         await brain.initialize();
 
         const kb = brain.collection('knowledge');
@@ -81,17 +61,7 @@ export const tests = {
     },
 
     async 'collections are isolated'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const path = `/tmp/brainbank-coll-isolated-${Date.now()}.db`;
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const brain = new BrainBank({ dbPath: path, embeddingProvider: embedding, embeddingDims: 384 });
+        const brain = new BrainBank({ dbPath: tmpDb('coll-isolated'), embeddingProvider: mockEmbedding(), embeddingDims: 384 });
         await brain.initialize();
 
         const errors = brain.collection('errors');
@@ -111,17 +81,7 @@ export const tests = {
     },
 
     async 'trim keeps only N most recent'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const path = `/tmp/brainbank-coll-trim-${Date.now()}.db`;
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const brain = new BrainBank({ dbPath: path, embeddingProvider: embedding, embeddingDims: 384 });
+        const brain = new BrainBank({ dbPath: tmpDb('coll-trim'), embeddingProvider: mockEmbedding(), embeddingDims: 384 });
         await brain.initialize();
 
         const turns = brain.collection('turns');
@@ -143,17 +103,7 @@ export const tests = {
     },
 
     async 'clear removes all items'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const path = `/tmp/brainbank-coll-clear-${Date.now()}.db`;
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const brain = new BrainBank({ dbPath: path, embeddingProvider: embedding, embeddingDims: 384 });
+        const brain = new BrainBank({ dbPath: tmpDb('coll-clear'), embeddingProvider: mockEmbedding(), embeddingDims: 384 });
         await brain.initialize();
 
         const kb = brain.collection('kb');
@@ -168,17 +118,7 @@ export const tests = {
     },
 
     async 'remove deletes specific item'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const path = `/tmp/brainbank-coll-remove-${Date.now()}.db`;
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const brain = new BrainBank({ dbPath: path, embeddingProvider: embedding, embeddingDims: 384 });
+        const brain = new BrainBank({ dbPath: tmpDb('coll-remove'), embeddingProvider: mockEmbedding(), embeddingDims: 384 });
         await brain.initialize();
 
         const kb = brain.collection('kb');
@@ -194,17 +134,7 @@ export const tests = {
     },
 
     async 'addMany stores multiple items'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const path = `/tmp/brainbank-coll-addmany-${Date.now()}.db`;
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const brain = new BrainBank({ dbPath: path, embeddingProvider: embedding, embeddingDims: 384 });
+        const brain = new BrainBank({ dbPath: tmpDb('coll-addmany'), embeddingProvider: mockEmbedding(), embeddingDims: 384 });
         await brain.initialize();
 
         const kb = brain.collection('kb');
@@ -221,9 +151,7 @@ export const tests = {
     },
 
     async 'FTS trigger auto-syncs kv on insert'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const path = `/tmp/brainbank-kv-fts-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('kv-fts'));
 
         db.prepare(`
             INSERT INTO kv_data (collection, content, meta_json)

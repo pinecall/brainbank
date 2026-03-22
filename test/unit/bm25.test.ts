@@ -2,18 +2,16 @@
  * BrainBank — BM25 + FTS5 Tests
  */
 
+import { Database, BM25Search, SCHEMA_VERSION, tmpDb } from '../helpers.ts';
+
 export const name = 'BM25 Full-Text Search';
 
 export const tests = {
     async 'FTS5 tables are created with schema v4'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { SCHEMA_VERSION } = await import('../../src/core/schema.ts');
-        const path = `/tmp/brainbank-bm25-test-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('bm25-test'));
 
         assert.equal(SCHEMA_VERSION, 4);
 
-        // Check FTS tables exist
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_%'"
         ).all() as any[];
@@ -29,17 +27,13 @@ export const tests = {
     },
 
     async 'FTS5 triggers auto-sync on insert'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const path = `/tmp/brainbank-bm25-sync-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('bm25-sync'));
 
-        // Insert a code chunk
         db.prepare(`
             INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
             VALUES ('src/auth.ts', 'function', 'validateToken', 1, 20, 'async function validateToken(jwt: string) { return verify(jwt); }', 'typescript', 'abc123')
         `).run();
 
-        // Search FTS — should find it via trigger
         const results = db.prepare(
             "SELECT rowid, bm25(fts_code) AS score FROM fts_code WHERE fts_code MATCH '\"validateToken\"'"
         ).all() as any[];
@@ -51,12 +45,8 @@ export const tests = {
     },
 
     async 'BM25Search finds code by keyword'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { BM25Search } = await import('../../src/query/bm25.ts');
-        const path = `/tmp/brainbank-bm25-search-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('bm25-search'));
 
-        // Insert test data
         db.prepare(`
             INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
             VALUES ('src/auth.ts', 'function', 'authenticate', 1, 15,
@@ -81,10 +71,7 @@ export const tests = {
     },
 
     async 'BM25Search finds git commits'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { BM25Search } = await import('../../src/query/bm25.ts');
-        const path = `/tmp/brainbank-bm25-git-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('bm25-git'));
 
         db.prepare(`
             INSERT INTO git_commits (hash, short_hash, message, author, date, timestamp, files_json, diff, is_merge)
@@ -102,10 +89,7 @@ export const tests = {
     },
 
     async 'BM25Search finds memory patterns'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { BM25Search } = await import('../../src/query/bm25.ts');
-        const path = `/tmp/brainbank-bm25-mem-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('bm25-mem'));
 
         db.prepare(`
             INSERT INTO memory_patterns (task_type, task, approach, outcome, success_rate)
@@ -122,35 +106,24 @@ export const tests = {
     },
 
     async 'BM25 returns empty for no matches'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { BM25Search } = await import('../../src/query/bm25.ts');
-        const path = `/tmp/brainbank-bm25-empty-${Date.now()}.db`;
-        const db = new Database(path);
-
+        const db = new Database(tmpDb('bm25-empty'));
         const bm25 = new BM25Search(db);
         const results = bm25.search('xyznonexistentterm');
 
         assert.equal(results.length, 0);
-
         db.close();
     },
 
     async 'BM25 sanitizes dangerous queries'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { BM25Search } = await import('../../src/query/bm25.ts');
-        const path = `/tmp/brainbank-bm25-sanitize-${Date.now()}.db`;
-        const db = new Database(path);
-
+        const db = new Database(tmpDb('bm25-sanitize'));
         const bm25 = new BM25Search(db);
 
-        // These should not throw
         bm25.search('test AND OR NOT');
         bm25.search('test {brackets} [square]');
         bm25.search('test^power ~fuzzy');
         const empty = bm25.search('');
 
         assert.equal(empty.length, 0);
-
         db.close();
     },
 };

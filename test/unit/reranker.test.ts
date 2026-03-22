@@ -4,12 +4,12 @@
  * Tests the pluggable reranker integration with a mock reranker.
  */
 
+import { BrainBank, mockEmbedding, tmpDb } from '../helpers.ts';
+
 export const name = 'Reranker';
 
 export const tests = {
     async 'Reranker interface accepted in config'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
         const mockReranker = {
             async rank(_query: string, docs: string[]) {
                 return docs.map(() => 0.5);
@@ -17,13 +17,8 @@ export const tests = {
         };
 
         const brain = new BrainBank({
-            dbPath: `/tmp/brainbank-reranker-config-${Date.now()}.db`,
-            embeddingProvider: {
-                dims: 384,
-                async embed(_: string) { return new Float32Array(384).fill(0.1); },
-                async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-                async close() {},
-            },
+            dbPath: tmpDb('reranker-config'),
+            embeddingProvider: mockEmbedding(),
             reranker: mockReranker,
         });
 
@@ -33,27 +28,17 @@ export const tests = {
     },
 
     async 'Collection search uses reranker when provided'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
         let rankCalled = false;
         const mockReranker = {
             async rank(_query: string, docs: string[]) {
                 rankCalled = true;
-                // Reverse the order — make last doc score highest
                 return docs.map((_, i) => i / docs.length);
             },
         };
 
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
         const brain = new BrainBank({
-            dbPath: `/tmp/brainbank-reranker-coll-${Date.now()}.db`,
-            embeddingProvider: embedding,
+            dbPath: tmpDb('reranker-coll'),
+            embeddingProvider: mockEmbedding(),
             reranker: mockReranker,
         });
         await brain.initialize();
@@ -63,10 +48,6 @@ export const tests = {
         await kb.add('Second document about auth tokens');
         await kb.add('Third document about JWT validation');
 
-        const hits = await kb.search('auth', { mode: 'keyword', minScore: 0 });
-
-        // In keyword-only mode, reranker is NOT applied (only on hybrid)
-        // So let's test hybrid mode
         const hybridHits = await kb.search('auth', { mode: 'hybrid', minScore: 0 });
 
         if (hybridHits.length > 1) {
@@ -77,19 +58,9 @@ export const tests = {
     },
 
     async 'No reranker means pure RRF scores'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        // No reranker
         const brain = new BrainBank({
-            dbPath: `/tmp/brainbank-no-reranker-${Date.now()}.db`,
-            embeddingProvider: embedding,
+            dbPath: tmpDb('no-reranker'),
+            embeddingProvider: mockEmbedding(),
         });
         await brain.initialize();
 
@@ -97,7 +68,6 @@ export const tests = {
         await kb.add('Auth document one');
         await kb.add('Auth document two');
 
-        // Should work fine without reranker
         const hits = await kb.search('auth', { mode: 'hybrid', minScore: 0 });
         assert(hits.length >= 0, 'should return results without reranker');
 
@@ -105,28 +75,18 @@ export const tests = {
     },
 
     async 'Reranker blends scores 60/40'(assert: any) {
-        const { BrainBank } = await import('../../src/core/brainbank.ts');
-
         const rerankerScores: number[] = [];
         const mockReranker = {
             async rank(_query: string, docs: string[]) {
-                // Give all docs a reranker score of 1.0
                 const scores = docs.map(() => 1.0);
                 rerankerScores.push(...scores);
                 return scores;
             },
         };
 
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
         const brain = new BrainBank({
-            dbPath: `/tmp/brainbank-reranker-blend-${Date.now()}.db`,
-            embeddingProvider: embedding,
+            dbPath: tmpDb('reranker-blend'),
+            embeddingProvider: mockEmbedding(),
             reranker: mockReranker,
         });
         await brain.initialize();
@@ -138,9 +98,6 @@ export const tests = {
         const hits = await kb.search('testing', { mode: 'hybrid', minScore: 0 });
 
         if (hits.length > 1 && rerankerScores.length > 0) {
-            // With reranker score = 1.0, final score should be:
-            // 0.6 * original + 0.4 * 1.0 = original * 0.6 + 0.4
-            // So score should be higher than the original RRF score alone
             for (const hit of hits) {
                 assert((hit.score ?? 0) >= 0.4, `score ${hit.score} should be >= 0.4 with reranker boost`);
             }
@@ -160,7 +117,6 @@ export const tests = {
             },
         };
 
-        // Verify the interface allows close
         assert(typeof mockReranker.rank === 'function', 'rank should be a function');
         assert(typeof mockReranker.close === 'function', 'close should be optional function');
 

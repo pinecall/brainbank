@@ -4,45 +4,35 @@
  * Tests the OpenAI embedding provider with mocked fetch.
  */
 
+import { OpenAIEmbedding } from '../helpers.ts';
+
 export const name = 'OpenAI Embedding';
 
 export const tests = {
     async 'constructs with defaults'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
         const provider = new OpenAIEmbedding({ apiKey: 'sk-test' });
-
         assert.equal(provider.dims, 1536);
     },
 
     async 'respects custom model and dims'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
-
         const provider = new OpenAIEmbedding({
             apiKey: 'sk-test',
             model: 'text-embedding-3-small',
             dims: 512,
         });
-
         assert.equal(provider.dims, 512);
     },
 
     async 'ada-002 ignores custom dims'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
-
         const provider = new OpenAIEmbedding({
             apiKey: 'sk-test',
             model: 'text-embedding-ada-002',
-            dims: 512,  // ada doesn't support custom dims
+            dims: 512,
         });
-
-        // Should use the explicitly passed dims as-is
         assert.equal(provider.dims, 512);
     },
 
     async 'throws without API key'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
-
-        // Remove env var temporarily
         const original = process.env.OPENAI_API_KEY;
         delete process.env.OPENAI_API_KEY;
 
@@ -57,22 +47,14 @@ export const tests = {
         }
         assert(threw, 'should throw without API key');
 
-        // Restore
         if (original) process.env.OPENAI_API_KEY = original;
     },
 
     async 'embed calls fetch and returns Float32Array'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
-
         const fakeEmbedding = Array.from({ length: 8 }, (_, i) => i * 0.1);
-
-        // Mock fetch
         const originalFetch = globalThis.fetch;
-        globalThis.fetch = async (_url: any, _opts: any) => {
-            return new Response(JSON.stringify({
-                data: [{ embedding: fakeEmbedding, index: 0 }],
-            }), { status: 200 });
-        };
+        globalThis.fetch = async () =>
+            new Response(JSON.stringify({ data: [{ embedding: fakeEmbedding, index: 0 }] }), { status: 200 });
 
         try {
             const provider = new OpenAIEmbedding({ apiKey: 'sk-test', dims: 8 });
@@ -87,14 +69,12 @@ export const tests = {
     },
 
     async 'embedBatch handles multiple texts'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
-
         let callCount = 0;
         const originalFetch = globalThis.fetch;
         globalThis.fetch = async (_url: any, opts: any) => {
             callCount++;
             const body = JSON.parse(opts.body);
-            const data = body.input.map((text: string, i: number) => ({
+            const data = body.input.map((_: string, i: number) => ({
                 embedding: Array.from({ length: 4 }, () => i * 0.1),
                 index: i,
             }));
@@ -114,21 +94,15 @@ export const tests = {
     },
 
     async 'embedBatch returns empty for empty input'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
-
         const provider = new OpenAIEmbedding({ apiKey: 'sk-test' });
         const results = await provider.embedBatch([]);
-
         assert.equal(results.length, 0);
     },
 
     async 'handles API error gracefully'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
-
         const originalFetch = globalThis.fetch;
-        globalThis.fetch = async () => {
-            return new Response('{"error": {"message": "Rate limit exceeded"}}', { status: 429 });
-        };
+        globalThis.fetch = async () =>
+            new Response('{"error": {"message": "Rate limit exceeded"}}', { status: 429 });
 
         try {
             const provider = new OpenAIEmbedding({ apiKey: 'sk-test' });
@@ -146,10 +120,7 @@ export const tests = {
     },
 
     async 'close is a no-op'(assert: any) {
-        const { OpenAIEmbedding } = await import('../../src/embeddings/openai.ts');
         const provider = new OpenAIEmbedding({ apiKey: 'sk-test' });
-
-        // Should not throw
         await provider.close();
         assert(true, 'close should succeed');
     },

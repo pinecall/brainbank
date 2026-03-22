@@ -2,13 +2,21 @@
  * BrainBank — Note Memory Tests
  */
 
+import { Database, NoteStore, HNSWIndex, mockEmbedding, tmpDb } from '../helpers.ts';
+
 export const name = 'Note Memory';
+
+async function createNoteStore(label: string) {
+    const db = new Database(tmpDb(label));
+    const hnsw = await new HNSWIndex(384, 1000).init();
+    const vecs = new Map<number, Float32Array>();
+    const store = new NoteStore(db, mockEmbedding(), hnsw, vecs);
+    return { db, store };
+}
 
 export const tests = {
     async 'note_memories table exists'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const path = `/tmp/brainbank-note-schema-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('note-schema'));
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%note%'"
@@ -18,7 +26,6 @@ export const tests = {
         assert(names.includes('note_memories'), 'note_memories should exist');
         assert(names.includes('note_vectors'), 'note_vectors should exist');
 
-        // FTS table
         const fts = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name = 'fts_notes'"
         ).all() as any[];
@@ -28,24 +35,7 @@ export const tests = {
     },
 
     async 'remember stores a digest and returns id'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { NoteStore } = await import('../../src/memory/note-store.ts');
-        const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
-
-        const path = `/tmp/brainbank-note-remember-${Date.now()}.db`;
-        const db = new Database(path);
-        const hnsw = await new HNSWIndex(384, 1000).init();
-        const vecs = new Map<number, Float32Array>();
-
-        // Mock embedding
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const store = new NoteStore(db, embedding, hnsw, vecs);
+        const { db, store } = await createNoteStore('note-remember');
 
         const id = await store.remember({
             title: 'Added BM25 search',
@@ -58,13 +48,11 @@ export const tests = {
 
         assert(id > 0, 'should return positive id');
 
-        // Verify stored in DB
         const row = db.prepare('SELECT * FROM note_memories WHERE id = ?').get(id) as any;
         assert.equal(row.title, 'Added BM25 search');
         assert.equal(row.tier, 'short');
         assert.includes(row.decisions_json, 'FTS5');
 
-        // Verify vector stored
         const vec = db.prepare('SELECT * FROM note_vectors WHERE note_id = ?').get(id) as any;
         assert(vec, 'vector should be stored');
 
@@ -72,23 +60,7 @@ export const tests = {
     },
 
     async 'recall finds notes by keyword'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { NoteStore } = await import('../../src/memory/note-store.ts');
-        const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
-
-        const path = `/tmp/brainbank-note-recall-${Date.now()}.db`;
-        const db = new Database(path);
-        const hnsw = await new HNSWIndex(384, 1000).init();
-        const vecs = new Map<number, Float32Array>();
-
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const store = new NoteStore(db, embedding, hnsw, vecs);
+        const { db, store } = await createNoteStore('note-recall');
 
         await store.remember({
             title: 'Refactored authentication module',
@@ -103,7 +75,6 @@ export const tests = {
             tags: ['database', 'performance'],
         });
 
-        // Keyword search for auth
         const results = await store.recall('authentication middleware', { mode: 'keyword', minScore: 0 });
         assert(results.length > 0, 'should find auth-related note');
         assert.equal(results[0].title, 'Refactored authentication module');
@@ -112,23 +83,7 @@ export const tests = {
     },
 
     async 'list returns recent notes in order'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { NoteStore } = await import('../../src/memory/note-store.ts');
-        const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
-
-        const path = `/tmp/brainbank-note-list-${Date.now()}.db`;
-        const db = new Database(path);
-        const hnsw = await new HNSWIndex(384, 1000).init();
-        const vecs = new Map<number, Float32Array>();
-
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const store = new NoteStore(db, embedding, hnsw, vecs);
+        const { db, store } = await createNoteStore('note-list');
 
         await store.remember({ title: 'First', summary: 'First note' });
         await store.remember({ title: 'Second', summary: 'Second note' });
@@ -136,30 +91,13 @@ export const tests = {
 
         const all = store.list(10);
         assert.equal(all.length, 3);
-        // Most recent first
         assert.equal(all[0].title, 'Third');
 
         db.close();
     },
 
     async 'count returns correct totals'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { NoteStore } = await import('../../src/memory/note-store.ts');
-        const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
-
-        const path = `/tmp/brainbank-note-count-${Date.now()}.db`;
-        const db = new Database(path);
-        const hnsw = await new HNSWIndex(384, 1000).init();
-        const vecs = new Map<number, Float32Array>();
-
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const store = new NoteStore(db, embedding, hnsw, vecs);
+        const { db, store } = await createNoteStore('note-count');
 
         const before = store.count();
         assert.equal(before.total, 0);
@@ -176,25 +114,8 @@ export const tests = {
     },
 
     async 'consolidate promotes old notes to long tier'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const { NoteStore } = await import('../../src/memory/note-store.ts');
-        const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
+        const { db, store } = await createNoteStore('note-consolidate');
 
-        const path = `/tmp/brainbank-note-consolidate-${Date.now()}.db`;
-        const db = new Database(path);
-        const hnsw = await new HNSWIndex(384, 1000).init();
-        const vecs = new Map<number, Float32Array>();
-
-        const embedding = {
-            dims: 384,
-            async embed(_: string) { return new Float32Array(384).fill(0.1); },
-            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.1)); },
-            async close() {},
-        };
-
-        const store = new NoteStore(db, embedding, hnsw, vecs);
-
-        // Add 5 notes
         for (let i = 0; i < 5; i++) {
             await store.remember({
                 title: `Note ${i}`,
@@ -204,7 +125,6 @@ export const tests = {
             });
         }
 
-        // Consolidate, keeping only 2 recent
         const result = store.consolidate(2);
         assert.equal(result.promoted, 3);
 
@@ -212,7 +132,6 @@ export const tests = {
         assert.equal(counts.short, 2);
         assert.equal(counts.long, 3);
 
-        // Long-tier notes should have fields cleared
         const longNotes = store.list(10, 'long');
         assert.equal(longNotes[0].filesChanged?.length, 0);
         assert.equal(longNotes[0].openQuestions?.length, 0);
@@ -221,9 +140,7 @@ export const tests = {
     },
 
     async 'FTS trigger auto-syncs on insert'(assert: any) {
-        const { Database } = await import('../../src/storage/database.ts');
-        const path = `/tmp/brainbank-note-fts-${Date.now()}.db`;
-        const db = new Database(path);
+        const db = new Database(tmpDb('note-fts'));
 
         db.prepare(`
             INSERT INTO note_memories (title, summary, decisions_json, tags_json)
