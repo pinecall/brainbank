@@ -632,7 +632,7 @@ Final results (sorted by blended score)
 ## Testing
 
 ```bash
-npm test                    # Unit tests (122 tests)
+npm test                    # Unit tests (129 tests)
 npm test -- --integration   # Include integration tests (downloads model)
 npm test -- --filter bm25   # Filter by test name
 npm test -- --verbose       # Show assertion details
@@ -660,7 +660,8 @@ test/
     ├── reranker.test.ts    # Pluggable reranker integration
     ├── rrf.test.ts         # Reciprocal Rank Fusion
     ├── schema.test.ts      # SQLite schema & migrations
-    └── tags-ttl.test.ts    # Tags, TTL & schema migrations
+    ├── tags-ttl.test.ts    # Tags, TTL & schema columns
+    └── watch.test.ts       # Watch mode & custom indexer routing
 ```
 
 All test files import from `test/helpers.ts` which centralizes shared modules and provides:
