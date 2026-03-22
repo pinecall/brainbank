@@ -72,7 +72,7 @@ function hasFlag(name: string): boolean {
     return args.includes(`--${name}`);
 }
 
-// ── Config File Discovery ───────────────────────────
+// ── Indexer Discovery ───────────────────────────────
 
 interface BrainBankCliConfig {
     /** Custom indexers to register alongside built-in ones. */
@@ -89,8 +89,12 @@ const CONFIG_NAMES = [
     'brainbank.config.mjs',
 ];
 
-let _configCache: BrainBankCliConfig | null | undefined = undefined;
+const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
 
+let _configCache: BrainBankCliConfig | null | undefined = undefined;
+let _folderIndexersCache: Indexer[] | undefined = undefined;
+
+/** Load brainbank.config.ts if present. */
 async function loadConfig(): Promise<BrainBankCliConfig | null> {
     if (_configCache !== undefined) return _configCache;
 
@@ -102,8 +106,7 @@ async function loadConfig(): Promise<BrainBankCliConfig | null> {
         if (fs.existsSync(configPath)) {
             try {
                 const mod = await import(configPath);
-                const config = mod.default ?? mod;
-                _configCache = config as BrainBankCliConfig;
+                _configCache = (mod.default ?? mod) as BrainBankCliConfig;
                 return _configCache;
             } catch (err: any) {
                 console.error(c.red(`Error loading ${name}: ${err.message}`));
@@ -116,21 +119,65 @@ async function loadConfig(): Promise<BrainBankCliConfig | null> {
     return null;
 }
 
-/** Create a BrainBank from config file or defaults. */
+/** Auto-discover indexers from .brainbank/indexers/ folder. */
+async function discoverFolderIndexers(): Promise<Indexer[]> {
+    if (_folderIndexersCache !== undefined) return _folderIndexersCache;
+
+    const repoPath = getFlag('repo') ?? '.';
+    const indexersDir = path.resolve(repoPath, '.brainbank', 'indexers');
+
+    if (!fs.existsSync(indexersDir)) {
+        _folderIndexersCache = [];
+        return [];
+    }
+
+    const files = fs.readdirSync(indexersDir)
+        .filter(f => INDEXER_EXTENSIONS.some(ext => f.endsWith(ext)))
+        .sort();
+
+    const indexers: Indexer[] = [];
+
+    for (const file of files) {
+        const filePath = path.join(indexersDir, file);
+        try {
+            const mod = await import(filePath);
+            const indexer = mod.default ?? mod;
+
+            if (indexer && typeof indexer === 'object' && indexer.name) {
+                indexers.push(indexer as Indexer);
+            } else {
+                console.error(c.yellow(`⚠ ${file}: must export a default Indexer with a 'name' property, skipping`));
+            }
+        } catch (err: any) {
+            console.error(c.red(`Error loading indexer ${file}: ${err.message}`));
+        }
+    }
+
+    _folderIndexersCache = indexers;
+    return indexers;
+}
+
+/** Create a BrainBank with built-in + discovered + config indexers. */
 async function createBrain(repoPath?: string): Promise<BrainBank> {
     const rp = repoPath ?? getFlag('repo') ?? '.';
     const config = await loadConfig();
+    const folderIndexers = await discoverFolderIndexers();
 
     const brainOpts = { repoPath: rp, ...(config?.brainbank ?? {}) };
     const brain = new BrainBank(brainOpts);
 
-    // Built-in indexers (default: all three)
+    // 1. Built-in indexers (default: all three)
     const builtins = config?.builtins ?? ['code', 'git', 'docs'];
     if (builtins.includes('code')) brain.use(code({ repoPath: rp }));
     if (builtins.includes('git')) brain.use(git());
     if (builtins.includes('docs')) brain.use(docs());
 
-    // Custom indexers from config
+    // 2. Auto-discovered from .brainbank/indexers/
+    for (const indexer of folderIndexers) {
+        brain.use(indexer);
+    }
+
+    // 3. Indexers from config file
     if (config?.indexers) {
         for (const indexer of config.indexers) {
             brain.use(indexer);

@@ -239,38 +239,54 @@ brain.use(myIndexer);
 
 #### Using custom indexers with the CLI
 
-Create a `brainbank.config.ts` (or `.js` / `.mjs`) in your project root. The CLI will auto-discover it:
+Drop `.ts` files into `.brainbank/indexers/` — the CLI auto-discovers them:
+
+```
+.brainbank/
+├── brainbank.db
+└── indexers/
+    ├── slack.ts
+    └── jira.ts
+```
+
+Each file exports a default `Indexer`:
+
+```typescript
+// .brainbank/indexers/slack.ts
+import type { Indexer } from 'brainbank';
+
+export default {
+  name: 'slack',
+  async initialize(ctx) {
+    const msgs = ctx.collection('slack_messages');
+    // ... fetch and index slack messages
+  },
+} satisfies Indexer;
+```
+
+That's it — all CLI commands automatically pick up your indexers:
+
+```bash
+brainbank index                             # runs code + git + docs + slack + jira
+brainbank stats                             # shows all indexers
+brainbank kv search slack_messages "deploy"  # search slack data
+```
+
+#### Advanced: config file
+
+For fine-grained control, create a `brainbank.config.ts` in your project root:
 
 ```typescript
 // brainbank.config.ts
-import type { Indexer, IndexerContext } from 'brainbank';
-
-const slack: Indexer = {
-  name: 'slack',
-  async initialize(ctx: IndexerContext) {
-    const messages = ctx.collection('slack_messages');
-    // ... fetch and index slack messages
-  },
-};
-
 export default {
-  indexers: [slack],             // custom indexers (added alongside built-ins)
-  builtins: ['code', 'docs'],   // which built-ins to load (default: all three)
+  builtins: ['code', 'docs'],   // exclude git (default: all three)
   brainbank: {                   // BrainBank constructor options
     dbPath: '.data/brain.db',
   },
 };
 ```
 
-Now all CLI commands automatically pick up your custom indexers:
-
-```bash
-brainbank index                             # runs code + docs + slack
-brainbank kv search slack_messages "deploy"  # search slack data
-brainbank stats                             # shows all indexers including custom
-```
-
-No config file? The CLI falls back to the built-in indexers (`code`, `git`, `docs`).
+No folder and no config file? The CLI uses the built-in indexers (`code`, `git`, `docs`).
 
 ---
 
