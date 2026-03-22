@@ -7,10 +7,10 @@ import { Database, BM25Search, SCHEMA_VERSION, tmpDb } from '../helpers.ts';
 export const name = 'BM25 Full-Text Search';
 
 export const tests = {
-    async 'FTS5 tables are created with schema v5'(assert: any) {
+    async 'FTS5 tables are created with schema v4'(assert: any) {
         const db = new Database(tmpDb('bm25-test'));
 
-        assert.equal(SCHEMA_VERSION, 5);
+        assert.equal(SCHEMA_VERSION, 4);
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_%'"

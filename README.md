@@ -31,7 +31,6 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - [Indexing](#indexing-1)
   - [Incremental Indexing](#incremental-indexing)
   - [Re-embedding](#re-embedding)
-  - [Schema Migrations](#schema-migrations)
 - [Architecture](#architecture)
   - [Search Pipeline](#search-pipeline)
 - [Testing](#testing)
@@ -496,32 +495,6 @@ brainbank reembed
 
 > BrainBank tracks provider metadata in `embedding_meta` table. It auto-detects mismatches and warns you to run `reembed()`.
 
-### Schema Migrations
-
-BrainBank automatically upgrades existing databases when the schema changes. No manual steps needed:
-
-- On `initialize()`, pending migrations are detected and applied
-- Each migration runs in its own transaction (atomic)
-- Old data is preserved across upgrades
-- New databases get the latest schema directly
-
-Migrations are defined in `src/core/migrations.ts` and versioned:
-
-```typescript
-// Adding a new migration:
-export const MIGRATIONS: Migration[] = [
-  {
-    version: 5,
-    description: 'Add tags and TTL support to kv_data',
-    up: `
-      ALTER TABLE kv_data ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
-      ALTER TABLE kv_data ADD COLUMN expires_at INTEGER;
-    `,
-  },
-  // Future: { version: 6, description: '...', up: '...' },
-];
-```
-
 ---
 
 ## Architecture
@@ -589,7 +562,7 @@ Final results (sorted by blended score)
 ## Testing
 
 ```bash
-npm test                    # Unit tests (123 tests)
+npm test                    # Unit tests (122 tests)
 npm test -- --integration   # Include integration tests (downloads model)
 npm test -- --filter bm25   # Filter by test name
 npm test -- --verbose       # Show assertion details

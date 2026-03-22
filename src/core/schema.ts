@@ -7,7 +7,7 @@
 
 import type Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Create all tables and indices.
@@ -20,8 +20,7 @@ export function createSchema(db: Database.Database): void {
             version     INTEGER PRIMARY KEY,
             applied_at  INTEGER NOT NULL DEFAULT (unixepoch())
         );
-        -- Base version for new databases. Migrations will bump this.
-        INSERT OR IGNORE INTO schema_version (version) VALUES (4);
+        INSERT OR IGNORE INTO schema_version (version) VALUES (${SCHEMA_VERSION});
 
         -- ── Code chunks ────────────────────────────────
         CREATE TABLE IF NOT EXISTS code_chunks (
@@ -284,6 +283,8 @@ export function createSchema(db: Database.Database): void {
             collection  TEXT    NOT NULL,
             content     TEXT    NOT NULL,
             meta_json   TEXT    NOT NULL DEFAULT '{}',
+            tags_json   TEXT    NOT NULL DEFAULT '[]',
+            expires_at  INTEGER,
             created_at  INTEGER NOT NULL DEFAULT (unixepoch())
         );
 
