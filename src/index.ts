@@ -54,6 +54,7 @@ export { LocalEmbedding } from './embeddings/local.ts';
 export { OpenAIEmbedding } from './embeddings/openai.ts';
 export type { OpenAIEmbeddingOptions } from './embeddings/openai.ts';
 export type { ReembedResult, ReembedOptions } from './core/reembed.ts';
+export type { WatchOptions, Watcher } from './core/watch.ts';
 export { cosineSimilarity, normalize } from './embeddings/math.ts';
 
 // Vector

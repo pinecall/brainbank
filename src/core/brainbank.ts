@@ -28,6 +28,7 @@ import { reciprocalRankFusion } from '../query/rrf.ts';
 import { ContextBuilder } from '../query/context-builder.ts';
 import { Collection } from './collection.ts';
 import { reembedAll, setEmbeddingMeta, detectProviderMismatch } from './reembed.ts';
+import { createWatcher, type WatchOptions, type Watcher } from './watch.ts';
 import type { ReembedResult, ReembedOptions } from './reembed.ts';
 import type { Indexer, IndexerContext } from '../modules/types.ts';
 import type {
@@ -49,6 +50,7 @@ export class BrainBank extends EventEmitter {
     private _contextBuilder?: ContextBuilder;
 
     private _initialized = false;
+    private _watcher?: Watcher;
 
     // Collections
     private _collections = new Map<string, Collection>();
@@ -538,6 +540,35 @@ export class BrainBank extends EventEmitter {
         return result;
     }
 
+    // ── Watch Mode ───────────────────────────────────
+
+    /**
+     * Start watching for file changes and auto-re-index.
+     * Works with built-in and custom indexers.
+     * 
+     *   const watcher = brain.watch({
+     *     onIndex: (file, indexer) => console.log(`${indexer}: ${file}`),
+     *   });
+     *   // later: watcher.close();
+     */
+    watch(options: WatchOptions = {}): Watcher {
+        if (!this._initialized) {
+            throw new Error('BrainBank: Not initialized. Call initialize() before watch().');
+        }
+
+        // Close any existing watcher
+        this._watcher?.close();
+
+        this._watcher = createWatcher(
+            async () => { await this.index(); },
+            this._modules,
+            this._config.repoPath,
+            options,
+        );
+
+        return this._watcher;
+    }
+
     // ── Re-embedding ────────────────────────────────
 
     /**
@@ -592,6 +623,7 @@ export class BrainBank extends EventEmitter {
 
     /** Close database and release resources. */
     close(): void {
+        this._watcher?.close();
         for (const indexer of this._modules.values()) {
             indexer.close?.();
         }

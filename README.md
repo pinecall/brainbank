@@ -24,6 +24,7 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
   - [Document Collections](#document-collections)
   - [Context Generation](#context-generation)
   - [Custom Indexers](#custom-indexers)
+  - [Watch Mode](#watch-mode)
 - [MCP Server](#mcp-server)
 - [Configuration](#configuration)
   - [Embedding Providers](#embedding-providers)
@@ -181,6 +182,75 @@ errors.clear();                   // remove all
 
 // List all collection names
 brain.listCollectionNames();      // → ['debug_errors', 'decisions', ...]
+```
+
+### Watch Mode
+
+Auto-re-index when files change:
+
+```typescript
+// API
+const watcher = brain.watch({
+  debounceMs: 2000,
+  onIndex: (file, indexer) => console.log(`${indexer}: ${file}`),
+  onError: (err) => console.error(err.message),
+});
+
+// Later: watcher.close();
+```
+
+```bash
+# CLI
+brainbank watch
+# ━━━ BrainBank Watch ━━━
+# Watching /path/to/repo for changes...
+# 14:30:02 ✓ code: src/api.ts
+# 14:30:05 ✓ code: src/routes.ts
+```
+
+#### Custom Indexer Watch
+
+Custom indexers can hook into watch mode by implementing `onFileChange` and `watchPatterns`:
+
+```typescript
+import type { Indexer, IndexerContext } from 'brainbank';
+
+function csvIndexer(): Indexer {
+  let ctx: IndexerContext;
+
+  return {
+    name: 'csv',
+
+    async initialize(context) {
+      ctx = context;
+    },
+
+    // Tell watch which files this indexer cares about
+    watchPatterns() {
+      return ['**/*.csv', '**/*.tsv'];
+    },
+
+    // Called when a watched file changes
+    async onFileChange(filePath, event) {
+      if (event === 'delete') return true;
+
+      const data = fs.readFileSync(filePath, 'utf-8');
+      const col = ctx.collection('csv_data');
+      await col.add(data, {
+        tags: ['csv'],
+        metadata: { file: filePath },
+      });
+      return true; // handled
+    },
+  };
+}
+
+const brain = new BrainBank({ dbPath: './brain.db' })
+  .use(code())
+  .use(csvIndexer());
+
+await brain.initialize();
+brain.watch(); // Now watches .ts, .py, etc. AND .csv, .tsv
 ```
 
 ### Search

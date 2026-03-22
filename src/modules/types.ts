@@ -46,6 +46,20 @@ export interface Indexer {
     /** Initialize the indexer (create HNSW, load vectors, etc.). */
     initialize(ctx: IndexerContext): Promise<void>;
 
+    /**
+     * Called by watch mode when a file changes.
+     * Return true if this indexer handled the change.
+     * If not implemented, watch will fall back to brain.index().
+     */
+    onFileChange?(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
+
+    /**
+     * Glob patterns this indexer watches.
+     * If not set, defaults to all supported code extensions.
+     * Example: ['**/*.csv', '**/*.json']
+     */
+    watchPatterns?(): string[];
+
     /** Return stats for this indexer. */
     stats?(): Record<string, any>;
 

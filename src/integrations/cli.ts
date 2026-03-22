@@ -35,6 +35,7 @@
  *   UTILITY
  *   brainbank stats                           Show index statistics
  *   brainbank reembed                         Re-embed all vectors (provider switch)
+ *   brainbank watch                           Watch for file changes, auto-re-index
  *   brainbank serve                           Start MCP server (stdio)
  */
 
@@ -702,6 +703,37 @@ async function cmdReembed() {
     brain.close();
 }
 
+async function cmdWatch() {
+    const brain = await createBrain();
+    await brain.initialize();
+
+    console.log(c.bold('\n━━━ BrainBank Watch ━━━\n'));
+    console.log(c.dim(`  Watching ${brain.config.repoPath} for changes...`));
+    console.log(c.dim('  Press Ctrl+C to stop.\n'));
+
+    const watcher = brain.watch({
+        debounceMs: 2000,
+        onIndex: (file, indexer) => {
+            const ts = new Date().toLocaleTimeString();
+            console.log(`  ${c.dim(ts)} ${c.green('✓')} ${c.cyan(indexer)}: ${file}`);
+        },
+        onError: (err) => {
+            console.error(`  ${c.red('✗')} ${err.message}`);
+        },
+    });
+
+    // Keep process alive, clean up on Ctrl+C
+    process.on('SIGINT', () => {
+        console.log(c.dim('\n  Stopping watcher...'));
+        watcher.close();
+        brain.close();
+        process.exit(0);
+    });
+
+    // Keep process running
+    await new Promise(() => {});
+}
+
 async function cmdServe() {
     await import('./mcp-server.ts');
 }
@@ -737,6 +769,8 @@ function showHelp() {
     console.log('');
     console.log(c.bold('Utility:'));
     console.log(`  ${c.cyan('stats')}                              Show index statistics`);
+    console.log(`  ${c.cyan('reembed')}                            Re-embed all vectors`);
+    console.log(`  ${c.cyan('watch')}                              Watch files, auto-re-index`);
     console.log(`  ${c.cyan('serve')}                              Start MCP server (stdio)`);
     console.log('');
     console.log(c.bold('Options:'));
@@ -772,6 +806,7 @@ async function main() {
         case 'context':     return cmdContext();
         case 'stats':       return cmdStats();
         case 'reembed':     return cmdReembed();
+        case 'watch':       return cmdWatch();
         case 'serve':       return cmdServe();
         case 'help':
         case '--help':
