@@ -23,7 +23,7 @@ export const tests = {
         assert(names.includes('fts_commits'), 'fts_commits table should exist');
         assert(names.includes('fts_patterns'), 'fts_patterns table should exist');
         assert(names.includes('fts_docs'), 'fts_docs table should exist');
-        assert(names.includes('fts_conversations'), 'fts_conversations table should exist');
+        assert(names.includes('fts_notes'), 'fts_notes table should exist');
 
         db.close();
     },

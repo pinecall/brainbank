@@ -240,7 +240,7 @@ export interface IndexStats {
         chunks: number;
         hnswSize: number;
     };
-    conversations?: {
+    notes?: {
         total: number;
         short: number;
         long: number;

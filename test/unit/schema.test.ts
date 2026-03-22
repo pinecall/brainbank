@@ -39,7 +39,7 @@ export const tests = {
         assert.includes(tables, 'doc_chunks');
         assert.includes(tables, 'doc_vectors');
         assert.includes(tables, 'path_contexts');
-        assert.includes(tables, 'conversation_memories');
+        assert.includes(tables, 'note_memories');
         db.close();
     },
 

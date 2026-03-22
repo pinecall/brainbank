@@ -1,0 +1,65 @@
+/**
+ * BrainBank — Notes Module
+ * 
+ * Store structured conversation digests so the agent
+ * remembers past discussions.
+ * 
+ *   import { notes } from 'brainbank/notes';
+ *   brain.use(notes());
+ */
+
+import type { BrainBankModule, ModuleContext } from './types.ts';
+import type { HNSWIndex } from '../vector/hnsw.ts';
+import { NoteStore } from '../memory/note-store.ts';
+import type { NoteDigest, StoredNote, RecallOptions } from '../memory/note-store.ts';
+
+export interface NotesModuleOptions {}
+
+class NotesModuleImpl implements BrainBankModule {
+    readonly name = 'notes';
+    hnsw!: HNSWIndex;
+    store!: NoteStore;
+    vecCache = new Map<number, Float32Array>();
+
+    constructor(private opts: NotesModuleOptions = {}) {}
+
+    async initialize(ctx: ModuleContext): Promise<void> {
+        this.hnsw = await ctx.createHnsw(100_000);
+        ctx.loadVectors('note_vectors', 'note_id', this.hnsw, this.vecCache);
+        this.store = new NoteStore(ctx.db, ctx.embedding, this.hnsw, this.vecCache);
+    }
+
+    /** Store a note digest. */
+    async remember(digest: NoteDigest): Promise<number> {
+        return this.store.remember(digest);
+    }
+
+    /** Recall relevant notes (hybrid search). */
+    async recall(query: string, options?: RecallOptions): Promise<StoredNote[]> {
+        return this.store.recall(query, options);
+    }
+
+    /** List recent notes. */
+    list(limit?: number, tier?: 'short' | 'long'): StoredNote[] {
+        return this.store.list(limit, tier);
+    }
+
+    /** Consolidate old short-term → long-term. */
+    consolidate(keepRecent?: number): { promoted: number } {
+        return this.store.consolidate(keepRecent);
+    }
+
+    /** Count notes by tier. */
+    count(): { total: number; short: number; long: number } {
+        return this.store.count();
+    }
+
+    stats(): Record<string, any> {
+        return this.store.count();
+    }
+}
+
+/** Create a notes memory module. */
+export function notes(opts?: NotesModuleOptions): BrainBankModule {
+    return new NotesModuleImpl(opts);
+}

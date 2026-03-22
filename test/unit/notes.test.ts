@@ -1,38 +1,38 @@
 /**
- * BrainBank — Conversation Memory Tests
+ * BrainBank — Note Memory Tests
  */
 
-export const name = 'Conversation Memory';
+export const name = 'Note Memory';
 
 export const tests = {
-    async 'conversation_memories table exists'(assert: any) {
+    async 'note_memories table exists'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
-        const path = `/tmp/brainbank-conv-schema-${Date.now()}.db`;
+        const path = `/tmp/brainbank-note-schema-${Date.now()}.db`;
         const db = new Database(path);
 
         const tables = db.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%conversation%'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%note%'"
         ).all() as any[];
         const names = tables.map((t: any) => t.name);
 
-        assert(names.includes('conversation_memories'), 'conversation_memories should exist');
-        assert(names.includes('conversation_vectors'), 'conversation_vectors should exist');
+        assert(names.includes('note_memories'), 'note_memories should exist');
+        assert(names.includes('note_vectors'), 'note_vectors should exist');
 
         // FTS table
         const fts = db.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'fts_conversations'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'fts_notes'"
         ).all() as any[];
-        assert(fts.length > 0, 'fts_conversations should exist');
+        assert(fts.length > 0, 'fts_notes should exist');
 
         db.close();
     },
 
     async 'remember stores a digest and returns id'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
-        const { ConversationStore } = await import('../../src/memory/conversation-store.ts');
+        const { NoteStore } = await import('../../src/memory/note-store.ts');
         const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
 
-        const path = `/tmp/brainbank-conv-remember-${Date.now()}.db`;
+        const path = `/tmp/brainbank-note-remember-${Date.now()}.db`;
         const db = new Database(path);
         const hnsw = await new HNSWIndex(384, 1000).init();
         const vecs = new Map<number, Float32Array>();
@@ -45,7 +45,7 @@ export const tests = {
             async close() {},
         };
 
-        const store = new ConversationStore(db, embedding, hnsw, vecs);
+        const store = new NoteStore(db, embedding, hnsw, vecs);
 
         const id = await store.remember({
             title: 'Added BM25 search',
@@ -59,24 +59,24 @@ export const tests = {
         assert(id > 0, 'should return positive id');
 
         // Verify stored in DB
-        const row = db.prepare('SELECT * FROM conversation_memories WHERE id = ?').get(id) as any;
+        const row = db.prepare('SELECT * FROM note_memories WHERE id = ?').get(id) as any;
         assert.equal(row.title, 'Added BM25 search');
         assert.equal(row.tier, 'short');
         assert.includes(row.decisions_json, 'FTS5');
 
         // Verify vector stored
-        const vec = db.prepare('SELECT * FROM conversation_vectors WHERE memory_id = ?').get(id) as any;
+        const vec = db.prepare('SELECT * FROM note_vectors WHERE note_id = ?').get(id) as any;
         assert(vec, 'vector should be stored');
 
         db.close();
     },
 
-    async 'recall finds memories by keyword'(assert: any) {
+    async 'recall finds notes by keyword'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
-        const { ConversationStore } = await import('../../src/memory/conversation-store.ts');
+        const { NoteStore } = await import('../../src/memory/note-store.ts');
         const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
 
-        const path = `/tmp/brainbank-conv-recall-${Date.now()}.db`;
+        const path = `/tmp/brainbank-note-recall-${Date.now()}.db`;
         const db = new Database(path);
         const hnsw = await new HNSWIndex(384, 1000).init();
         const vecs = new Map<number, Float32Array>();
@@ -88,7 +88,7 @@ export const tests = {
             async close() {},
         };
 
-        const store = new ConversationStore(db, embedding, hnsw, vecs);
+        const store = new NoteStore(db, embedding, hnsw, vecs);
 
         await store.remember({
             title: 'Refactored authentication module',
@@ -105,18 +105,18 @@ export const tests = {
 
         // Keyword search for auth
         const results = await store.recall('authentication middleware', { mode: 'keyword', minScore: 0 });
-        assert(results.length > 0, 'should find auth-related memory');
+        assert(results.length > 0, 'should find auth-related note');
         assert.equal(results[0].title, 'Refactored authentication module');
 
         db.close();
     },
 
-    async 'list returns recent memories in order'(assert: any) {
+    async 'list returns recent notes in order'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
-        const { ConversationStore } = await import('../../src/memory/conversation-store.ts');
+        const { NoteStore } = await import('../../src/memory/note-store.ts');
         const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
 
-        const path = `/tmp/brainbank-conv-list-${Date.now()}.db`;
+        const path = `/tmp/brainbank-note-list-${Date.now()}.db`;
         const db = new Database(path);
         const hnsw = await new HNSWIndex(384, 1000).init();
         const vecs = new Map<number, Float32Array>();
@@ -128,11 +128,11 @@ export const tests = {
             async close() {},
         };
 
-        const store = new ConversationStore(db, embedding, hnsw, vecs);
+        const store = new NoteStore(db, embedding, hnsw, vecs);
 
-        await store.remember({ title: 'First', summary: 'First conv' });
-        await store.remember({ title: 'Second', summary: 'Second conv' });
-        await store.remember({ title: 'Third', summary: 'Third conv' });
+        await store.remember({ title: 'First', summary: 'First note' });
+        await store.remember({ title: 'Second', summary: 'Second note' });
+        await store.remember({ title: 'Third', summary: 'Third note' });
 
         const all = store.list(10);
         assert.equal(all.length, 3);
@@ -144,10 +144,10 @@ export const tests = {
 
     async 'count returns correct totals'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
-        const { ConversationStore } = await import('../../src/memory/conversation-store.ts');
+        const { NoteStore } = await import('../../src/memory/note-store.ts');
         const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
 
-        const path = `/tmp/brainbank-conv-count-${Date.now()}.db`;
+        const path = `/tmp/brainbank-note-count-${Date.now()}.db`;
         const db = new Database(path);
         const hnsw = await new HNSWIndex(384, 1000).init();
         const vecs = new Map<number, Float32Array>();
@@ -159,13 +159,13 @@ export const tests = {
             async close() {},
         };
 
-        const store = new ConversationStore(db, embedding, hnsw, vecs);
+        const store = new NoteStore(db, embedding, hnsw, vecs);
 
         const before = store.count();
         assert.equal(before.total, 0);
         assert.equal(before.short, 0);
 
-        await store.remember({ title: 'Test', summary: 'Test conv' });
+        await store.remember({ title: 'Test', summary: 'Test note' });
 
         const after = store.count();
         assert.equal(after.total, 1);
@@ -175,12 +175,12 @@ export const tests = {
         db.close();
     },
 
-    async 'consolidate promotes old memories to long tier'(assert: any) {
+    async 'consolidate promotes old notes to long tier'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
-        const { ConversationStore } = await import('../../src/memory/conversation-store.ts');
+        const { NoteStore } = await import('../../src/memory/note-store.ts');
         const { HNSWIndex } = await import('../../src/vector/hnsw.ts');
 
-        const path = `/tmp/brainbank-conv-consolidate-${Date.now()}.db`;
+        const path = `/tmp/brainbank-note-consolidate-${Date.now()}.db`;
         const db = new Database(path);
         const hnsw = await new HNSWIndex(384, 1000).init();
         const vecs = new Map<number, Float32Array>();
@@ -192,12 +192,12 @@ export const tests = {
             async close() {},
         };
 
-        const store = new ConversationStore(db, embedding, hnsw, vecs);
+        const store = new NoteStore(db, embedding, hnsw, vecs);
 
-        // Add 5 memories
+        // Add 5 notes
         for (let i = 0; i < 5; i++) {
             await store.remember({
-                title: `Conv ${i}`,
+                title: `Note ${i}`,
                 summary: `Summary ${i}`,
                 filesChanged: ['file.ts'],
                 openQuestions: ['question?'],
@@ -212,29 +212,29 @@ export const tests = {
         assert.equal(counts.short, 2);
         assert.equal(counts.long, 3);
 
-        // Long-tier memories should have fields cleared
-        const longMems = store.list(10, 'long');
-        assert.equal(longMems[0].filesChanged?.length, 0);
-        assert.equal(longMems[0].openQuestions?.length, 0);
+        // Long-tier notes should have fields cleared
+        const longNotes = store.list(10, 'long');
+        assert.equal(longNotes[0].filesChanged?.length, 0);
+        assert.equal(longNotes[0].openQuestions?.length, 0);
 
         db.close();
     },
 
     async 'FTS trigger auto-syncs on insert'(assert: any) {
         const { Database } = await import('../../src/storage/database.ts');
-        const path = `/tmp/brainbank-conv-fts-${Date.now()}.db`;
+        const path = `/tmp/brainbank-note-fts-${Date.now()}.db`;
         const db = new Database(path);
 
         db.prepare(`
-            INSERT INTO conversation_memories (title, summary, decisions_json, tags_json)
+            INSERT INTO note_memories (title, summary, decisions_json, tags_json)
             VALUES ('Auth refactor', 'Moved to middleware pattern', '["jwt"]', '["auth"]')
         `).run();
 
         const results = db.prepare(
-            "SELECT rowid FROM fts_conversations WHERE fts_conversations MATCH '\"auth\"'"
+            "SELECT rowid FROM fts_notes WHERE fts_notes MATCH '\"auth\"'"
         ).all() as any[];
 
-        assert(results.length > 0, 'FTS should find inserted conversation memory');
+        assert(results.length > 0, 'FTS should find inserted note');
 
         db.close();
     },

@@ -177,8 +177,8 @@ export function createSchema(db: Database.Database): void {
             VALUES ('delete', old.id, old.task_type, old.task, old.approach, COALESCE(old.critique, ''));
         END;
 
-        -- ── Conversation Memory ───────────────────────
-        CREATE TABLE IF NOT EXISTS conversation_memories (
+        -- ── Note Memory ───────────────────────────────
+        CREATE TABLE IF NOT EXISTS note_memories (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             title           TEXT    NOT NULL,
             summary         TEXT    NOT NULL,
@@ -191,33 +191,33 @@ export function createSchema(db: Database.Database): void {
             created_at      INTEGER NOT NULL DEFAULT (unixepoch())
         );
 
-        CREATE TABLE IF NOT EXISTS conversation_vectors (
-            memory_id   INTEGER PRIMARY KEY REFERENCES conversation_memories(id) ON DELETE CASCADE,
+        CREATE TABLE IF NOT EXISTS note_vectors (
+            note_id     INTEGER PRIMARY KEY REFERENCES note_memories(id) ON DELETE CASCADE,
             embedding   BLOB    NOT NULL
         );
 
-        CREATE VIRTUAL TABLE IF NOT EXISTS fts_conversations USING fts5(
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts_notes USING fts5(
             title,
             summary,
             decisions,
             patterns,
             tags,
-            content='conversation_memories',
+            content='note_memories',
             content_rowid='id',
             tokenize='porter unicode61'
         );
 
-        CREATE TRIGGER IF NOT EXISTS trg_fts_conv_insert AFTER INSERT ON conversation_memories BEGIN
-            INSERT INTO fts_conversations(rowid, title, summary, decisions, patterns, tags)
+        CREATE TRIGGER IF NOT EXISTS trg_fts_notes_insert AFTER INSERT ON note_memories BEGIN
+            INSERT INTO fts_notes(rowid, title, summary, decisions, patterns, tags)
             VALUES (new.id, new.title, new.summary, new.decisions_json, new.patterns_json, new.tags_json);
         END;
-        CREATE TRIGGER IF NOT EXISTS trg_fts_conv_delete AFTER DELETE ON conversation_memories BEGIN
-            INSERT INTO fts_conversations(fts_conversations, rowid, title, summary, decisions, patterns, tags)
+        CREATE TRIGGER IF NOT EXISTS trg_fts_notes_delete AFTER DELETE ON note_memories BEGIN
+            INSERT INTO fts_notes(fts_notes, rowid, title, summary, decisions, patterns, tags)
             VALUES ('delete', old.id, old.title, old.summary, old.decisions_json, old.patterns_json, old.tags_json);
         END;
 
-        CREATE INDEX IF NOT EXISTS idx_cm_tier     ON conversation_memories(tier);
-        CREATE INDEX IF NOT EXISTS idx_cm_created  ON conversation_memories(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_nm_tier     ON note_memories(tier);
+        CREATE INDEX IF NOT EXISTS idx_nm_created  ON note_memories(created_at DESC);
 
         -- ── Document Collections ──────────────────────
         CREATE TABLE IF NOT EXISTS collections (
@@ -276,6 +276,40 @@ export function createSchema(db: Database.Database): void {
             context     TEXT    NOT NULL,
             PRIMARY KEY (collection, path)
         );
+
+        -- ── Dynamic Collections (KV Store) ───────────
+        CREATE TABLE IF NOT EXISTS kv_data (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            collection  TEXT    NOT NULL,
+            content     TEXT    NOT NULL,
+            meta_json   TEXT    NOT NULL DEFAULT '{}',
+            created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE TABLE IF NOT EXISTS kv_vectors (
+            data_id   INTEGER PRIMARY KEY REFERENCES kv_data(id) ON DELETE CASCADE,
+            embedding BLOB    NOT NULL
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts_kv USING fts5(
+            content,
+            collection,
+            content='kv_data',
+            content_rowid='id',
+            tokenize='porter unicode61'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS trg_fts_kv_insert AFTER INSERT ON kv_data BEGIN
+            INSERT INTO fts_kv(rowid, content, collection)
+            VALUES (new.id, new.content, new.collection);
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_fts_kv_delete AFTER DELETE ON kv_data BEGIN
+            INSERT INTO fts_kv(fts_kv, rowid, content, collection)
+            VALUES ('delete', old.id, old.content, old.collection);
+        END;
+
+        CREATE INDEX IF NOT EXISTS idx_kv_collection ON kv_data(collection);
+        CREATE INDEX IF NOT EXISTS idx_kv_created    ON kv_data(created_at DESC);
     `);
 }
 

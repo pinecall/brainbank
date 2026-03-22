@@ -1,14 +1,12 @@
 /**
  * Unit Tests — BrainBank Orchestrator
  * 
- * Tests modular initialization with .use() pattern.
+ * Tests modular initialization with .use() pattern and collections.
  * Uses a mock embedding provider (no model download required).
  */
 
 import * as fs from 'node:fs';
 import { BrainBank } from '../../src/core/brainbank.ts';
-import { memory } from '../../src/modules/memory.ts';
-import { conversations } from '../../src/modules/conversations.ts';
 import { docs } from '../../src/modules/docs.ts';
 import type { EmbeddingProvider } from '../../src/types.ts';
 
@@ -57,45 +55,49 @@ export const tests = {
         cleanup(db);
     },
 
-    async 'initialize creates DB with modules'(assert: any) {
+    async 'initialize creates DB with indexers'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
-            .use(memory())
-            .use(conversations());
+            .use(docs());
         await brain.initialize();
         assert.ok(brain.isInitialized);
         assert.ok(fs.existsSync(db));
-        assert.ok(brain.has('memory'));
-        assert.ok(brain.has('conversations'));
+        assert.ok(brain.has('docs'));
         brain.close();
         cleanup(db);
     },
 
-    async 'conversations-only mode works'(assert: any) {
+    async 'collection() works after initialize'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({
             dbPath: db,
             embeddingProvider: new MockEmbedding(),
             embeddingDims: 16,
-        }).use(conversations());
-
+        });
         await brain.initialize();
-        assert.ok(brain.isInitialized);
-        assert.ok(brain.has('conversations'));
-        assert.ok(!brain.has('code'));
-        assert.ok(!brain.has('git'));
-        assert.ok(!brain.has('memory'));
+
+        const errors = brain.collection('errors');
+        assert.equal(errors.name, 'errors');
+        assert.equal(errors.count(), 0);
+
+        const id = await errors.add('Test error message', { type: 'test' });
+        assert.gt(id, 0);
+        assert.equal(errors.count(), 1);
+
+        const names = brain.listCollectionNames();
+        assert.includes(names, 'errors');
+
         brain.close();
         cleanup(db);
     },
 
-    async 'missing module throws clear error'(assert: any) {
+    async 'missing indexer throws clear error'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({
             dbPath: db,
             embeddingProvider: new MockEmbedding(),
             embeddingDims: 16,
-        }).use(conversations());
+        });
         await brain.initialize();
 
         let threw = false;
@@ -104,53 +106,26 @@ export const tests = {
             assert.includes(e.message, 'code');
             assert.includes(e.message, 'not loaded');
         }
-        assert.ok(threw, 'should throw for missing module');
+        assert.ok(threw, 'should throw for missing indexer');
 
         brain.close();
         cleanup(db);
     },
 
-    async 'learn and searchPatterns roundtrip'(assert: any) {
-        const db = makeDB();
-        const brain = new BrainBank({
-            dbPath: db,
-            embeddingProvider: new MockEmbedding(),
-            embeddingDims: 16,
-        }).use(memory());
-        await brain.initialize();
-
-        const id = await brain.learn({
-            taskType: 'api',
-            task: 'Add JWT authentication',
-            approach: 'Use middleware pattern with token validation',
-            successRate: 0.95,
-        });
-        assert.gt(id, 0);
-
-        const results = await brain.searchPatterns('authentication JWT token');
-        assert.gt(results.length, 0);
-        assert.includes(results[0].approach, 'middleware');
-
-        brain.close();
-        cleanup(db);
-    },
-
-    async 'stats only includes loaded modules'(assert: any) {
+    async 'stats only includes loaded indexers'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({
             dbPath: db,
             embeddingProvider: new MockEmbedding(),
             embeddingDims: 16,
         })
-            .use(memory())
-            .use(conversations());
+            .use(docs());
         await brain.initialize();
         const s = brain.stats();
 
         assert.ok(!('code' in s), 'should NOT have code stats');
         assert.ok(!('git' in s), 'should NOT have git stats');
-        assert.ok('memory' in s, 'should have memory stats');
-        assert.ok('conversations' in s, 'should have conversations stats');
+        assert.ok('documents' in s, 'should have docs stats');
 
         brain.close();
         cleanup(db);
@@ -192,8 +167,7 @@ export const tests = {
 
     async 'close sets initialized to false'(assert: any) {
         const db = makeDB();
-        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
-            .use(memory());
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
         await brain.initialize();
         assert.ok(brain.isInitialized);
         brain.close();
@@ -203,8 +177,7 @@ export const tests = {
 
     async 'double initialize is idempotent'(assert: any) {
         const db = makeDB();
-        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
-            .use(conversations());
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
         await brain.initialize();
         await brain.initialize();
         assert.ok(brain.isInitialized);
@@ -215,11 +188,9 @@ export const tests = {
     async '.use() is chainable'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
-            .use(memory())
-            .use(conversations())
             .use(docs());
 
-        assert.deepEqual(brain.modules.sort(), ['conversations', 'docs', 'memory']);
+        assert.deepEqual(brain.indexers.sort(), ['docs']);
 
         await brain.initialize();
         brain.close();
@@ -228,28 +199,42 @@ export const tests = {
 
     async '.use() after initialize throws'(assert: any) {
         const db = makeDB();
-        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
-            .use(memory());
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
         await brain.initialize();
 
         let threw = false;
-        try { brain.use(conversations()); } catch (e: any) {
+        try { brain.use(docs()); } catch (e: any) {
             threw = true;
             assert.includes(e.message, 'after initialization');
         }
-        assert.ok(threw, 'should throw when adding module after initialize');
+        assert.ok(threw, 'should throw when adding indexer after initialize');
 
         brain.close();
         cleanup(db);
     },
 
-    async 'no modules still creates DB'(assert: any) {
+    async 'no indexers still creates DB'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
         await brain.initialize();
         assert.ok(brain.isInitialized);
         assert.ok(fs.existsSync(db));
-        assert.deepEqual(brain.modules, []);
+        assert.deepEqual(brain.indexers, []);
+        brain.close();
+        cleanup(db);
+    },
+
+    async 'backward compat: .modules and .module() still work'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
+            .use(docs());
+        await brain.initialize();
+
+        // .modules is deprecated alias for .indexers
+        assert.deepEqual(brain.modules, brain.indexers);
+        // .module() is deprecated alias for .indexer()
+        assert.equal(brain.module('docs'), brain.indexer('docs'));
+
         brain.close();
         cleanup(db);
     },

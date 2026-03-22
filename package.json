@@ -12,7 +12,7 @@
         "./code": "./src/modules/code.ts",
         "./git": "./src/modules/git.ts",
         "./docs": "./src/modules/docs.ts",
-        "./conversations": "./src/modules/conversations.ts",
+        "./notes": "./src/modules/notes.ts",
         "./memory": "./src/modules/memory.ts"
     },
     "scripts": {

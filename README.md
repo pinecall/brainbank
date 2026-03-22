@@ -1,6 +1,6 @@
 # 🧠 BrainBank
 
-**Semantic knowledge bank for AI agents** — indexes code, documents, git history, conversations, and learned patterns into a single SQLite file with hybrid search (vector + BM25 + RRF).
+**Semantic knowledge bank for AI agents** — indexes code, documents, git history, notes, and learned patterns into a single SQLite file with hybrid search (vector + BM25 + RRF).
 
 BrainBank solves a specific problem: LLMs forget everything between sessions. BrainBank gives them a searchable long-term memory.
 
@@ -24,13 +24,13 @@ import { BrainBank } from 'brainbank';
 import { code } from 'brainbank/code';
 import { git } from 'brainbank/git';
 import { memory } from 'brainbank/memory';
-import { conversations } from 'brainbank/conversations';
+import { notes } from 'brainbank/notes';
 
 const brain = new BrainBank({ repoPath: '.' })
   .use(code())
   .use(git())
   .use(memory())
-  .use(conversations());
+  .use(notes());
 
 await brain.index();                                    // index code + git
 const context = await brain.getContext('add auth');      // system prompt context
@@ -41,11 +41,11 @@ const context = await brain.getContext('add auth');      // system prompt contex
 ```typescript
 import { BrainBank } from 'brainbank';
 import { docs } from 'brainbank/docs';
-import { conversations } from 'brainbank/conversations';
+import { notes } from 'brainbank/notes';
 
 const brain = new BrainBank({ dbPath: './knowledge.db' })
   .use(docs())
-  .use(conversations());
+  .use(notes());
 
 await brain.addCollection({ name: 'notes', path: '~/notes', pattern: '**/*.md' });
 await brain.indexDocs();
@@ -55,10 +55,10 @@ await brain.indexDocs();
 
 ```typescript
 import { BrainBank } from 'brainbank';
-import { conversations } from 'brainbank/conversations';
+import { notes } from 'brainbank/notes';
 
 const brain = new BrainBank({ dbPath: './memory.db' })
-  .use(conversations());
+  .use(notes());
 
 await brain.remember({ title: 'Deployed v2', summary: 'Shipped auth rewrite...', decisions: ['JWT > sessions'] });
 const memories = await brain.recall('authentication approach');
@@ -75,7 +75,7 @@ BrainBank is composed of 5 independent modules. Enable only what you need:
 | `code` | `brainbank/code` | Language-aware code chunking (30+ languages), HNSW index |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
 | `docs` | `brainbank/docs` | Document collections (markdown, notes, wikis), heading-aware chunking |
-| `conversations` | `brainbank/conversations` | Conversation digests with structured recall, short/long tier |
+| `notes` | `brainbank/notes` | Note digests with structured recall, short/long tier |
 | `memory` | `brainbank/memory` | Agent learn/search patterns, auto-consolidation, strategy distillation |
 
 Each module is a factory function:
@@ -213,7 +213,7 @@ const strategy = brain.distill('api');
 
 ---
 
-## Conversation Memory
+## Note Memory
 
 ```typescript
 // Store a conversation digest
@@ -312,12 +312,12 @@ Environment variables:
 ┌──────────────────────────────────────────────────────┐
 │                   BrainBank Core                     │
 │  .use(code)  .use(git)  .use(docs)  .use(memory)    │
-│  .use(conversations)                                 │
+│  .use(notes)                                     │
 ├──────────────────────────────────────────────────────┤
 │                                                      │
 │  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ │
-│  │ Code  │ │  Git  │ │ Docs  │ │Memory │ │ Conv  │ │
-│  │Module │ │Module │ │Module │ │Module │ │Module │ │
+│  │ Code  │ │  Git  │ │ Docs  │ │Memory │ │Notes │ │
+│  │Module │ │Module │ │Module │ │Module │ │Module│ │
 │  └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ │
 │      │         │         │         │         │      │
 │  ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ │
@@ -362,8 +362,8 @@ Environment variables:
 | `path_contexts` | Context metadata per path |
 | `memory_patterns` | Agent learned patterns |
 | `memory_vectors` | Pattern HNSW embeddings |
-| `conversation_memories` | Conversation digests |
-| `conversation_vectors` | Conversation HNSW embeddings |
+| `note_memories` | Note digests |
+| `note_vectors` | Note HNSW embeddings |
 | `distilled_strategies` | Consolidated strategies |
 
 ---
@@ -381,11 +381,11 @@ brainbank/
 │   │   ├── code.ts            # Code indexing module
 │   │   ├── git.ts             # Git history module
 │   │   ├── docs.ts            # Document collections module
-│   │   ├── conversations.ts   # Conversation memory module
+│   │   ├── notes.ts           # Note memory module
 │   │   └── memory.ts          # Agent memory module
 │   ├── embeddings/            # Local WASM embedding provider
 │   ├── indexers/              # Code chunker, git parser, doc parser
-│   ├── memory/                # Pattern store, consolidator, conversation store
+│   ├── memory/                # Pattern store, consolidator, note store
 │   ├── query/                 # UnifiedSearch, BM25, RRF, context builder
 │   ├── storage/               # SQLite database + schema
 │   ├── vector/                # HNSW index + MMR

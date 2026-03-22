@@ -1,12 +1,12 @@
 /**
- * BrainBank — Conversation Memory Store
+ * BrainBank — Note Memory Store
  * 
- * Stores structured conversation digests for long-term agent memory.
+ * Stores structured note digests for long-term agent memory.
  * Each digest captures decisions, files changed, patterns, and open questions.
  * Supports vector + BM25 hybrid retrieval via HNSW + FTS5.
  * 
  * Memory tiers:
- *   - "short" (default): Full digest, last ~20 conversations
+ *   - "short" (default): Full digest, last ~20 notes
  *   - "long":  Compressed to patterns + decisions only
  */
 
@@ -16,7 +16,7 @@ import type { HNSWIndex } from '../vector/hnsw.ts';
 import { BM25Search } from '../query/bm25.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
 
-export interface ConversationDigest {
+export interface NoteDigest {
     title: string;
     summary: string;
     decisions?: string[];
@@ -26,7 +26,7 @@ export interface ConversationDigest {
     tags?: string[];
 }
 
-export interface StoredMemory extends ConversationDigest {
+export interface StoredNote extends NoteDigest {
     id: number;
     tier: 'short' | 'long';
     createdAt: number;
@@ -44,7 +44,7 @@ export interface RecallOptions {
     tier?: 'short' | 'long';
 }
 
-export class ConversationStore {
+export class NoteStore {
     private _db: Database;
     private _embedding: EmbeddingProvider;
     private _hnsw: HNSWIndex;
@@ -63,15 +63,15 @@ export class ConversationStore {
     }
 
     /**
-     * Store a conversation digest.
+     * Store a note digest.
      * Embeds title + summary for vector search, auto-indexed in FTS5.
      */
-    async remember(digest: ConversationDigest): Promise<number> {
+    async remember(digest: NoteDigest): Promise<number> {
         const { title, summary, decisions = [], filesChanged = [], patterns = [], openQuestions = [], tags = [] } = digest;
 
         // Store in SQLite
         const result = this._db.prepare(`
-            INSERT INTO conversation_memories (title, summary, decisions_json, files_json, patterns_json, open_json, tags_json)
+            INSERT INTO note_memories (title, summary, decisions_json, files_json, patterns_json, open_json, tags_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
             title,
@@ -89,7 +89,7 @@ export class ConversationStore {
         const text = `${title}\n${summary}\n${decisions.join('. ')}\n${patterns.join('. ')}`;
         const vec = await this._embedding.embed(text);
 
-        this._db.prepare('INSERT INTO conversation_vectors (memory_id, embedding) VALUES (?, ?)').run(
+        this._db.prepare('INSERT INTO note_vectors (note_id, embedding) VALUES (?, ?)').run(
             id, Buffer.from(vec.buffer),
         );
 
@@ -100,13 +100,13 @@ export class ConversationStore {
     }
 
     /**
-     * Recall relevant conversation memories.
+     * Recall relevant notes.
      * Supports vector, keyword, or hybrid (default) retrieval.
      */
-    async recall(query: string, options: RecallOptions = {}): Promise<StoredMemory[]> {
+    async recall(query: string, options: RecallOptions = {}): Promise<StoredNote[]> {
         const { k = 5, mode = 'hybrid', minScore = 0.15, tier } = options;
 
-        let results: StoredMemory[];
+        let results: StoredNote[];
 
         if (mode === 'keyword') {
             results = this._searchBM25(query, k);
@@ -126,8 +126,8 @@ export class ConversationStore {
                 ],
             );
 
-            // Map back to full StoredMemory objects
-            const allById = new Map<number, StoredMemory>();
+            // Map back to full StoredNote objects
+            const allById = new Map<number, StoredNote>();
             for (const m of [...vectorHits, ...bm25Hits]) allById.set(m.id, m);
 
             results = fusedResults
@@ -136,7 +136,7 @@ export class ConversationStore {
                     if (!mem) return null;
                     return { ...mem, score: r.score };
                 })
-                .filter(Boolean) as StoredMemory[];
+                .filter(Boolean) as StoredNote[];
         }
 
         // Apply filters
@@ -147,38 +147,38 @@ export class ConversationStore {
     }
 
     /**
-     * List recent conversation memories.
+     * List recent notes.
      */
-    list(limit: number = 20, tier?: 'short' | 'long'): StoredMemory[] {
+    list(limit: number = 20, tier?: 'short' | 'long'): StoredNote[] {
         const sql = tier
-            ? 'SELECT * FROM conversation_memories WHERE tier = ? ORDER BY id DESC LIMIT ?'
-            : 'SELECT * FROM conversation_memories ORDER BY id DESC LIMIT ?';
+            ? 'SELECT * FROM note_memories WHERE tier = ? ORDER BY id DESC LIMIT ?'
+            : 'SELECT * FROM note_memories ORDER BY id DESC LIMIT ?';
 
         const rows = tier
             ? this._db.prepare(sql).all(tier, limit) as any[]
             : this._db.prepare(sql).all(limit) as any[];
 
-        return rows.map(r => this._rowToMemory(r));
+        return rows.map(r => this._rowToNote(r));
     }
 
     /**
-     * Get total count of conversation memories.
+     * Get total count of notes.
      */
     count(): { total: number; short: number; long: number } {
-        const total = (this._db.prepare('SELECT COUNT(*) as n FROM conversation_memories').get() as any).n;
-        const short = (this._db.prepare("SELECT COUNT(*) as n FROM conversation_memories WHERE tier = 'short'").get() as any).n;
-        const long = (this._db.prepare("SELECT COUNT(*) as n FROM conversation_memories WHERE tier = 'long'").get() as any).n;
+        const total = (this._db.prepare('SELECT COUNT(*) as n FROM note_memories').get() as any).n;
+        const short = (this._db.prepare("SELECT COUNT(*) as n FROM note_memories WHERE tier = 'short'").get() as any).n;
+        const long = (this._db.prepare("SELECT COUNT(*) as n FROM note_memories WHERE tier = 'long'").get() as any).n;
         return { total, short, long };
     }
 
     /**
-     * Consolidate old short-term memories into long-term.
+     * Consolidate old short-term notes into long-term.
      * Keeps the most recent `keepRecent` as short-term, compresses the rest.
      */
     consolidate(keepRecent: number = 20): { promoted: number } {
-        // Find short-term memories beyond the keep window
+        // Find short-term notes beyond the keep window
         const old = this._db.prepare(`
-            SELECT id FROM conversation_memories 
+            SELECT id FROM note_memories 
             WHERE tier = 'short' 
             ORDER BY created_at DESC 
             LIMIT -1 OFFSET ?
@@ -191,7 +191,7 @@ export class ConversationStore {
 
         // Promote to long-term: clear verbose fields, keep patterns + decisions
         this._db.prepare(`
-            UPDATE conversation_memories 
+            UPDATE note_memories 
             SET tier = 'long',
                 open_json = '[]',
                 files_json = '[]'
@@ -203,7 +203,7 @@ export class ConversationStore {
 
     // ── Private helpers ────────────────────────────
 
-    private async _searchVector(query: string, k: number): Promise<StoredMemory[]> {
+    private async _searchVector(query: string, k: number): Promise<StoredNote[]> {
         if (this._hnsw.size === 0) return [];
 
         const queryVec = await this._embedding.embed(query);
@@ -216,16 +216,16 @@ export class ConversationStore {
         const placeholders = ids.map(() => '?').join(',');
 
         const rows = this._db.prepare(
-            `SELECT * FROM conversation_memories WHERE id IN (${placeholders})`
+            `SELECT * FROM note_memories WHERE id IN (${placeholders})`
         ).all(...ids) as any[];
 
         return rows.map(r => ({
-            ...this._rowToMemory(r),
+            ...this._rowToNote(r),
             score: scoreMap.get(r.id) ?? 0,
         }));
     }
 
-    private _searchBM25(query: string, k: number): StoredMemory[] {
+    private _searchBM25(query: string, k: number): StoredNote[] {
         // Sanitize for FTS5
         const clean = query
             .replace(/[{}[\]()^~*:]/g, ' ')
@@ -239,16 +239,16 @@ export class ConversationStore {
 
         try {
             const rows = this._db.prepare(`
-                SELECT m.*, bm25(fts_conversations, 5.0, 3.0, 2.0, 2.0, 1.0) AS score
-                FROM fts_conversations f
-                JOIN conversation_memories m ON m.id = f.rowid
-                WHERE fts_conversations MATCH ?
+                SELECT m.*, bm25(fts_notes, 5.0, 3.0, 2.0, 2.0, 1.0) AS score
+                FROM fts_notes f
+                JOIN note_memories m ON m.id = f.rowid
+                WHERE fts_notes MATCH ?
                 ORDER BY score ASC
                 LIMIT ?
             `).all(ftsQuery, k) as any[];
 
             return rows.map(r => ({
-                ...this._rowToMemory(r),
+                ...this._rowToNote(r),
                 score: 1.0 / (1.0 + Math.exp(-0.3 * (Math.abs(r.score) - 5))),
             }));
         } catch {
@@ -256,7 +256,7 @@ export class ConversationStore {
         }
     }
 
-    private _rowToMemory(r: any): StoredMemory {
+    private _rowToNote(r: any): StoredNote {
         return {
             id: r.id,
             title: r.title,

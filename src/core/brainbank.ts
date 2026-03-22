@@ -7,13 +7,13 @@
  *   import { BrainBank } from 'brainbank';
  *   import { code } from 'brainbank/code';
  *   import { docs } from 'brainbank/docs';
- *   import { conversations } from 'brainbank/conversations';
+ *   import { notes } from 'brainbank/notes';
  *   import { memory } from 'brainbank/memory';
  *   
  *   const brain = new BrainBank()
  *     .use(code({ repoPath: '.' }))
  *     .use(docs())
- *     .use(conversations())
+ *     .use(notes())
  *     .use(memory());
  */
 
@@ -26,22 +26,20 @@ import { UnifiedSearch } from '../query/search.ts';
 import { BM25Search } from '../query/bm25.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
 import { ContextBuilder } from '../query/context-builder.ts';
-import type { BrainBankModule, ModuleContext } from '../modules/types.ts';
+import { Collection } from './collection.ts';
+import type { Indexer, IndexerContext } from '../modules/types.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
-    IndexResult, IndexStats, MemoryPattern, SearchResult,
+    IndexResult, IndexStats, SearchResult,
     ContextOptions, CoEditSuggestion, ProgressCallback,
-    DistilledStrategy, DocumentCollection,
+    DocumentCollection,
 } from '../types.ts';
-
-// Module implementations (for typed access)
-import type { ConversationDigest, StoredMemory, RecallOptions } from '../memory/conversation-store.ts';
 
 export class BrainBank extends EventEmitter {
     private _config: ResolvedConfig;
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
-    private _modules = new Map<string, BrainBankModule>();
+    private _modules = new Map<string, Indexer>();
 
     // Cross-module search (created if code/git/memory are present)
     private _search?: UnifiedSearch;
@@ -50,49 +48,64 @@ export class BrainBank extends EventEmitter {
 
     private _initialized = false;
 
+    // Collections
+    private _collections = new Map<string, Collection>();
+    private _kvHnsw?: HNSWIndex;
+    private _kvVecs = new Map<number, Float32Array>();
+
     constructor(config: BrainBankConfig = {}) {
         super();
         this._config = resolveConfig(config);
     }
 
-    // ── Module Registration ─────────────────────────
+    // ── Indexer Registration ────────────────────────
 
     /**
-     * Register a module. Chainable.
+     * Register an indexer. Chainable.
      * 
-     *   brain.use(code({ repoPath: '.' })).use(docs()).use(memory());
+     *   brain.use(code({ repoPath: '.' })).use(docs());
      */
-    use(module: BrainBankModule): this {
+    use(indexer: Indexer): this {
         if (this._initialized) {
             throw new Error(
-                `BrainBank: Cannot add module '${module.name}' after initialization. ` +
+                `BrainBank: Cannot add indexer '${indexer.name}' after initialization. ` +
                 `Call .use() before any operations.`
             );
         }
-        this._modules.set(module.name, module);
+        this._modules.set(indexer.name, indexer);
         return this;
     }
 
-    /** Get the list of registered module names. */
-    get modules(): string[] {
+    /** Get the list of registered indexer names. */
+    get indexers(): string[] {
         return [...this._modules.keys()];
     }
 
-    /** Check if a module is loaded. */
+    /** @deprecated Use .indexers instead. */
+    get modules(): string[] {
+        return this.indexers;
+    }
+
+    /** Check if an indexer is loaded. */
     has(name: string): boolean {
         return this._modules.has(name);
     }
 
-    /** Get a module instance. Throws if not loaded. */
-    module(name: string): any {
+    /** Get an indexer instance. Throws if not loaded. */
+    indexer(name: string): any {
         const mod = this._modules.get(name);
         if (!mod) {
             throw new Error(
-                `BrainBank: Module '${name}' is not loaded. ` +
+                `BrainBank: Indexer '${name}' is not loaded. ` +
                 `Add .use(${name}()) to your BrainBank instance.`
             );
         }
         return mod;
+    }
+
+    /** @deprecated Use .indexer() instead. */
+    module(name: string): any {
+        return this.indexer(name);
     }
 
     // ── Initialization ──────────────────────────────
@@ -110,13 +123,22 @@ export class BrainBank extends EventEmitter {
         // Database (always needed)
         this._db = new Database(config.dbPath);
 
-        // Embedding provider (needed if any modules are registered)
-        if (this._modules.size > 0) {
-            this._embedding = config.embeddingProvider ?? new LocalEmbedding();
-        }
+        // Embedding provider (needed for modules and collections)
+        this._embedding = config.embeddingProvider ?? new LocalEmbedding();
 
-        // Create the shared context for modules
-        const ctx: ModuleContext = {
+        // Initialize HNSW for dynamic collections (must come before indexer init)
+        this._kvHnsw = new HNSWIndex(
+            config.embeddingDims,
+            config.maxElements ?? 500_000,
+            config.hnswM,
+            config.hnswEfConstruction,
+            config.hnswEfSearch,
+        );
+        await this._kvHnsw.init();
+        this._loadVectors('kv_vectors', 'data_id', this._kvHnsw, this._kvVecs);
+
+        // Create the shared context for indexers
+        const ctx: IndexerContext = {
             db: this._db,
             embedding: this._embedding,
             config: config,
@@ -132,9 +154,10 @@ export class BrainBank extends EventEmitter {
             loadVectors: (table, idCol, hnsw, cache) => {
                 this._loadVectors(table, idCol, hnsw, cache);
             },
+            collection: (name: string) => this.collection(name),
         };
 
-        // Initialize all registered modules
+        // Initialize all registered indexers
         for (const mod of this._modules.values()) {
             await mod.initialize(ctx);
         }
@@ -165,7 +188,46 @@ export class BrainBank extends EventEmitter {
         }
 
         this._initialized = true;
-        this.emit('initialized', { modules: this.modules });
+        this.emit('initialized', { indexers: this.indexers });
+    }
+
+    // ── Collections ─────────────────────────────────
+
+    /**
+     * Get or create a dynamic collection.
+     * Collections are the universal data primitive — store anything, search semantically.
+     * 
+     *   const errors = brain.collection('debug_errors');
+     *   await errors.add('Fixed null check', { file: 'api.ts' });
+     *   const hits = await errors.search('null pointer');
+     */
+    collection(name: string): Collection {
+        let coll = this._collections.get(name);
+        if (coll) return coll;
+
+        if (!this._initialized) {
+            throw new Error(
+                'BrainBank: Must call initialize() before using collections. ' +
+                'Or use await brain.collection() after an async operation.'
+            );
+        }
+
+        // Lazy-create shared HNSW for all collections
+        if (!this._kvHnsw) {
+            throw new Error('BrainBank: Collections HNSW not initialized. Call initialize() first.');
+        }
+
+        coll = new Collection(name, this._db, this._embedding, this._kvHnsw, this._kvVecs);
+        this._collections.set(name, coll);
+        return coll;
+    }
+
+    /** List all collection names that have data. */
+    listCollectionNames(): string[] {
+        const rows = this._db.prepare(
+            'SELECT DISTINCT collection FROM kv_data ORDER BY collection'
+        ).all() as any[];
+        return rows.map(r => r.collection);
     }
 
     // ── Indexing ─────────────────────────────────────
@@ -311,16 +373,7 @@ export class BrainBank extends EventEmitter {
             }
         }
 
-        // Conversation context
-        if (this.has('conversations')) {
-            const memories = await this.recall(task, { k: 3 });
-            if (memories.length > 0) {
-                const convSection = memories.map(m =>
-                    `**${m.title}** (${new Date(m.createdAt * 1000).toLocaleDateString()})\n${m.summary}`
-                ).join('\n\n');
-                sections.push(`## Relevant Conversations\n\n${convSection}`);
-            }
-        }
+
 
         return sections.join('\n\n');
     }
@@ -399,59 +452,7 @@ export class BrainBank extends EventEmitter {
         this._bm25?.rebuild();
     }
 
-    // ── Memory / Learning ───────────────────────────
 
-    /** Store a learned pattern from a completed task. */
-    async learn(pattern: MemoryPattern): Promise<number> {
-        await this.initialize();
-        const mod = this.module('memory') as any;
-        const id = await mod.learn(pattern);
-        this.emit('learned', { id, pattern });
-        return id;
-    }
-
-    /** Search for similar learned patterns. */
-    async searchPatterns(query: string, k: number = 4): Promise<(MemoryPattern & { score: number })[]> {
-        await this.initialize();
-        return this.module('memory').search(query, k);
-    }
-
-    /** Consolidate memory: prune old failures + deduplicate. */
-    consolidate(): { pruned: number; deduped: number } {
-        return this.module('memory').consolidate();
-    }
-
-    /** Distill top patterns into a strategy for a task type. */
-    distill(taskType: string): DistilledStrategy | null {
-        return this.module('memory').distill(taskType);
-    }
-
-    // ── Conversation Memory ─────────────────────────
-
-    /** Store a conversation digest for long-term memory. */
-    async remember(digest: ConversationDigest): Promise<number> {
-        await this.initialize();
-        const mod = this.module('conversations') as any;
-        const id = await mod.remember(digest);
-        this.emit('remembered', { id, digest });
-        return id;
-    }
-
-    /** Recall relevant conversation memories. */
-    async recall(query: string, options?: RecallOptions): Promise<StoredMemory[]> {
-        await this.initialize();
-        return this.module('conversations').recall(query, options);
-    }
-
-    /** List recent conversation memories. */
-    listMemories(limit?: number, tier?: 'short' | 'long'): StoredMemory[] {
-        return this.module('conversations').list(limit, tier);
-    }
-
-    /** Consolidate old conversation memories (short → long tier). */
-    consolidateMemories(keepRecent?: number): { promoted: number } {
-        return this.module('conversations').consolidate(keepRecent);
-    }
 
     // ── Query ───────────────────────────────────────
 
@@ -481,7 +482,7 @@ export class BrainBank extends EventEmitter {
         const result: IndexStats = {};
 
         if (this.has('code')) {
-            const mod = this.module('code') as any;
+            const mod = this.indexer('code') as any;
             result.code = {
                 files: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM code_chunks').get() as any).c,
                 chunks: (this._db.prepare('SELECT COUNT(*) as c FROM code_chunks').get() as any).c,
@@ -490,7 +491,7 @@ export class BrainBank extends EventEmitter {
         }
 
         if (this.has('git')) {
-            const mod = this.module('git') as any;
+            const mod = this.indexer('git') as any;
             result.git = {
                 commits: (this._db.prepare('SELECT COUNT(*) as c FROM git_commits').get() as any).c,
                 filesTracked: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM commit_files').get() as any).c,
@@ -499,25 +500,9 @@ export class BrainBank extends EventEmitter {
             };
         }
 
-        if (this.has('memory')) {
-            const mod = this.module('memory') as any;
-            const count = (this._db.prepare('SELECT COUNT(*) as c FROM memory_patterns').get() as any).c;
-            const avg = (this._db.prepare('SELECT AVG(success_rate) as a FROM memory_patterns').get() as any).a ?? 0;
-            result.memory = {
-                patterns: count,
-                avgSuccess: avg,
-                hnswSize: mod.hnsw?.size ?? 0,
-            };
-        }
-
         if (this.has('docs')) {
-            const mod = this.module('docs') as any;
+            const mod = this.indexer('docs') as any;
             result.documents = mod.stats();
-        }
-
-        if (this.has('conversations')) {
-            const mod = this.module('conversations') as any;
-            result.conversations = mod.count();
         }
 
         return result;
@@ -527,11 +512,12 @@ export class BrainBank extends EventEmitter {
 
     /** Close database and release resources. */
     close(): void {
-        for (const mod of this._modules.values()) {
-            mod.close?.();
+        for (const indexer of this._modules.values()) {
+            indexer.close?.();
         }
         if (this._db) this._db.close();
         this._initialized = false;
+        this._collections.clear();
     }
 
     /** Whether the brainbank has been initialized. */

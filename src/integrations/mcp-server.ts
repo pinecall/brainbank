@@ -18,13 +18,17 @@
  * }
  * 
  * Tools exposed:
- *   brainbank_search   — Semantic search across code, commits, and patterns
- *   brainbank_context  — Get formatted context for a task (markdown)
- *   brainbank_index    — Trigger code/git indexing
- *   brainbank_learn    — Store a learned pattern from a task
- *   brainbank_stats    — Get index statistics
- *   brainbank_history  — Git history for a specific file
- *   brainbank_coedits  — Files that frequently change together
+ *   brainbank_search         — Semantic search across code, commits
+ *   brainbank_hybrid_search  — Best quality: vector + BM25 fused
+ *   brainbank_keyword_search — Instant BM25 full-text
+ *   brainbank_context        — Get formatted context for a task
+ *   brainbank_index          — Trigger code/git indexing
+ *   brainbank_stats          — Get index statistics
+ *   brainbank_history        — Git history for a specific file
+ *   brainbank_coedits        — Files that frequently change together
+ *   brainbank_collection_add     — Add item to a dynamic collection
+ *   brainbank_collection_search  — Search a dynamic collection
+ *   brainbank_collection_trim    — Trim a dynamic collection
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -65,46 +69,23 @@ server.registerTool(
     'brainbank_search',
     {
         title: 'BrainBank Search',
-        description: 'Semantic search across indexed code, git commits, and learned patterns. Returns the most relevant results sorted by similarity score.',
+        description: 'Semantic search across indexed code and git commits. Returns the most relevant results sorted by similarity score.',
         inputSchema: z.object({
             query: z.string().describe('Natural language search query describing what you are looking for'),
             codeK: z.number().optional().default(6).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
-            memoryK: z.number().optional().default(4).describe('Max learned pattern results to return'),
             minScore: z.number().optional().default(0.25).describe('Minimum similarity score threshold (0-1)'),
         }),
     },
-    async ({ query, codeK, gitK, memoryK, minScore }) => {
+    async ({ query, codeK, gitK, minScore }) => {
         const brainbank = await getBrainBank();
-        const results = await brainbank.search(query, { codeK, gitK, memoryK, minScore });
+        const results = await brainbank.search(query, { codeK, gitK, minScore });
 
         if (results.length === 0) {
             return { content: [{ type: 'text', text: 'No results found for this query.' }] };
         }
 
-        const lines: string[] = [];
-        for (const r of results) {
-            const score = Math.round(r.score * 100);
-            if (r.type === 'code') {
-                const m = r.metadata;
-                lines.push(`[CODE ${score}%] ${r.filePath} — ${m.name || m.chunkType} (L${m.startLine}-${m.endLine})`);
-                lines.push(r.content);
-                lines.push('');
-            } else if (r.type === 'commit') {
-                const m = r.metadata;
-                lines.push(`[COMMIT ${score}%] ${m.shortHash} — ${r.content} (${m.author})`);
-                if (m.files?.length) lines.push(`  Files: ${m.files.join(', ')}`);
-                lines.push('');
-            } else if (r.type === 'pattern') {
-                const m = r.metadata;
-                lines.push(`[PATTERN ${score}%] ${m.taskType} — ${Math.round(m.successRate * 100)}% success`);
-                lines.push(`  Task: ${m.task}`);
-                lines.push(`  Approach: ${r.content}`);
-                lines.push('');
-            }
-        }
-
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
+        return { content: [{ type: 'text', text: formatResults(results, 'Semantic Search') }] };
     },
 );
 
@@ -114,7 +95,7 @@ server.registerTool(
     'brainbank_context',
     {
         title: 'BrainBank Context',
-        description: 'Get a formatted knowledge context block for a task. Returns relevant code snippets, git history, co-edit patterns, and learned strategies as markdown. Perfect for enriching your understanding before working on a task.',
+        description: 'Get a formatted knowledge context block for a task. Returns relevant code snippets, git history, co-edit patterns as markdown. Perfect for enriching your understanding before working on a task.',
         inputSchema: z.object({
             task: z.string().describe('Description of the task you need context for'),
             affectedFiles: z.array(z.string()).optional().default([]).describe('Files you plan to modify (improves co-edit suggestions)'),
@@ -153,46 +134,15 @@ server.registerTool(
         const lines = [
             '## Indexing Complete',
             '',
-            `**Code**: ${result.code.indexed} files indexed, ${result.code.skipped} skipped, ${result.code.chunks ?? 0} chunks`,
-            `**Git**: ${result.git.indexed} commits indexed, ${result.git.skipped} skipped`,
+            `**Code**: ${result.code?.indexed ?? 0} files indexed, ${result.code?.skipped ?? 0} skipped, ${result.code?.chunks ?? 0} chunks`,
+            `**Git**: ${result.git?.indexed ?? 0} commits indexed, ${result.git?.skipped ?? 0} skipped`,
         ];
 
         const stats = brainbank.stats();
         lines.push('');
-        lines.push(`**Totals**: ${stats.code.chunks} code chunks, ${stats.git.commits} commits, ${stats.memory.patterns} patterns`);
+        lines.push(`**Totals**: ${stats.code?.chunks ?? 0} code chunks, ${stats.git?.commits ?? 0} commits`);
 
         return { content: [{ type: 'text', text: lines.join('\n') }] };
-    },
-);
-
-// ── Tool: brainbank_learn ──────────────────────────────
-
-server.registerTool(
-    'brainbank_learn',
-    {
-        title: 'BrainBank Learn',
-        description: 'Store a learned pattern from a completed task. This builds the agent knowledge base over time, so future tasks can benefit from past experience. Always call this after completing a task successfully.',
-        inputSchema: z.object({
-            taskType: z.string().describe('Category: api, refactor, debug, feature, test, docs, etc'),
-            task: z.string().describe('What was the task'),
-            approach: z.string().describe('How it was approached and solved'),
-            outcome: z.string().optional().describe('What happened / final result'),
-            successRate: z.number().min(0).max(1).describe('How successful was this approach (0.0 to 1.0)'),
-            critique: z.string().optional().describe('What could be done better next time'),
-        }),
-    },
-    async ({ taskType, task, approach, outcome, successRate, critique }) => {
-        const brainbank = await getBrainBank();
-        const id = await brainbank.learn({
-            taskType, task, approach, outcome, successRate, critique,
-        });
-
-        return {
-            content: [{
-                type: 'text',
-                text: `✓ Pattern #${id} stored (${taskType}, ${Math.round(successRate * 100)}% success)`,
-            }],
-        };
     },
 );
 
@@ -202,7 +152,7 @@ server.registerTool(
     'brainbank_stats',
     {
         title: 'BrainBank Stats',
-        description: 'Get statistics about the indexed knowledge base: file count, code chunks, git commits, learned patterns, HNSW index sizes.',
+        description: 'Get statistics about the indexed knowledge base: file count, code chunks, git commits, HNSW index sizes, and KV collections.',
         inputSchema: z.object({}),
     },
     async () => {
@@ -212,22 +162,41 @@ server.registerTool(
         const lines = [
             '## BrainBank Knowledge Base Stats',
             '',
-            '### Code',
-            `- Files indexed: ${s.code.files}`,
-            `- Code chunks: ${s.code.chunks}`,
-            `- HNSW vectors: ${s.code.hnswSize}`,
-            '',
-            '### Git History',
-            `- Commits indexed: ${s.git.commits}`,
-            `- Files tracked: ${s.git.filesTracked}`,
-            `- Co-edit pairs: ${s.git.coEdits}`,
-            `- HNSW vectors: ${s.git.hnswSize}`,
-            '',
-            '### Agent Memory',
-            `- Learned patterns: ${s.memory.patterns}`,
-            `- Average success rate: ${Math.round(s.memory.avgSuccess * 100)}%`,
-            `- HNSW vectors: ${s.memory.hnswSize}`,
         ];
+
+        if (s.code) {
+            lines.push('### Code');
+            lines.push(`- Files indexed: ${s.code.files}`);
+            lines.push(`- Code chunks: ${s.code.chunks}`);
+            lines.push(`- HNSW vectors: ${s.code.hnswSize}`);
+            lines.push('');
+        }
+
+        if (s.git) {
+            lines.push('### Git History');
+            lines.push(`- Commits indexed: ${s.git.commits}`);
+            lines.push(`- Files tracked: ${s.git.filesTracked}`);
+            lines.push(`- Co-edit pairs: ${s.git.coEdits}`);
+            lines.push(`- HNSW vectors: ${s.git.hnswSize}`);
+            lines.push('');
+        }
+
+        if (s.documents) {
+            lines.push('### Documents');
+            lines.push(`- Collections: ${s.documents.collections}`);
+            lines.push(`- Documents: ${s.documents.documents}`);
+            lines.push(`- HNSW vectors: ${s.documents.hnswSize}`);
+            lines.push('');
+        }
+
+        const kvNames = brainbank.listCollectionNames();
+        if (kvNames.length > 0) {
+            lines.push('### KV Collections');
+            for (const name of kvNames) {
+                const coll = brainbank.collection(name);
+                lines.push(`- ${name}: ${coll.count()} items`);
+            }
+        }
 
         return { content: [{ type: 'text', text: lines.join('\n') }] };
     },
@@ -298,17 +267,16 @@ server.registerTool(
     'brainbank_hybrid_search',
     {
         title: 'BrainBank Hybrid Search',
-        description: 'Best quality search: combines semantic vector search + BM25 keyword search using Reciprocal Rank Fusion. Catches both exact keyword matches ("express-rate-limit") AND conceptual similarities ("error handling patterns"). Use this by default for all searches.',
+        description: 'Best quality search: combines semantic vector search + BM25 keyword search using Reciprocal Rank Fusion. Catches both exact keyword matches AND conceptual similarities. Use this by default for all searches.',
         inputSchema: z.object({
             query: z.string().describe('Search query — works with both keywords and natural language'),
             codeK: z.number().optional().default(8).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
-            memoryK: z.number().optional().default(4).describe('Max learned pattern results to return'),
         }),
     },
-    async ({ query, codeK, gitK, memoryK }) => {
+    async ({ query, codeK, gitK }) => {
         const brainbank = await getBrainBank();
-        const results = await brainbank.hybridSearch(query, { codeK, gitK, memoryK });
+        const results = await brainbank.hybridSearch(query, { codeK, gitK });
 
         if (results.length === 0) {
             return { content: [{ type: 'text', text: 'No results found for this query.' }] };
@@ -324,23 +292,109 @@ server.registerTool(
     'brainbank_keyword_search',
     {
         title: 'BrainBank Keyword Search',
-        description: 'Instant BM25 keyword search (no embedding computation needed). Best for exact terms, function names, variable names, error messages, and specific identifiers. Uses Porter stemming for flexible matching.',
+        description: 'Instant BM25 keyword search (no embedding computation needed). Best for exact terms, function names, variable names, error messages, and specific identifiers.',
         inputSchema: z.object({
-            query: z.string().describe('Keywords to search for (e.g. function names, error messages, exact terms)'),
+            query: z.string().describe('Keywords to search for'),
             codeK: z.number().optional().default(8).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
-            memoryK: z.number().optional().default(4).describe('Max learned pattern results to return'),
         }),
     },
-    async ({ query, codeK, gitK, memoryK }) => {
+    async ({ query, codeK, gitK }) => {
         const brainbank = await getBrainBank();
-        const results = brainbank.searchBM25(query, { codeK, gitK, memoryK });
+        const results = brainbank.searchBM25(query, { codeK, gitK });
 
         if (results.length === 0) {
             return { content: [{ type: 'text', text: 'No keyword matches found.' }] };
         }
 
         return { content: [{ type: 'text', text: formatResults(results, 'Keyword Search (BM25)') }] };
+    },
+);
+
+// ── Tool: brainbank_collection_add ────────────────────
+
+server.registerTool(
+    'brainbank_collection_add',
+    {
+        title: 'BrainBank Collection Add',
+        description: 'Add an item to a dynamic KV collection. Collections are created automatically. Use this to store any structured data: errors, decisions, notes, context, etc.',
+        inputSchema: z.object({
+            collection: z.string().describe('Collection name (e.g. "errors", "decisions", "context")'),
+            content: z.string().describe('Content to store'),
+            metadata: z.record(z.any()).optional().default({}).describe('Optional metadata object'),
+        }),
+    },
+    async ({ collection, content, metadata }) => {
+        const brainbank = await getBrainBank();
+        const coll = brainbank.collection(collection);
+        const id = await coll.add(content, metadata);
+
+        return {
+            content: [{ type: 'text', text: `✓ Item #${id} added to '${collection}' (${coll.count()} total)` }],
+        };
+    },
+);
+
+// ── Tool: brainbank_collection_search ──────────────────
+
+server.registerTool(
+    'brainbank_collection_search',
+    {
+        title: 'BrainBank Collection Search',
+        description: 'Search a dynamic KV collection using hybrid vector + keyword search. Returns semantically similar items.',
+        inputSchema: z.object({
+            collection: z.string().describe('Collection name to search'),
+            query: z.string().describe('Search query'),
+            k: z.number().optional().default(5).describe('Max results'),
+            mode: z.enum(['hybrid', 'vector', 'keyword']).optional().default('hybrid').describe('Search mode'),
+        }),
+    },
+    async ({ collection, query, k, mode }) => {
+        const brainbank = await getBrainBank();
+        const coll = brainbank.collection(collection);
+        const results = await coll.search(query, { k, mode: mode as any });
+
+        if (results.length === 0) {
+            return { content: [{ type: 'text', text: `No results in '${collection}' for "${query}"` }] };
+        }
+
+        const lines = [`## Collection: ${collection} — "${query}"`, ''];
+        for (const r of results) {
+            const score = Math.round((r.score ?? 0) * 100);
+            lines.push(`[${score}%] ${r.content}`);
+            if (Object.keys(r.metadata).length > 0) {
+                lines.push(`  ${JSON.stringify(r.metadata)}`);
+            }
+            lines.push('');
+        }
+
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
+    },
+);
+
+// ── Tool: brainbank_collection_trim ────────────────────
+
+server.registerTool(
+    'brainbank_collection_trim',
+    {
+        title: 'BrainBank Collection Trim',
+        description: 'Trim a dynamic collection to keep only the N most recent items. Use this to prevent collections from growing unbounded.',
+        inputSchema: z.object({
+            collection: z.string().describe('Collection name'),
+            keep: z.number().describe('Number of most recent items to keep'),
+        }),
+    },
+    async ({ collection, keep }) => {
+        const brainbank = await getBrainBank();
+        const coll = brainbank.collection(collection);
+        const result = await coll.trim({ keep });
+
+        return {
+            content: [{
+                type: 'text',
+                text: `✓ Trimmed ${result.removed} items from '${collection}' (kept ${keep})`,
+            }],
+        };
     },
 );
 
@@ -360,86 +414,15 @@ function formatResults(results: any[], mode: string): string {
             lines.push(`[COMMIT ${score}%] ${m.shortHash} — ${r.content} (${m.author})`);
             if (m.files?.length) lines.push(`  Files: ${m.files.join(', ')}`);
             lines.push('');
-        } else if (r.type === 'pattern') {
-            const m = r.metadata;
-            lines.push(`[PATTERN ${score}%] ${m.taskType} — ${Math.round(m.successRate * 100)}% success`);
-            lines.push(`  Task: ${m.task}`);
-            lines.push(`  Approach: ${r.content}`);
+        } else if (r.type === 'document') {
+            const ctx = r.context ? ` — ${r.context}` : '';
+            lines.push(`[DOC ${score}%] ${r.filePath} [${r.metadata.collection}]${ctx}`);
+            lines.push(r.content);
             lines.push('');
         }
     }
     return lines.join('\n');
 }
-
-// ── Tool: brainbank_remember ──────────────────────────
-
-server.registerTool(
-    'brainbank_remember',
-    {
-        title: 'BrainBank Remember',
-        description: 'Store a conversation digest for long-term memory. Call this at the end of each conversation to save what was discussed, decided, and learned. The digest is embedded and indexed for future retrieval via brainbank_recall.',
-        inputSchema: z.object({
-            title: z.string().describe('Short title summarizing the conversation (e.g. "Added BM25 hybrid search")'),
-            summary: z.string().describe('2-3 sentence summary of what happened'),
-            decisions: z.array(z.string()).optional().default([]).describe('Key decisions made during the conversation'),
-            filesChanged: z.array(z.string()).optional().default([]).describe('Files that were created or modified'),
-            patterns: z.array(z.string()).optional().default([]).describe('What worked, what to remember for next time'),
-            openQuestions: z.array(z.string()).optional().default([]).describe('Unresolved questions or follow-up items'),
-            tags: z.array(z.string()).optional().default([]).describe('Tags for categorization (e.g. "search", "auth", "refactor")'),
-        }),
-    },
-    async ({ title, summary, decisions, filesChanged, patterns, openQuestions, tags }) => {
-        const brainbank = await getBrainBank();
-        const id = await brainbank.remember({
-            title, summary, decisions, filesChanged, patterns, openQuestions, tags,
-        });
-
-        return {
-            content: [{
-                type: 'text',
-                text: `✓ Conversation memory #${id} stored: "${title}"\n\nThis memory is now searchable via brainbank_recall.`,
-            }],
-        };
-    },
-);
-
-// ── Tool: brainbank_recall ────────────────────────────
-
-server.registerTool(
-    'brainbank_recall',
-    {
-        title: 'BrainBank Recall',
-        description: 'Search conversation memories to find relevant past context. Use this at the START of a conversation to check if there are relevant past discussions about the current topic. Returns structured digests with decisions, patterns, and files from previous conversations.',
-        inputSchema: z.object({
-            query: z.string().describe('What you want to recall (e.g. "authentication changes", "database refactoring")'),
-            k: z.number().optional().default(5).describe('Max memories to return'),
-            mode: z.enum(['hybrid', 'vector', 'keyword']).optional().default('hybrid').describe('Search mode: hybrid (best), vector (semantic), or keyword (exact)'),
-        }),
-    },
-    async ({ query, k, mode }) => {
-        const brainbank = await getBrainBank();
-        const memories = await brainbank.recall(query, { k, mode: mode as any });
-
-        if (memories.length === 0) {
-            return { content: [{ type: 'text', text: 'No relevant conversation memories found.' }] };
-        }
-
-        const lines = ['## Recalled Conversation Memories', ''];
-        for (const m of memories) {
-            const score = Math.round((m.score ?? 0) * 100);
-            const date = new Date(m.createdAt * 1000).toISOString().split('T')[0];
-            lines.push(`### [${score}%] ${m.title} *(${date}, ${m.tier})*`);
-            lines.push(m.summary);
-            if (m.decisions?.length) lines.push(`**Decisions:** ${m.decisions.join('; ')}`);
-            if (m.filesChanged?.length) lines.push(`**Files:** ${m.filesChanged.join(', ')}`);
-            if (m.patterns?.length) lines.push(`**Patterns:** ${m.patterns.join('; ')}`);
-            if (m.openQuestions?.length) lines.push(`**Open:** ${m.openQuestions.join('; ')}`);
-            lines.push('');
-        }
-
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
-    },
-);
 
 // ── Start Server ────────────────────────────────────
 

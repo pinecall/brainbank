@@ -25,11 +25,12 @@
  *   brainbank context add <col> <path> <desc> Add context metadata
  *   brainbank context list                    List all context metadata
  * 
- *   MEMORY
- *   brainbank memory learn                    Store a learned pattern
- *   brainbank memory search <query>           Search patterns
- *   brainbank remember                        Store conversation memory
- *   brainbank recall <query>                  Recall conversation memories
+ *   KV STORE
+ *   brainbank kv add <coll> <content>         Add item to a collection
+ *   brainbank kv search <coll> <query>        Search a collection
+ *   brainbank kv list <coll>                  List items in a collection
+ *   brainbank kv trim <coll> --keep <n>       Keep only N most recent items
+ *   brainbank kv clear <coll>                 Clear all items
  * 
  *   UTILITY
  *   brainbank stats                           Show index statistics
@@ -40,8 +41,6 @@ import { BrainBank } from '../core/brainbank.ts';
 import { code } from '../modules/code.ts';
 import { git } from '../modules/git.ts';
 import { docs } from '../modules/docs.ts';
-import { conversations } from '../modules/conversations.ts';
-import { memory } from '../modules/memory.ts';
 
 // ── Colors ──────────────────────────────────────────
 
@@ -70,14 +69,12 @@ function hasFlag(name: string): boolean {
     return args.includes(`--${name}`);
 }
 
-/** Create a full BrainBank with all modules for code projects. */
+/** Create a full BrainBank with code indexers. */
 function createFullBrain(repoPath?: string): BrainBank {
     const rp = repoPath ?? getFlag('repo') ?? '.';
     return new BrainBank({ repoPath: rp })
         .use(code({ repoPath: rp }))
         .use(git())
-        .use(memory())
-        .use(conversations())
         .use(docs());
 }
 
@@ -85,8 +82,7 @@ function createFullBrain(repoPath?: string): BrainBank {
 function createDocsBrain(): BrainBank {
     const repoPath = getFlag('repo') ?? '.';
     return new BrainBank({ repoPath })
-        .use(docs())
-        .use(conversations());
+        .use(docs());
 }
 
 // ── Commands ────────────────────────────────────────
@@ -124,12 +120,11 @@ async function cmdIndex() {
     if (stats.code) console.log(`    Code chunks:  ${stats.code.chunks}`);
     if (stats.git) console.log(`    Git commits:  ${stats.git.commits}`);
     if (stats.git) console.log(`    Co-edit pairs: ${stats.git.coEdits}`);
-    if (stats.memory) console.log(`    Patterns:     ${stats.memory.patterns}`);
 
     brain.close();
 }
 
-// ── Collection Commands ─────────────────────────────
+// ── Collection Commands (doc-level) ─────────────────
 
 async function cmdCollection() {
     const sub = args[1];
@@ -192,6 +187,141 @@ async function cmdCollection() {
     }
 
     console.log(c.red('Usage: brainbank collection <add|list|remove>'));
+    process.exit(1);
+}
+
+// ── KV (Dynamic Collection) Commands ────────────────
+
+async function cmdKv() {
+    const sub = args[1];
+
+    if (sub === 'add') {
+        const collName = args[2];
+        const content = args.slice(3).filter(a => !a.startsWith('--')).join(' ');
+        const metaRaw = getFlag('meta');
+
+        if (!collName || !content) {
+            console.log(c.red('Usage: brainbank kv add <collection> <content> [--meta \'{"key":"val"}\']'));
+            process.exit(1);
+        }
+
+        const brain = createFullBrain();
+        await brain.initialize();
+        const coll = brain.collection(collName);
+        const meta = metaRaw ? JSON.parse(metaRaw) : {};
+        const id = await coll.add(content, meta);
+        console.log(c.green(`✓ Added item #${id} to '${collName}'`));
+        brain.close();
+        return;
+    }
+
+    if (sub === 'search') {
+        const collName = args[2];
+        const query = args.slice(3).filter(a => !a.startsWith('--')).join(' ');
+        const k = parseInt(getFlag('k') || '5', 10);
+        const mode = (getFlag('mode') as any) || 'hybrid';
+
+        if (!collName || !query) {
+            console.log(c.red('Usage: brainbank kv search <collection> <query> [--k 5] [--mode hybrid|keyword|vector]'));
+            process.exit(1);
+        }
+
+        const brain = createFullBrain();
+        await brain.initialize();
+        const coll = brain.collection(collName);
+        const results = await coll.search(query, { k, mode });
+
+        if (results.length === 0) {
+            console.log(c.yellow('  No results found.'));
+        } else {
+            console.log(c.bold(`\n━━━ ${collName}: "${query}" ━━━\n`));
+            for (const r of results) {
+                const score = Math.round((r.score ?? 0) * 100);
+                console.log(`  ${c.cyan(`[${score}%]`)} ${r.content}`);
+                if (Object.keys(r.metadata).length > 0) {
+                    console.log(`    ${c.dim(JSON.stringify(r.metadata))}`);
+                }
+            }
+        }
+        brain.close();
+        return;
+    }
+
+    if (sub === 'list') {
+        const collName = args[2];
+        const limit = parseInt(getFlag('limit') || '20', 10);
+
+        if (!collName) {
+            // List all collection names
+            const brain = createFullBrain();
+            await brain.initialize();
+            const names = brain.listCollectionNames();
+            if (names.length === 0) {
+                console.log(c.yellow('  No KV collections found.'));
+            } else {
+                console.log(c.bold('\n━━━ KV Collections ━━━\n'));
+                for (const n of names) {
+                    const coll = brain.collection(n);
+                    console.log(`  ${c.cyan(n)} — ${coll.count()} items`);
+                }
+            }
+            brain.close();
+            return;
+        }
+
+        const brain = createFullBrain();
+        await brain.initialize();
+        const coll = brain.collection(collName);
+        const items = coll.list({ limit });
+        if (items.length === 0) {
+            console.log(c.yellow(`  Collection '${collName}' is empty.`));
+        } else {
+            console.log(c.bold(`\n━━━ ${collName} (${coll.count()} items) ━━━\n`));
+            for (const item of items) {
+                const age = Math.round((Date.now() / 1000 - item.createdAt) / 60);
+                console.log(`  #${item.id} ${c.dim(`(${age}m ago)`)} ${item.content.slice(0, 80)}`);
+            }
+        }
+        brain.close();
+        return;
+    }
+
+    if (sub === 'trim') {
+        const collName = args[2];
+        const keep = parseInt(getFlag('keep') || '0', 10);
+
+        if (!collName || keep <= 0) {
+            console.log(c.red('Usage: brainbank kv trim <collection> --keep <n>'));
+            process.exit(1);
+        }
+
+        const brain = createFullBrain();
+        await brain.initialize();
+        const coll = brain.collection(collName);
+        const result = await coll.trim({ keep });
+        console.log(c.green(`✓ Trimmed ${result.removed} items from '${collName}' (kept ${keep})`));
+        brain.close();
+        return;
+    }
+
+    if (sub === 'clear') {
+        const collName = args[2];
+        if (!collName) {
+            console.log(c.red('Usage: brainbank kv clear <collection>'));
+            process.exit(1);
+        }
+
+        const brain = createFullBrain();
+        await brain.initialize();
+        const coll = brain.collection(collName);
+        const before = coll.count();
+        coll.clear();
+        console.log(c.green(`✓ Cleared ${before} items from '${collName}'`));
+        brain.close();
+        return;
+    }
+
+    console.log(c.red('Usage: brainbank kv <add|search|list|trim|clear>'));
     process.exit(1);
 }
 
@@ -382,11 +512,6 @@ function printResults(results: any[]) {
             console.log(`${c.cyan(`[COMMIT ${score}%]`)} ${c.bold(m.shortHash)} ${r.content} ${c.dim(`(${m.author})`)}`);
             if (m.files?.length) console.log(c.dim(`  Files: ${m.files.slice(0, 4).join(', ')}`));
             console.log('');
-        } else if (r.type === 'pattern') {
-            const m = r.metadata;
-            console.log(`${c.yellow(`[PATTERN ${score}%]`)} ${c.bold(m.taskType)} — ${Math.round(m.successRate * 100)}% success`);
-            console.log(c.dim(`  ${r.content}`));
-            console.log('');
         } else if (r.type === 'document') {
             const ctx = r.context ? ` — ${c.dim(r.context)}` : '';
             console.log(`${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} [${r.metadata.collection}]${ctx}`);
@@ -395,134 +520,6 @@ function printResults(results: any[]) {
             console.log('');
         }
     }
-}
-
-// ── Memory Commands ─────────────────────────────────
-
-async function cmdMemory() {
-    const sub = args[1];
-
-    if (sub === 'learn') {
-        const taskType = getFlag('type') || 'general';
-        const task = getFlag('task');
-        const approach = getFlag('approach');
-        const rate = parseFloat(getFlag('rate') || '0.8');
-
-        if (!task || !approach) {
-            console.log(c.red('Usage: brainbank memory learn --type <type> --task <task> --approach <approach> --rate <0-1>'));
-            process.exit(1);
-        }
-
-        const brain = createFullBrain();
-        const id = await brain.learn({
-            taskType,
-            task,
-            approach,
-            successRate: rate,
-            outcome: getFlag('outcome'),
-            critique: getFlag('critique'),
-        });
-
-        console.log(c.green(`✓ Pattern #${id} stored (${taskType}, ${Math.round(rate * 100)}% success)`));
-        brain.close();
-        return;
-    }
-
-    if (sub === 'search') {
-        const query = args.slice(2).filter(a => !a.startsWith('--')).join(' ');
-        if (!query) {
-            console.log(c.red('Usage: brainbank memory search <query>'));
-            process.exit(1);
-        }
-
-        const brain = createFullBrain();
-        const patterns = await brain.searchPatterns(query);
-        if (patterns.length === 0) {
-            console.log(c.yellow('  No patterns found.'));
-        } else {
-            console.log(c.bold(`\n━━━ Memory Patterns: "${query}" ━━━\n`));
-            for (const p of patterns) {
-                const score = Math.round(p.score * 100);
-                console.log(`  ${c.yellow(`[${score}%]`)} ${c.bold(p.taskType)} — ${Math.round(p.successRate * 100)}% success`);
-                console.log(`    Task: ${p.task}`);
-                console.log(`    Approach: ${c.dim(p.approach)}`);
-                if (p.critique) console.log(`    Lesson: ${c.dim(p.critique)}`);
-                console.log('');
-            }
-        }
-        brain.close();
-        return;
-    }
-
-    if (sub === 'consolidate') {
-        const brain = createFullBrain();
-        await brain.initialize();
-        const result = brain.consolidate();
-        console.log(c.green(`✓ Consolidated: ${result.pruned} pruned, ${result.deduped} deduped`));
-        brain.close();
-        return;
-    }
-
-    console.log(c.red('Usage: brainbank memory <learn|search|consolidate>'));
-    process.exit(1);
-}
-
-// ── Conversation Memory ─────────────────────────────
-
-async function cmdRemember() {
-    const title = getFlag('title');
-    const summary = getFlag('summary');
-
-    if (!title || !summary) {
-        console.log(c.red('Usage: brainbank remember --title <title> --summary <summary> [--decisions "a,b"] [--files "a.ts,b.ts"] [--tags "a,b"]'));
-        process.exit(1);
-    }
-
-    const brain = createFullBrain();
-    const id = await brain.remember({
-        title,
-        summary,
-        decisions: (getFlag('decisions') || '').split(',').filter(Boolean),
-        filesChanged: (getFlag('files') || '').split(',').filter(Boolean),
-        patterns: (getFlag('patterns') || '').split(',').filter(Boolean),
-        tags: (getFlag('tags') || '').split(',').filter(Boolean),
-    });
-
-    console.log(c.green(`✓ Memory #${id} stored: "${title}"`));
-    brain.close();
-}
-
-async function cmdRecall() {
-    const query = args.slice(1).filter(a => !a.startsWith('--')).join(' ');
-    if (!query) {
-        console.log(c.red('Usage: brainbank recall <query>'));
-        process.exit(1);
-    }
-
-    const brain = createFullBrain();
-
-    console.log(c.bold(`\n━━━ BrainBank Recall: "${query}" ━━━\n`));
-
-    const memories = await brain.recall(query);
-
-    if (memories.length === 0) {
-        console.log(c.yellow('  No relevant memories found.'));
-        brain.close();
-        return;
-    }
-
-    for (const m of memories) {
-        const score = Math.round((m.score ?? 0) * 100);
-        const age = Math.round((Date.now() / 1000 - m.createdAt) / 86400);
-        console.log(`${c.cyan(`[${score}%]`)} ${c.bold(m.title)} ${c.dim(`(${age}d ago, ${m.tier})`)}`);
-        console.log(c.dim(`  ${m.summary}`));
-        if (m.decisions?.length) console.log(`  ${c.green('Decisions:')} ${m.decisions.join(', ')}`);
-        if (m.filesChanged?.length) console.log(`  ${c.yellow('Files:')} ${m.filesChanged.join(', ')}`);
-        if (m.patterns?.length) console.log(`  ${c.cyan('Patterns:')} ${m.patterns.join(', ')}`);
-        console.log('');
-    }
-
-    brain.close();
 }
 
 // ── Stats ───────────────────────────────────────────
@@ -534,7 +531,7 @@ async function cmdStats() {
     const s = brain.stats();
 
     console.log(c.bold('\n━━━ BrainBank Stats ━━━\n'));
-    console.log(`  ${c.cyan('Modules')}: ${brain.modules.join(', ')}\n`);
+    console.log(`  ${c.cyan('Indexers')}: ${brain.indexers.join(', ')}\n`);
 
     if (s.code) {
         console.log(`  ${c.cyan('Code')}`);
@@ -553,14 +550,6 @@ async function cmdStats() {
         console.log('');
     }
 
-    if (s.memory) {
-        console.log(`  ${c.cyan('Agent Memory')}`);
-        console.log(`    Patterns:       ${s.memory.patterns}`);
-        console.log(`    Avg success:    ${Math.round(s.memory.avgSuccess * 100)}%`);
-        console.log(`    HNSW vectors:   ${s.memory.hnswSize}`);
-        console.log('');
-    }
-
     if (s.documents) {
         console.log(`  ${c.cyan('Documents')}`);
         console.log(`    Collections:    ${s.documents.collections}`);
@@ -570,11 +559,15 @@ async function cmdStats() {
         console.log('');
     }
 
-    if (s.conversations) {
-        console.log(`  ${c.cyan('Conversations')}`);
-        console.log(`    Total memories: ${s.conversations.total}`);
-        console.log(`    Short-term:     ${s.conversations.short}`);
-        console.log(`    Long-term:      ${s.conversations.long}`);
+    // KV collections
+    const kvNames = brain.listCollectionNames();
+    if (kvNames.length > 0) {
+        console.log(`  ${c.cyan('KV Collections')}`);
+        for (const name of kvNames) {
+            const coll = brain.collection(name);
+            console.log(`    ${name}: ${coll.count()} items`);
+        }
+        console.log('');
     }
 
     brain.close();
@@ -606,12 +599,12 @@ function showHelp() {
     console.log(`  ${c.cyan('context add')} <col> <path> <desc>    Add context metadata`);
     console.log(`  ${c.cyan('context list')}                       List all context metadata`);
     console.log('');
-    console.log(c.bold('Memory:'));
-    console.log(`  ${c.cyan('memory learn')}                       Store a learned pattern`);
-    console.log(`  ${c.cyan('memory search')} <query>              Search patterns`);
-    console.log(`  ${c.cyan('memory consolidate')}                 Prune + deduplicate patterns`);
-    console.log(`  ${c.cyan('remember')}                           Store conversation memory`);
-    console.log(`  ${c.cyan('recall')} <query>                     Recall conversation memories`);
+    console.log(c.bold('KV Store:'));
+    console.log(`  ${c.cyan('kv add')} <coll> <content>            Add item to a collection`);
+    console.log(`  ${c.cyan('kv search')} <coll> <query>           Search a collection`);
+    console.log(`  ${c.cyan('kv list')} [coll]                     List collections or items`);
+    console.log(`  ${c.cyan('kv trim')} <coll> --keep <n>          Keep only N most recent`);
+    console.log(`  ${c.cyan('kv clear')} <coll>                    Clear all items`);
     console.log('');
     console.log(c.bold('Utility:'));
     console.log(`  ${c.cyan('stats')}                              Show index statistics`);
@@ -627,16 +620,11 @@ function showHelp() {
     console.log('');
     console.log(c.bold('Examples:'));
     console.log(c.dim('  brainbank index .'));
-    console.log(c.dim('  brainbank collection add ~/notes --name notes --pattern "**/*.md" --context "Personal notes"'));
-    console.log(c.dim('  brainbank docs'));
-    console.log(c.dim('  brainbank dsearch "project timeline"'));
+    console.log(c.dim('  brainbank kv add errors "Fixed null pointer in api.ts"'));
+    console.log(c.dim('  brainbank kv search errors "null pointer"'));
+    console.log(c.dim('  brainbank kv list'));
     console.log(c.dim('  brainbank hsearch "authentication middleware"'));
     console.log(c.dim('  brainbank context "add rate limiting to the API"'));
-    console.log(c.dim('  brainbank context add notes /work "Work-related notes"'));
-    console.log(c.dim('  brainbank memory learn --type api --task "add auth" --approach "JWT middleware" --rate 0.9'));
-    console.log(c.dim('  brainbank memory search "authentication"'));
-    console.log(c.dim('  brainbank remember --title "Added BM25" --summary "Implemented hybrid search" --tags "search,bm25"'));
-    console.log(c.dim('  brainbank recall "search improvements"'));
     console.log(c.dim('  brainbank serve'));
 }
 
@@ -646,19 +634,13 @@ async function main() {
     switch (command) {
         case 'index':       return cmdIndex();
         case 'collection':  return cmdCollection();
+        case 'kv':          return cmdKv();
         case 'docs':        return cmdDocs();
         case 'dsearch':     return cmdDocSearch();
         case 'search':      return cmdSearch();
         case 'hsearch':     return cmdHybridSearch();
         case 'ksearch':     return cmdKeywordSearch();
         case 'context':     return cmdContext();
-        case 'memory':      return cmdMemory();
-        case 'learn':
-            // Backward compat: redirect to memory learn
-            args.splice(0, 1, 'memory', 'learn');
-            return cmdMemory();
-        case 'remember':    return cmdRemember();
-        case 'recall':      return cmdRecall();
         case 'stats':       return cmdStats();
         case 'serve':       return cmdServe();
         case 'help':
