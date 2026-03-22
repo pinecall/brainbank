@@ -31,6 +31,7 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - [Indexing](#indexing-1)
   - [Incremental Indexing](#incremental-indexing)
   - [Re-embedding](#re-embedding)
+  - [Schema Migrations](#schema-migrations)
 - [Architecture](#architecture)
   - [Search Pipeline](#search-pipeline)
 - [Testing](#testing)
@@ -145,18 +146,37 @@ The universal data primitive. Store anything, search semantically:
 const errors = brain.collection('debug_errors');
 
 // Add items (auto-embedded for vector search)
-await errors.add('Null pointer in api.ts line 42', { file: 'api.ts' });
-await errors.add('Timeout on /users endpoint', { file: 'routes.ts' });
+await errors.add('Null pointer in api.ts line 42', { metadata: { file: 'api.ts' } });
+await errors.add('Timeout on /users endpoint', { metadata: { file: 'routes.ts' } });
+
+// Add with tags
+await errors.add('Auth token expired', {
+  tags: ['critical', 'auth'],
+  metadata: { file: 'auth.ts' },
+});
+
+// Add with TTL (auto-expires after 7 days)
+await errors.add('Transient network error', {
+  tags: ['warning', 'network'],
+  ttl: '7d',
+});
 
 // Search (hybrid: vector + keyword by default)
 const hits = await errors.search('null pointer', { k: 5 });
-// → [{ content: 'Null pointer in api.ts...', score: 0.92, metadata: {...} }]
+// → [{ content: 'Null pointer in api.ts...', score: 0.92, tags: [], ... }]
+
+// Search with tag filter (items must have ALL specified tags)
+const critical = await errors.search('error', { tags: ['critical'] });
+const critAuth = await errors.search('error', { tags: ['critical', 'auth'] });
+
+// List with tag filter
+errors.list({ tags: ['critical'] });
 
 // Manage
-errors.list({ limit: 20 });     // list items
+errors.list({ limit: 20 });       // list items (newest first)
 errors.count();                   // total items
-errors.trim({ keep: 50 });       // keep N most recent
-errors.prune('7d');               // remove older than 7 days
+errors.trim({ keep: 50 });        // keep N most recent
+errors.prune({ olderThan: '7d' });// remove older than 7 days
 errors.remove(id);                // remove by id
 errors.clear();                   // remove all
 
@@ -476,6 +496,32 @@ brainbank reembed
 
 > BrainBank tracks provider metadata in `embedding_meta` table. It auto-detects mismatches and warns you to run `reembed()`.
 
+### Schema Migrations
+
+BrainBank automatically upgrades existing databases when the schema changes. No manual steps needed:
+
+- On `initialize()`, pending migrations are detected and applied
+- Each migration runs in its own transaction (atomic)
+- Old data is preserved across upgrades
+- New databases get the latest schema directly
+
+Migrations are defined in `src/core/migrations.ts` and versioned:
+
+```typescript
+// Adding a new migration:
+export const MIGRATIONS: Migration[] = [
+  {
+    version: 5,
+    description: 'Add tags and TTL support to kv_data',
+    up: `
+      ALTER TABLE kv_data ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE kv_data ADD COLUMN expires_at INTEGER;
+    `,
+  },
+  // Future: { version: 6, description: '...', up: '...' },
+];
+```
+
 ---
 
 ## Architecture
@@ -543,7 +589,7 @@ Final results (sorted by blended score)
 ## Testing
 
 ```bash
-npm test                    # Unit tests (115 tests)
+npm test                    # Unit tests (123 tests)
 npm test -- --integration   # Include integration tests (downloads model)
 npm test -- --filter bm25   # Filter by test name
 npm test -- --verbose       # Show assertion details
@@ -570,7 +616,8 @@ test/
     ├── reembed.test.ts     # Re-embedding engine
     ├── reranker.test.ts    # Pluggable reranker integration
     ├── rrf.test.ts         # Reciprocal Rank Fusion
-    └── schema.test.ts      # SQLite schema & migrations
+    ├── schema.test.ts      # SQLite schema & migrations
+    └── tags-ttl.test.ts    # Tags, TTL & schema migrations
 ```
 
 All test files import from `test/helpers.ts` which centralizes shared modules and provides:

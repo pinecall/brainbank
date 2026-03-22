@@ -30,7 +30,7 @@ export type { BrainBankModule, ModuleContext } from './modules/types.ts';
 
 // Collections
 export { Collection } from './core/collection.ts';
-export type { CollectionItem, CollectionSearchOptions } from './core/collection.ts';
+export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './core/collection.ts';
 
 // Types
 export type {

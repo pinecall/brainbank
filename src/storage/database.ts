@@ -9,6 +9,7 @@ import BetterSqlite3 from 'better-sqlite3';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createSchema } from '../core/schema.ts';
+import { runMigrations } from '../core/migrations.ts';
 
 export class Database {
     readonly db: BetterSqlite3.Database;
@@ -25,8 +26,9 @@ export class Database {
         this.db.pragma('synchronous = NORMAL');
         this.db.pragma('foreign_keys = ON');
 
-        // Initialize schema
+        // Initialize schema + apply pending migrations
         createSchema(this.db);
+        runMigrations(this.db);
     }
 
     /**
