@@ -5,7 +5,7 @@
     "type": "module",
     "main": "src/index.ts",
     "bin": {
-        "brainbank": "./src/integrations/cli.ts"
+        "brainbank": "./bin/brainbank"
     },
     "exports": {
         ".": "./src/index.ts",
