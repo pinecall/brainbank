@@ -6,7 +6,8 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 
 - **Pluggable indexers** — `.use()` only what you need (code, git, docs)
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
-- **Local embeddings** — WASM-based, no API keys needed
+- **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
+- **Optional reranker** — pluggable cross-encoder re-ranking for search
 - **Portable** — single `.brainbank/brainbank.db` file
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 
@@ -28,6 +29,8 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
   - [Embedding Providers](#embedding-providers)
   - [Reranker](#reranker-optional)
 - [Architecture](#architecture)
+  - [Search Pipeline](#search-pipeline)
+- [Testing](#testing)
 
 ---
 
@@ -393,6 +396,7 @@ Without a reranker, BrainBank uses pure RRF fusion (still good quality).
 | `BRAINBANK_REPO` | Repository path (default: cwd) |
 | `BRAINBANK_DB` | Database path |
 | `BRAINBANK_DEBUG` | Show full stack traces |
+| `OPENAI_API_KEY` | Required when using `OpenAIEmbedding` provider |
 
 ---
 
@@ -422,18 +426,78 @@ Without a reranker, BrainBank uses pure RRF fusion (still good quality).
 │  └──────────────────────────────────────────────────┘│
 │                                                      │
 │  ┌──────────────────────────────────────────────────┐│
-│  │    Local Embedding (WASM, 384-dim, ≈0ms/query)   ││
+│  │  Embedding (Local WASM 384d │ OpenAI 1536d)      ││
+│  └──────────────────────────────────────────────────┘│
+│  ┌──────────────────────────────────────────────────┐│
+│  │  Reranker (optional, pluggable cross-encoder)    ││
 │  └──────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────┘
+```
+
+### Search Pipeline
+
+```
+Query
+  │
+  ├──► Vector Search (HNSW k-NN)  ──► candidates
+  ├──► Keyword Search (BM25/FTS5)  ──► candidates
+  │
+  ▼
+Reciprocal Rank Fusion (RRF, k=60)
+  │
+  ▼
+Reranker (optional, 60% RRF + 40% reranker)
+  │
+  ▼
+Final results (sorted by blended score)
 ```
 
 ### Data Flow
 
 1. **Index** — Indexers parse files into chunks
-2. **Embed** — Each chunk gets a 384-dim vector (local WASM)
+2. **Embed** — Each chunk gets a vector (local WASM or OpenAI)
 3. **Store** — Chunks + vectors → SQLite, vectors → HNSW index
-4. **Search** — Query → HNSW k-NN + BM25 keyword → RRF fusion
+4. **Search** — Query → HNSW k-NN + BM25 keyword → RRF fusion → optional reranker
 5. **Context** — Top results formatted as markdown for system prompts
+
+---
+
+## Testing
+
+```bash
+npm test                    # Unit tests (110 tests)
+npm test -- --integration   # Include integration tests (downloads model)
+npm test -- --filter bm25   # Filter by test name
+npm test -- --verbose       # Show assertion details
+```
+
+### Test Structure
+
+```
+test/
+├── helpers.ts              # Shared imports, mockEmbedding(), tmpDb()
+├── run.ts                  # Custom test runner
+└── unit/
+    ├── bm25.test.ts        # BM25 full-text search
+    ├── brainbank.test.ts   # Orchestrator & .use() pattern
+    ├── chunker.test.ts     # Language-aware code chunking
+    ├── collection.test.ts  # Dynamic KV collections
+    ├── config.test.ts      # Configuration resolution
+    ├── hnsw.test.ts        # HNSW vector index
+    ├── languages.test.ts   # Language registry
+    ├── math.test.ts        # Cosine similarity, normalize, distance
+    ├── mmr.test.ts         # Maximal Marginal Relevance
+    ├── notes.test.ts       # Note memory store
+    ├── openai-embedding.test.ts  # OpenAI embedding provider
+    ├── reranker.test.ts    # Pluggable reranker integration
+    ├── rrf.test.ts         # Reciprocal Rank Fusion
+    └── schema.test.ts      # SQLite schema & migrations
+```
+
+All test files import from `test/helpers.ts` which centralizes shared modules and provides:
+
+- **`mockEmbedding(dims?)`** — Deterministic mock embedding provider
+- **`tmpDb(label)`** — Generates unique temp database paths
 
 ---
 
