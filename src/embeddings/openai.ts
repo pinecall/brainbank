@@ -83,9 +83,13 @@ export class OpenAIEmbedding implements EmbeddingProvider {
             throw new Error('OpenAI API key required. Set OPENAI_API_KEY env var or pass apiKey option.');
         }
 
+        // Truncate texts that would exceed token limit (~4 chars per token, 8192 max)
+        const MAX_CHARS = 30_000;
+        const safeInput = input.map(t => t.length > MAX_CHARS ? t.slice(0, MAX_CHARS) : t);
+
         const body: Record<string, any> = {
             model: this._model,
-            input,
+            input: safeInput,
         };
 
         if (this._requestDims) {

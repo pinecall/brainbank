@@ -72,6 +72,17 @@ async function createReranker() {
     return undefined;
 }
 
+// ── Embedding Provider (default: local, set BRAINBANK_EMBEDDING=openai) ──
+
+async function createEmbeddingProvider() {
+    const embeddingEnv = process.env.BRAINBANK_EMBEDDING ?? 'local';
+    if (embeddingEnv === 'openai') {
+        const { OpenAIEmbedding } = await import('../embeddings/openai.ts');
+        return new OpenAIEmbedding();
+    }
+    return undefined; // BrainBank defaults to local WASM
+}
+
 // ── Lazy BrainBank Instance ────────────────────────────
 
 let _brainbank: BrainBank | null = null;
@@ -79,7 +90,13 @@ let _brainbank: BrainBank | null = null;
 async function getBrainBank(): Promise<BrainBank> {
     if (!_brainbank) {
         const reranker = await createReranker();
-        _brainbank = new BrainBank({ repoPath, reranker })
+        const embeddingProvider = await createEmbeddingProvider();
+        const opts: Record<string, any> = { repoPath, reranker };
+        if (embeddingProvider) {
+            opts.embeddingProvider = embeddingProvider;
+            opts.embeddingDims = embeddingProvider.dims;
+        }
+        _brainbank = new BrainBank(opts)
             .use(code({ repoPath }))
             .use(git({ repoPath }))
             .use(docs());

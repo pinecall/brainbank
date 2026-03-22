@@ -174,6 +174,15 @@ async function createBrain(repoPath?: string): Promise<BrainBank> {
         brainOpts.reranker = new Qwen3Reranker();
     }
 
+    // Embedding provider via BRAINBANK_EMBEDDING env (default: local WASM)
+    const embeddingEnv = process.env.BRAINBANK_EMBEDDING;
+    if (embeddingEnv === 'openai') {
+        const { OpenAIEmbedding } = await import('../embeddings/openai.ts');
+        const provider = new OpenAIEmbedding();
+        brainOpts.embeddingProvider = provider;
+        brainOpts.embeddingDims = provider.dims;
+    }
+
     const brain = new BrainBank(brainOpts);
 
     // 1. Built-in indexers (default: all three)
