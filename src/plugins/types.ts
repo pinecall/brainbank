@@ -91,7 +91,6 @@ export interface Indexer {
     /**
      * Glob patterns this indexer watches.
      * If not set, defaults to all supported code extensions.
-     * Example: ['**/*.csv', '**/*.json']
      */
     watchPatterns?(): string[];
 
