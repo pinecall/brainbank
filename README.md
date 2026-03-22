@@ -644,8 +644,8 @@ Final results (sorted by blended score)
 
 ```bash
 npm test                    # Unit tests (129 tests)
-npm test -- --integration   # Full suite (176 tests, includes real models + indexers)
-npm test -- --filter bm25   # Filter by test name
+npm test -- --integration   # Full suite (211 tests, includes real models + all domains)
+npm test -- --filter code   # Filter by test name
 npm test -- --verbose       # Show assertion details
 ```
 
@@ -680,9 +680,13 @@ test/
 │       ├── hnsw.test.ts            # HNSW vector index
 │       └── mmr.test.ts             # Maximal Marginal Relevance
 └── integration/
-    ├── indexers.test.ts        # Real code, git, docs indexer (temp repo fixtures)
-    ├── pipeline.test.ts            # Full pipeline: search, tags, TTL, watch
-    └── real-model.test.ts          # Real MiniLM embedding + cross-encoder reranker
+    ├── code.test.ts            # Code indexer: index → search → skip → reindex
+    ├── git.test.ts             # Git indexer: commits → search → co-edits
+    ├── docs.test.ts            # Docs indexer: collections → search → context
+    ├── memory.test.ts          # Memory: learn → search → consolidate → distill
+    ├── collections.test.ts     # KV collections: vector/hybrid/BM25 search, TTL, trim
+    ├── search.test.ts          # Unified search: brain.search() + getContext
+    └── real-model.test.ts      # Real MiniLM embedding + cross-encoder reranker
 ```
 
 All test files import from `test/helpers.ts` which centralizes shared modules and provides:
