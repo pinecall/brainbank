@@ -633,7 +633,7 @@ Final results (sorted by blended score)
 
 ```bash
 npm test                    # Unit tests (129 tests)
-npm test -- --integration   # Full suite (144 tests, includes integration)
+npm test -- --integration   # Full suite (157 tests, includes real model)
 npm test -- --filter bm25   # Filter by test name
 npm test -- --verbose       # Show assertion details
 ```
@@ -663,7 +663,8 @@ test/
     ├── tags-ttl.test.ts    # Tags, TTL & schema columns
     └── watch.test.ts       # Watch mode & custom indexer routing
 └── integration/
-    └── pipeline.test.ts    # Full pipeline: search, tags, TTL, watch
+    ├── pipeline.test.ts    # Full pipeline: search, tags, TTL, watch
+    └── real-model.test.ts  # Real MiniLM embedding + cross-encoder reranker
 ```
 
 All test files import from `test/helpers.ts` which centralizes shared modules and provides:
