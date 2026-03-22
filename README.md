@@ -417,11 +417,16 @@ Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Deskto
     "brainbank": {
       "command": "npx",
       "args": ["-y", "brainbank", "serve"],
-      "env": { "BRAINBANK_REPO": "/path/to/your/project" }
+      "env": {
+        "BRAINBANK_REPO": "/path/to/your/project",
+        "BRAINBANK_EMBEDDING": "openai"
+      }
     }
   }
 }
 ```
+
+> Set `BRAINBANK_EMBEDDING` to `openai` for higher quality search (requires `OPENAI_API_KEY`). Omit to use the free local WASM embeddings.
 
 > `BRAINBANK_REPO` is required for IDE integrations since they launch MCP servers from `/` as cwd. For CLI usage (`brainbank serve` from your project dir), it auto-detects the repo root.
 
@@ -454,17 +459,17 @@ The first search after startup will download the Qwen3-Reranker-0.6B model (~640
 ## Configuration
 
 ```typescript
-import { BrainBank, OpenAIEmbedding } from 'brainbank';
+import { BrainBank, OpenAIEmbedding, Qwen3Reranker } from 'brainbank';
 
 const brain = new BrainBank({
   repoPath: '.',
   dbPath: '.brainbank/brainbank.db',
   gitDepth: 500,
   maxFileSize: 512_000,
-  embeddingDims: 384,
+  embeddingDims: 1536,
   maxElements: 2_000_000,
-  embeddingProvider: new OpenAIEmbedding(),  // or: default local WASM
-  reranker: myReranker,                       // optional, improves search quality
+  embeddingProvider: new OpenAIEmbedding(),   // or: omit for free local WASM (384d)
+  reranker: new Qwen3Reranker(),              // local cross-encoder (auto-downloads ~640MB)
 });
 ```
 
@@ -542,9 +547,10 @@ Without a reranker, BrainBank uses pure RRF fusion (still good quality).
 | Variable | Description |
 |----------|-------------|
 | `BRAINBANK_REPO` | Repository path (default: auto-detected from `.git/`) |
+| `BRAINBANK_EMBEDDING` | Embedding provider: `local` (default), `openai` |
 | `BRAINBANK_RERANKER` | Reranker to use: `qwen3` (default in MCP), `none` to disable |
 | `BRAINBANK_DEBUG` | Show full stack traces |
-| `OPENAI_API_KEY` | Required when using `OpenAIEmbedding` provider |
+| `OPENAI_API_KEY` | Required when using `BRAINBANK_EMBEDDING=openai` |
 
 ---
 
@@ -651,7 +657,7 @@ brainbank reembed
 │  │  Embedding (Local WASM 384d │ OpenAI 1536d)      ││
 │  └──────────────────────────────────────────────────┘│
 │  ┌──────────────────────────────────────────────────┐│
-│  │  Reranker (optional, pluggable cross-encoder)    ││
+│  │  Qwen3-Reranker (default in MCP, cross-encoder)  ││
 │  └──────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────┘
 ```
