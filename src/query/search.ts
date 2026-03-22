@@ -179,17 +179,26 @@ export class UnifiedSearch {
         return results;
     }
 
-    /** Re-rank results by blending original score with reranker score. */
+    /**
+     * Re-rank results using position-aware blending.
+     * 
+     * Top 1-3:  75% retrieval / 25% reranker (preserves exact matches)
+     * Top 4-10: 60% retrieval / 40% reranker
+     * Top 11+:  40% retrieval / 60% reranker (trust reranker more)
+     */
     private async _rerank(query: string, results: SearchResult[]): Promise<SearchResult[]> {
         const reranker = this._deps.reranker!;
         const documents = results.map(r => r.content);
         const scores = await reranker.rank(query, documents);
 
-        // Blend: 60% original, 40% reranker
-        const blended = results.map((r, i) => ({
-            ...r,
-            score: 0.6 * r.score + 0.4 * (scores[i] ?? 0),
-        }));
+        const blended = results.map((r, i) => {
+            const pos = i + 1;
+            const rrfWeight = pos <= 3 ? 0.75 : pos <= 10 ? 0.60 : 0.40;
+            return {
+                ...r,
+                score: rrfWeight * r.score + (1 - rrfWeight) * (scores[i] ?? 0),
+            };
+        });
 
         return blended.sort((a, b) => b.score - a.score);
     }

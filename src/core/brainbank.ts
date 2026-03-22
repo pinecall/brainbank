@@ -454,14 +454,18 @@ export class BrainBank extends EventEmitter {
 
         const fused = reciprocalRankFusion(resultLists);
 
-        // Apply re-ranking if available
+        // Apply position-aware re-ranking if available
         if (this._config.reranker && fused.length > 1) {
             const documents = fused.map(r => r.content);
             const scores = await this._config.reranker.rank(query, documents);
-            const blended = fused.map((r, i) => ({
-                ...r,
-                score: 0.6 * r.score + 0.4 * (scores[i] ?? 0),
-            }));
+            const blended = fused.map((r, i) => {
+                const pos = i + 1;
+                const rrfWeight = pos <= 3 ? 0.75 : pos <= 10 ? 0.60 : 0.40;
+                return {
+                    ...r,
+                    score: rrfWeight * r.score + (1 - rrfWeight) * (scores[i] ?? 0),
+                };
+            });
             return blended.sort((a, b) => b.score - a.score);
         }
 

@@ -165,7 +165,15 @@ async function createBrain(repoPath?: string): Promise<BrainBank> {
     const config = await loadConfig();
     const folderIndexers = await discoverFolderIndexers();
 
-    const brainOpts = { repoPath: rp, ...(config?.brainbank ?? {}) };
+    const brainOpts: Record<string, any> = { repoPath: rp, ...(config?.brainbank ?? {}) };
+
+    // Optional Qwen3 reranker via --reranker qwen3
+    const rerankerFlag = getFlag('reranker');
+    if (rerankerFlag === 'qwen3') {
+        const { Qwen3Reranker } = await import('../rerankers/qwen3-reranker.ts');
+        brainOpts.reranker = new Qwen3Reranker();
+    }
+
     const brain = new BrainBank(brainOpts);
 
     // 1. Built-in indexers (default: all three)
@@ -780,6 +788,7 @@ function showHelp() {
     console.log(`  ${c.dim('--collection <name>')}     Filter by collection`);
     console.log(`  ${c.dim('--pattern <glob>')}        Collection glob (default: **/*.md)`);
     console.log(`  ${c.dim('--context <desc>')}        Context description`);
+    console.log(`  ${c.dim('--reranker <name>')}       Reranker to use (qwen3)`);
     console.log('');
     console.log(c.bold('Examples:'));
     console.log(c.dim('  brainbank index .'));

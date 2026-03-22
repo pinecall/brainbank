@@ -60,13 +60,24 @@ function findRepoRoot(startDir: string): string {
 
 const repoPath = process.env.BRAINBANK_REPO || findRepoRoot(process.cwd());
 
+// ── Reranker (optional) ─────────────────────────────
+
+async function createReranker() {
+    if (process.env.BRAINBANK_RERANKER === 'qwen3') {
+        const { Qwen3Reranker } = await import('../rerankers/qwen3-reranker.ts');
+        return new Qwen3Reranker();
+    }
+    return undefined;
+}
+
 // ── Lazy BrainBank Instance ────────────────────────────
 
 let _brainbank: BrainBank | null = null;
 
 async function getBrainBank(): Promise<BrainBank> {
     if (!_brainbank) {
-        _brainbank = new BrainBank({ repoPath })
+        const reranker = await createReranker();
+        _brainbank = new BrainBank({ repoPath, reranker })
             .use(code({ repoPath }))
             .use(git({ repoPath }))
             .use(docs());

@@ -74,7 +74,7 @@ export const tests = {
         brain.close();
     },
 
-    async 'Reranker blends scores 60/40'(assert: any) {
+    async 'Reranker blends scores with position-aware weighting'(assert: any) {
         const rerankerScores: number[] = [];
         const mockReranker = {
             async rank(_query: string, docs: string[]) {
