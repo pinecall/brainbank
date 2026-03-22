@@ -37,10 +37,13 @@
  *   brainbank serve                           Start MCP server (stdio)
  */
 
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { BrainBank } from '../core/brainbank.ts';
 import { code } from '../modules/code.ts';
 import { git } from '../modules/git.ts';
 import { docs } from '../modules/docs.ts';
+import type { Indexer } from '../modules/types.ts';
 
 // ── Colors ──────────────────────────────────────────
 
@@ -69,20 +72,72 @@ function hasFlag(name: string): boolean {
     return args.includes(`--${name}`);
 }
 
-/** Create a full BrainBank with code indexers. */
-function createFullBrain(repoPath?: string): BrainBank {
-    const rp = repoPath ?? getFlag('repo') ?? '.';
-    return new BrainBank({ repoPath: rp })
-        .use(code({ repoPath: rp }))
-        .use(git())
-        .use(docs());
+// ── Config File Discovery ───────────────────────────
+
+interface BrainBankCliConfig {
+    /** Custom indexers to register alongside built-in ones. */
+    indexers?: Indexer[];
+    /** Override which built-in indexers to load. Default: ['code', 'git', 'docs'] */
+    builtins?: ('code' | 'git' | 'docs')[];
+    /** BrainBank constructor options. */
+    brainbank?: Record<string, any>;
 }
 
-/** Create a docs-only BrainBank. */
-function createDocsBrain(): BrainBank {
+const CONFIG_NAMES = [
+    'brainbank.config.ts',
+    'brainbank.config.js',
+    'brainbank.config.mjs',
+];
+
+let _configCache: BrainBankCliConfig | null | undefined = undefined;
+
+async function loadConfig(): Promise<BrainBankCliConfig | null> {
+    if (_configCache !== undefined) return _configCache;
+
     const repoPath = getFlag('repo') ?? '.';
-    return new BrainBank({ repoPath })
-        .use(docs());
+    const root = path.resolve(repoPath);
+
+    for (const name of CONFIG_NAMES) {
+        const configPath = path.join(root, name);
+        if (fs.existsSync(configPath)) {
+            try {
+                const mod = await import(configPath);
+                const config = mod.default ?? mod;
+                _configCache = config as BrainBankCliConfig;
+                return _configCache;
+            } catch (err: any) {
+                console.error(c.red(`Error loading ${name}: ${err.message}`));
+                process.exit(1);
+            }
+        }
+    }
+
+    _configCache = null;
+    return null;
+}
+
+/** Create a BrainBank from config file or defaults. */
+async function createBrain(repoPath?: string): Promise<BrainBank> {
+    const rp = repoPath ?? getFlag('repo') ?? '.';
+    const config = await loadConfig();
+
+    const brainOpts = { repoPath: rp, ...(config?.brainbank ?? {}) };
+    const brain = new BrainBank(brainOpts);
+
+    // Built-in indexers (default: all three)
+    const builtins = config?.builtins ?? ['code', 'git', 'docs'];
+    if (builtins.includes('code')) brain.use(code({ repoPath: rp }));
+    if (builtins.includes('git')) brain.use(git());
+    if (builtins.includes('docs')) brain.use(docs());
+
+    // Custom indexers from config
+    if (config?.indexers) {
+        for (const indexer of config.indexers) {
+            brain.use(indexer);
+        }
+    }
+
+    return brain;
 }
 
 // ── Commands ────────────────────────────────────────
@@ -97,7 +152,7 @@ async function cmdIndex() {
     console.log(c.dim(`  Force: ${force}`));
     console.log(c.dim(`  Git depth: ${depth}`));
 
-    const brain = createFullBrain(repoPath);
+    const brain = await createBrain(repoPath);
 
     const result = await brain.index({
         forceReindex: force,
@@ -141,7 +196,7 @@ async function cmdCollection() {
             process.exit(1);
         }
 
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.addCollection({
             name,
             path,
@@ -156,7 +211,7 @@ async function cmdCollection() {
     }
 
     if (sub === 'list') {
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         const collections = brain.listCollections();
         if (collections.length === 0) {
@@ -179,7 +234,7 @@ async function cmdCollection() {
             console.log(c.red('Usage: brainbank collection remove <name>'));
             process.exit(1);
         }
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.removeCollection(name);
         console.log(c.green(`✓ Collection '${name}' removed.`));
         brain.close();
@@ -205,7 +260,7 @@ async function cmdKv() {
             process.exit(1);
         }
 
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         const coll = brain.collection(collName);
         const meta = metaRaw ? JSON.parse(metaRaw) : {};
@@ -226,7 +281,7 @@ async function cmdKv() {
             process.exit(1);
         }
 
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         const coll = brain.collection(collName);
         const results = await coll.search(query, { k, mode });
@@ -253,7 +308,7 @@ async function cmdKv() {
 
         if (!collName) {
             // List all collection names
-            const brain = createFullBrain();
+            const brain = await createBrain();
             await brain.initialize();
             const names = brain.listCollectionNames();
             if (names.length === 0) {
@@ -269,7 +324,7 @@ async function cmdKv() {
             return;
         }
 
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         const coll = brain.collection(collName);
         const items = coll.list({ limit });
@@ -295,7 +350,7 @@ async function cmdKv() {
             process.exit(1);
         }
 
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         const coll = brain.collection(collName);
         const result = await coll.trim({ keep });
@@ -311,7 +366,7 @@ async function cmdKv() {
             process.exit(1);
         }
 
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         const coll = brain.collection(collName);
         const before = coll.count();
@@ -329,7 +384,7 @@ async function cmdKv() {
 
 async function cmdDocs() {
     const collection = getFlag('collection');
-    const brain = createFullBrain();
+    const brain = await createBrain();
 
     console.log(c.bold('\n━━━ BrainBank Docs Index ━━━\n'));
 
@@ -358,7 +413,7 @@ async function cmdDocSearch() {
         process.exit(1);
     }
 
-    const brain = createFullBrain();
+    const brain = await createBrain();
     const collection = getFlag('collection');
     const k = parseInt(getFlag('k') || '8', 10);
 
@@ -400,7 +455,7 @@ async function cmdContext() {
             process.exit(1);
         }
 
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         brain.addContext(collection, path, desc);
         console.log(c.green(`✓ Context added: ${collection}:${path} → "${desc}"`));
@@ -410,7 +465,7 @@ async function cmdContext() {
 
     // brainbank context list
     if (sub === 'list') {
-        const brain = createFullBrain();
+        const brain = await createBrain();
         await brain.initialize();
         const contexts = brain.listContexts();
         if (contexts.length === 0) {
@@ -434,7 +489,7 @@ async function cmdContext() {
         process.exit(1);
     }
 
-    const brain = createFullBrain();
+    const brain = await createBrain();
     const context = await brain.getContext(task);
     console.log(context);
     brain.close();
@@ -449,7 +504,7 @@ async function cmdSearch() {
         process.exit(1);
     }
 
-    const brain = createFullBrain();
+    const brain = await createBrain();
 
     console.log(c.bold(`\n━━━ BrainBank Search: "${query}" ━━━\n`));
 
@@ -465,7 +520,7 @@ async function cmdHybridSearch() {
         process.exit(1);
     }
 
-    const brain = createFullBrain();
+    const brain = await createBrain();
 
     console.log(c.bold(`\n━━━ BrainBank Hybrid Search: "${query}" ━━━`));
     console.log(c.dim(`  Mode: vector + BM25 → Reciprocal Rank Fusion\n`));
@@ -482,7 +537,7 @@ async function cmdKeywordSearch() {
         process.exit(1);
     }
 
-    const brain = createFullBrain();
+    const brain = await createBrain();
     await brain.initialize();
 
     console.log(c.bold(`\n━━━ BrainBank Keyword Search: "${query}" ━━━`));
@@ -525,7 +580,7 @@ function printResults(results: any[]) {
 // ── Stats ───────────────────────────────────────────
 
 async function cmdStats() {
-    const brain = createFullBrain();
+    const brain = await createBrain();
     await brain.initialize();
 
     const s = brain.stats();

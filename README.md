@@ -237,6 +237,41 @@ const myIndexer: Indexer = {
 brain.use(myIndexer);
 ```
 
+#### Using custom indexers with the CLI
+
+Create a `brainbank.config.ts` (or `.js` / `.mjs`) in your project root. The CLI will auto-discover it:
+
+```typescript
+// brainbank.config.ts
+import type { Indexer, IndexerContext } from 'brainbank';
+
+const slack: Indexer = {
+  name: 'slack',
+  async initialize(ctx: IndexerContext) {
+    const messages = ctx.collection('slack_messages');
+    // ... fetch and index slack messages
+  },
+};
+
+export default {
+  indexers: [slack],             // custom indexers (added alongside built-ins)
+  builtins: ['code', 'docs'],   // which built-ins to load (default: all three)
+  brainbank: {                   // BrainBank constructor options
+    dbPath: '.data/brain.db',
+  },
+};
+```
+
+Now all CLI commands automatically pick up your custom indexers:
+
+```bash
+brainbank index                             # runs code + docs + slack
+brainbank kv search slack_messages "deploy"  # search slack data
+brainbank stats                             # shows all indexers including custom
+```
+
+No config file? The CLI falls back to the built-in indexers (`code`, `git`, `docs`).
+
 ---
 
 ## MCP Server
