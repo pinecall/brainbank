@@ -46,6 +46,41 @@ export interface Indexer {
     /** Initialize the indexer (create HNSW, load vectors, etc.). */
     initialize(ctx: IndexerContext): Promise<void>;
 
+    // ── Optional capabilities (built-in indexers) ──────
+
+    /** Index content. Implemented by code and git indexers. */
+    index?(options?: any): Promise<any>;
+
+    /** Search indexed content. Implemented by docs indexer. */
+    search?(query: string, options?: any): Promise<any[]>;
+
+    // ── Document collection methods (docs indexer) ─────
+
+    /** Register a document collection. */
+    addCollection?(collection: any): void;
+
+    /** Remove a collection. */
+    removeCollection?(name: string): void;
+
+    /** List registered collections. */
+    listCollections?(): any[];
+
+    /** Index all or specific collections. */
+    indexCollections?(options?: any): Promise<any>;
+
+    // ── Context metadata (docs indexer) ────────────────
+
+    /** Add context description for a collection path. */
+    addContext?(collection: string, path: string, context: string): void;
+
+    /** Remove context for a collection path. */
+    removeContext?(collection: string, path: string): void;
+
+    /** List all context entries. */
+    listContexts?(): any[];
+
+    // ── Watch & lifecycle ──────────────────────────────
+
     /**
      * Called by watch mode when a file changes.
      * Return true if this indexer handled the change.
