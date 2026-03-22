@@ -8,6 +8,7 @@
 
 import type { Database } from '../storage/database.ts';
 import type { SearchResult } from '../types.ts';
+import { sanitizeFTS, normalizeBM25 } from './fts-utils.ts';
 
 export interface BM25Options {
     /** Max code results. Default: 8 */
@@ -30,8 +31,7 @@ export class BM25Search {
         const { codeK = 8, gitK = 5, memoryK = 4 } = options;
         const results: SearchResult[] = [];
 
-        // Sanitize query for FTS5
-        const ftsQuery = this._sanitize(query);
+        const ftsQuery = sanitizeFTS(query);
         if (!ftsQuery) return [];
 
         // ── Code search ────────────────────────────
@@ -50,7 +50,7 @@ export class BM25Search {
                 for (const r of rows) {
                     results.push({
                         type: 'code',
-                        score: this._normalizeBM25(r.score),
+                        score: normalizeBM25(r.score),
                         filePath: r.file_path,
                         content: r.content,
                         metadata: {
@@ -83,7 +83,7 @@ export class BM25Search {
                 for (const r of rows) {
                     results.push({
                         type: 'commit',
-                        score: this._normalizeBM25(r.score),
+                        score: normalizeBM25(r.score),
                         content: r.message,
                         metadata: {
                             hash: r.hash,
@@ -118,7 +118,7 @@ export class BM25Search {
                 for (const r of rows) {
                     results.push({
                         type: 'pattern',
-                        score: this._normalizeBM25(r.score),
+                        score: normalizeBM25(r.score),
                         content: r.approach,
                         metadata: {
                             taskType: r.task_type,
@@ -148,34 +148,4 @@ export class BM25Search {
         } catch {}
     }
 
-    /**
-     * Sanitize query for FTS5 syntax.
-     * Escapes special characters and converts to implicit AND.
-     */
-    private _sanitize(query: string): string {
-        // Remove FTS5 operators that could cause errors
-        let clean = query
-            .replace(/[{}[\]()^~*:]/g, ' ')
-            .replace(/\bAND\b|\bOR\b|\bNOT\b|\bNEAR\b/gi, '')
-            .trim();
-
-        // Split into words, filter empties, rejoin with implicit AND
-        const words = clean.split(/\s+/).filter(w => w.length > 1);
-        if (words.length === 0) return '';
-
-        // Use quoted terms for exact matching of each word
-        return words.map(w => `"${w}"`).join(' ');
-    }
-
-    /**
-     * Normalize BM25 score from SQLite (negative, lower = better)
-     * to 0.0 - 1.0 (higher = better) for consistency with vector search.
-     */
-    private _normalizeBM25(rawScore: number): number {
-        // BM25 in SQLite FTS5 returns negative scores; more negative = better match
-        // We normalize: score 0 = perfect, -20+ = decent match
-        const abs = Math.abs(rawScore);
-        // Sigmoid-like normalization: map 0..30 to 1.0..0.0
-        return 1.0 / (1.0 + Math.exp(-0.3 * (abs - 5)));
-    }
 }

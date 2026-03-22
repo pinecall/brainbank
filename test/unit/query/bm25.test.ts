@@ -2,7 +2,7 @@
  * BrainBank — BM25 + FTS5 Tests
  */
 
-import { Database, BM25Search, SCHEMA_VERSION, tmpDb } from '../helpers.ts';
+import { Database, BM25Search, SCHEMA_VERSION, tmpDb } from '../../helpers.ts';
 
 export const name = 'BM25 Full-Text Search';
 

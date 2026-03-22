@@ -2,7 +2,7 @@
  * BrainBank — Reciprocal Rank Fusion Tests
  */
 
-import { reciprocalRankFusion } from '../../src/query/rrf.ts';
+import { reciprocalRankFusion } from '../../../src/query/rrf.ts';
 
 export const name = 'Reciprocal Rank Fusion';
 

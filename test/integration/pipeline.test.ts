@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BrainBank } from '../../src/core/brainbank.ts';
 import type { EmbeddingProvider } from '../../src/types.ts';
-import type { Indexer, IndexerContext } from '../../src/modules/types.ts';
+import type { Indexer, IndexerContext } from '../../src/plugins/types.ts';
 
 export const name = 'Integration — Full Pipeline';
 

@@ -2,7 +2,7 @@
  * BrainBank — Note Memory Tests
  */
 
-import { Database, NoteStore, HNSWIndex, mockEmbedding, tmpDb } from '../helpers.ts';
+import { Database, NoteStore, HNSWIndex, mockEmbedding, tmpDb } from '../../helpers.ts';
 
 export const name = 'Note Memory';
 

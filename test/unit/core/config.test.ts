@@ -2,7 +2,7 @@
  * Unit Tests — Configuration
  */
 
-import { resolveConfig, DEFAULTS } from '../../src/core/config.ts';
+import { resolveConfig, DEFAULTS } from '../../../src/core/config.ts';
 
 export const name = 'Configuration';
 

@@ -2,9 +2,9 @@
  * Unit Tests — MMR (Maximum Marginal Relevance)
  */
 
-import { searchMMR } from '../../src/vector/mmr.ts';
-import { HNSWIndex } from '../../src/vector/hnsw.ts';
-import { normalize } from '../../src/embeddings/math.ts';
+import { searchMMR } from '../../../src/vector/mmr.ts';
+import { HNSWIndex } from '../../../src/vector/hnsw.ts';
+import { normalize } from '../../../src/embeddings/math.ts';
 
 export const name = 'MMR Diversity';
 

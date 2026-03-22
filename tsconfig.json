@@ -11,9 +11,7 @@
         "declarationMap": true,
         "sourceMap": true,
         "outDir": "./dist",
-        "rootDir": ".",
-        "jsx": "react-jsx",
-        "jsxImportSource": "../drift/src"
+        "rootDir": "."
     },
     "include": ["src/**/*.ts", "test/**/*.ts"],
     "exclude": ["node_modules", "dist"]

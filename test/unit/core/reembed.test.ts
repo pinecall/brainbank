@@ -5,8 +5,8 @@
  * without re-parsing files, git, or documents.
  */
 
-import { BrainBank, Database, mockEmbedding, tmpDb } from '../helpers.ts';
-import type { EmbeddingProvider } from '../helpers.ts';
+import { BrainBank, Database, mockEmbedding, tmpDb } from '../../helpers.ts';
+import type { EmbeddingProvider } from '../../helpers.ts';
 
 export const name = 'Re-embedding';
 

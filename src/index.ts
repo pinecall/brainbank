@@ -19,14 +19,14 @@
 export { BrainBank } from './core/brainbank.ts';
 
 // Indexer factories
-export { code } from './modules/code.ts';
-export { git } from './modules/git.ts';
-export { docs } from './modules/docs.ts';
+export { code } from './plugins/code.ts';
+export { git } from './plugins/git.ts';
+export { docs } from './plugins/docs.ts';
 
 // Indexer types
-export type { Indexer, IndexerContext } from './modules/types.ts';
+export type { Indexer, IndexerContext } from './plugins/types.ts';
 // Backward compat
-export type { BrainBankModule, ModuleContext } from './modules/types.ts';
+export type { BrainBankModule, ModuleContext } from './plugins/types.ts';
 
 // Collections
 export { Collection } from './core/collection.ts';

@@ -42,10 +42,10 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { BrainBank } from '../core/brainbank.ts';
-import { code } from '../modules/code.ts';
-import { git } from '../modules/git.ts';
-import { docs } from '../modules/docs.ts';
-import type { Indexer } from '../modules/types.ts';
+import { code } from '../plugins/code.ts';
+import { git } from '../plugins/git.ts';
+import { docs } from '../plugins/docs.ts';
+import type { Indexer } from '../plugins/types.ts';
 
 // ── Colors ──────────────────────────────────────────
 

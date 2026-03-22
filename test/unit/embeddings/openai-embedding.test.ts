@@ -4,7 +4,7 @@
  * Tests the OpenAI embedding provider with mocked fetch.
  */
 
-import { OpenAIEmbedding } from '../helpers.ts';
+import { OpenAIEmbedding } from '../../helpers.ts';
 
 export const name = 'OpenAI Embedding';
 

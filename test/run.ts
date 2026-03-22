@@ -45,14 +45,23 @@ function discoverTests(baseDir: string): TestFile[] {
     const dirs = ['unit'];
     if (includeIntegration) dirs.push('integration');
 
-    for (const dir of dirs) {
-        const fullDir = path.join(baseDir, dir);
-        if (!fs.existsSync(fullDir)) continue;
-        for (const file of fs.readdirSync(fullDir)) {
-            if (!file.endsWith('.test.ts')) continue;
-            if (filter && !file.includes(filter) && !dir.includes(filter)) continue;
-            files.push({ path: path.join(fullDir, file), dir, name: file.replace('.test.ts', '') });
+    function scanDir(fullDir: string, dir: string) {
+        if (!fs.existsSync(fullDir)) return;
+        for (const entry of fs.readdirSync(fullDir, { withFileTypes: true })) {
+            if (entry.isDirectory()) {
+                scanDir(path.join(fullDir, entry.name), dir);
+                continue;
+            }
+            if (!entry.name.endsWith('.test.ts')) continue;
+            const relPath = path.relative(path.join(baseDir, dir), path.join(fullDir, entry.name));
+            const displayName = relPath.replace('.test.ts', '').replace(/\//g, '/');
+            if (filter && !entry.name.includes(filter) && !dir.includes(filter) && !displayName.includes(filter)) continue;
+            files.push({ path: path.join(fullDir, entry.name), dir, name: displayName });
         }
+    }
+
+    for (const dir of dirs) {
+        scanDir(path.join(baseDir, dir), dir);
     }
     return files;
 }

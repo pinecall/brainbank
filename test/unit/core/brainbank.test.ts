@@ -6,9 +6,9 @@
  */
 
 import * as fs from 'node:fs';
-import { BrainBank } from '../../src/core/brainbank.ts';
-import { docs } from '../../src/modules/docs.ts';
-import type { EmbeddingProvider } from '../../src/types.ts';
+import { BrainBank } from '../../../src/core/brainbank.ts';
+import { docs } from '../../../src/plugins/docs.ts';
+import type { EmbeddingProvider } from '../../../src/types.ts';
 
 export const name = 'BrainBank Orchestrator';
 

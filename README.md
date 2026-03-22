@@ -642,29 +642,35 @@ npm test -- --verbose       # Show assertion details
 
 ```
 test/
-├── helpers.ts              # Shared imports, mockEmbedding(), tmpDb()
-├── run.ts                  # Custom test runner
-└── unit/
-    ├── bm25.test.ts        # BM25 full-text search
-    ├── brainbank.test.ts   # Orchestrator & .use() pattern
-    ├── chunker.test.ts     # Language-aware code chunking
-    ├── collection.test.ts  # Dynamic KV collections
-    ├── config.test.ts      # Configuration resolution
-    ├── hnsw.test.ts        # HNSW vector index
-    ├── languages.test.ts   # Language registry
-    ├── math.test.ts        # Cosine similarity, normalize, distance
-    ├── mmr.test.ts         # Maximal Marginal Relevance
-    ├── notes.test.ts       # Note memory store
-    ├── openai-embedding.test.ts  # OpenAI embedding provider
-    ├── reembed.test.ts     # Re-embedding engine
-    ├── reranker.test.ts    # Pluggable reranker integration
-    ├── rrf.test.ts         # Reciprocal Rank Fusion
-    ├── schema.test.ts      # SQLite schema & migrations
-    ├── tags-ttl.test.ts    # Tags, TTL & schema columns
-    └── watch.test.ts       # Watch mode & custom indexer routing
+├── helpers.ts                      # Shared imports, mockEmbedding(), tmpDb()
+├── run.ts                          # Custom test runner (recursive discovery)
+├── unit/
+│   ├── core/
+│   │   ├── brainbank.test.ts       # Orchestrator & .use() pattern
+│   │   ├── collection.test.ts      # Dynamic KV collections
+│   │   ├── config.test.ts          # Configuration resolution
+│   │   ├── reembed.test.ts         # Re-embedding engine
+│   │   ├── schema.test.ts          # SQLite schema & migrations
+│   │   ├── tags-ttl.test.ts        # Tags, TTL & schema columns
+│   │   └── watch.test.ts           # Watch mode & custom indexer routing
+│   ├── embeddings/
+│   │   ├── math.test.ts            # Cosine similarity, normalize, distance
+│   │   └── openai-embedding.test.ts # OpenAI embedding provider
+│   ├── indexers/
+│   │   ├── chunker.test.ts         # Language-aware code chunking
+│   │   └── languages.test.ts       # Language registry
+│   ├── memory/
+│   │   └── notes.test.ts           # Note memory store
+│   ├── query/
+│   │   ├── bm25.test.ts            # BM25 full-text search
+│   │   ├── reranker.test.ts        # Pluggable reranker integration
+│   │   └── rrf.test.ts             # Reciprocal Rank Fusion
+│   └── vector/
+│       ├── hnsw.test.ts            # HNSW vector index
+│       └── mmr.test.ts             # Maximal Marginal Relevance
 └── integration/
-    ├── pipeline.test.ts    # Full pipeline: search, tags, TTL, watch
-    └── real-model.test.ts  # Real MiniLM embedding + cross-encoder reranker
+    ├── pipeline.test.ts            # Full pipeline: search, tags, TTL, watch
+    └── real-model.test.ts          # Real MiniLM embedding + cross-encoder reranker
 ```
 
 All test files import from `test/helpers.ts` which centralizes shared modules and provides:

@@ -2,7 +2,7 @@
  * Unit Tests — Code Chunker
  */
 
-import { CodeChunker } from '../../src/indexers/chunker.ts';
+import { CodeChunker } from '../../../src/indexers/chunker.ts';
 
 export const name = 'Code Chunker';
 

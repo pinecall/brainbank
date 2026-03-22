@@ -4,7 +4,7 @@
  * Tests the pluggable reranker integration with a mock reranker.
  */
 
-import { BrainBank, mockEmbedding, tmpDb } from '../helpers.ts';
+import { BrainBank, mockEmbedding, tmpDb } from '../../helpers.ts';
 
 export const name = 'Reranker';
 

@@ -2,7 +2,7 @@
  * BrainBank — Collection Tests
  */
 
-import { BrainBank, Database, mockEmbedding, tmpDb } from '../helpers.ts';
+import { BrainBank, Database, mockEmbedding, tmpDb } from '../../helpers.ts';
 
 export const name = 'Collections';
 

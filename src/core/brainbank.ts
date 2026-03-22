@@ -30,7 +30,7 @@ import { Collection } from './collection.ts';
 import { reembedAll, setEmbeddingMeta, detectProviderMismatch } from './reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from './watch.ts';
 import type { ReembedResult, ReembedOptions } from './reembed.ts';
-import type { Indexer, IndexerContext } from '../modules/types.ts';
+import type { Indexer, IndexerContext } from '../plugins/types.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
@@ -96,7 +96,7 @@ export class BrainBank extends EventEmitter {
     }
 
     /** Get an indexer instance. Throws if not loaded. */
-    indexer(name: string): any {
+    indexer<T extends Indexer = Indexer>(name: string): T {
         const mod = this._modules.get(name);
         if (!mod) {
             throw new Error(
@@ -104,11 +104,11 @@ export class BrainBank extends EventEmitter {
                 `Add .use(${name}()) to your BrainBank instance.`
             );
         }
-        return mod;
+        return mod as T;
     }
 
     /** @deprecated Use .indexer() instead. */
-    module(name: string): any {
+    module(name: string): Indexer {
         return this.indexer(name);
     }
 
@@ -390,9 +390,6 @@ export class BrainBank extends EventEmitter {
                 sections.push(`## Relevant Documents\n\n${docSection}`);
             }
         }
-
-
-
         return sections.join('\n\n');
     }
 

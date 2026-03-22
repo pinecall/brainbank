@@ -2,7 +2,7 @@
  * Unit Tests — Math Utilities
  */
 
-import { cosineSimilarity, cosineSimilarityFull, normalize, euclideanDistance } from '../../src/embeddings/math.ts';
+import { cosineSimilarity, cosineSimilarityFull, normalize, euclideanDistance } from '../../../src/embeddings/math.ts';
 
 export const name = 'Math Utilities';
 

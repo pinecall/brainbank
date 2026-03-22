@@ -9,16 +9,28 @@
     },
     "exports": {
         ".": "./src/index.ts",
-        "./code": "./src/modules/code.ts",
-        "./git": "./src/modules/git.ts",
-        "./docs": "./src/modules/docs.ts",
-        "./notes": "./src/modules/notes.ts",
-        "./memory": "./src/modules/memory.ts"
+        "./code": "./src/plugins/code.ts",
+        "./git": "./src/plugins/git.ts",
+        "./docs": "./src/plugins/docs.ts",
+        "./notes": "./src/plugins/notes.ts",
+        "./memory": "./src/plugins/memory.ts"
     },
+    "files": [
+        "src/",
+        "LICENSE",
+        "README.md"
+    ],
     "scripts": {
         "test": "node --import tsx test/run.ts",
         "test:integration": "node --import tsx test/run.ts --integration",
         "test:verbose": "node --import tsx test/run.ts --verbose"
+    },
+    "engines": {
+        "node": ">=18"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pinecall/brainbank.git"
     },
     "keywords": [
         "ai",
@@ -33,9 +45,11 @@
     "author": "Bernardo Castro <bernardo@pinecall.io>",
     "license": "MIT",
     "dependencies": {
-        "@xenova/transformers": "^2.17.2",
         "better-sqlite3": "^11.8.1",
         "hnswlib-node": "^3.0.0"
+    },
+    "optionalDependencies": {
+        "@xenova/transformers": "^2.17.2"
     },
     "devDependencies": {
         "@types/better-sqlite3": "^7.6.13",

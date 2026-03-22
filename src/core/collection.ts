@@ -13,6 +13,7 @@ import type { Database } from '../storage/database.ts';
 import type { EmbeddingProvider, Reranker } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
+import { sanitizeFTS, normalizeBM25 } from '../query/fts-utils.ts';
 
 export interface CollectionItem {
     id: number;
@@ -255,15 +256,8 @@ export class Collection {
     }
 
     private _searchBM25(query: string, k: number, minScore: number): CollectionItem[] {
-        const clean = query
-            .replace(/[{}[\]()^~*:]/g, ' ')
-            .replace(/\bAND\b|\bOR\b|\bNOT\b|\bNEAR\b/gi, '')
-            .trim();
-
-        const words = clean.split(/\s+/).filter(w => w.length > 1);
-        if (words.length === 0) return [];
-
-        const ftsQuery = words.map(w => `"${w}"`).join(' ');
+        const ftsQuery = sanitizeFTS(query);
+        if (!ftsQuery) return [];
 
         try {
             const rows = this._db.prepare(`
@@ -278,7 +272,7 @@ export class Collection {
             return rows
                 .map(r => ({
                     ...this._rowToItem(r),
-                    score: 1.0 / (1.0 + Math.exp(-0.3 * (Math.abs(r.score) - 5))),
+                    score: normalizeBM25(r.score),
                 }))
                 .filter(r => (r.score ?? 0) >= minScore);
         } catch {

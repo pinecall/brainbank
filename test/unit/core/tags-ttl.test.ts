@@ -2,7 +2,7 @@
  * BrainBank — Tags & TTL Tests
  */
 
-import { BrainBank, Database, mockEmbedding, tmpDb } from '../helpers.ts';
+import { BrainBank, Database, mockEmbedding, tmpDb } from '../../helpers.ts';
 
 export const name = 'Tags & TTL';
 
