@@ -1,7 +1,7 @@
 /**
- * 🧠 BrainBank Chatbot — LangChain Integration
+ * 🧠 BrainBank Chatbot — LangChain Integration + Entities
  *
- * Same deterministic memory pipeline, using LangChain for the LLM.
+ * Same deterministic memory pipeline + entity graph, using LangChain for the LLM.
  *
  * Install:
  *   npm install @langchain/openai
@@ -11,7 +11,7 @@
  */
 
 import { BrainBank } from '../../src/index.ts';
-import { Memory } from '../../packages/memory/src/index.ts';
+import { Memory, EntityStore } from '../../packages/memory/src/index.ts';
 import type { LLMProvider } from '../../packages/memory/src/index.ts';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
@@ -36,13 +36,19 @@ const langchainProvider: LLMProvider = {
     },
 };
 
-// ─── BrainBank + Memory ─────────────────────────────
+// ─── BrainBank + Memory + Entities ──────────────────
 
 const brain = new BrainBank({ dbPath: DB_PATH });
 await brain.initialize();
 
+const entityStore = new EntityStore({
+    entityCollection: brain.collection('entities'),
+    relationCollection: brain.collection('relationships'),
+});
+
 const memory = new Memory(brain.collection('memories'), {
     llm: langchainProvider,
+    entityStore,
     onOperation: (op) => ui.memoryOp(op.action, op.fact, op.reason),
 });
 
@@ -68,7 +74,7 @@ async function chat(history: { role: string; content: string }[]): Promise<strin
 // ─── Main Loop ──────────────────────────────────────
 
 ui.header(`${MODEL} (LangChain)`, DB_PATH);
-ui.showMemories(memory.recall(5), memory.count());
+ui.showMemories(memory.recall(5), memory.count(), entityStore.entityCount(), entityStore.relationCount());
 
 const input = ui.createInput();
 const history: { role: string; content: string }[] = [];
@@ -78,6 +84,7 @@ while (true) {
     if (!msg.trim()) continue;
     if (msg.toLowerCase() === 'quit') break;
     if (msg.toLowerCase() === 'memories') { ui.listMemories(memory.recall(50)); continue; }
+    if (msg.toLowerCase() === 'entities') { ui.listEntities(entityStore.listEntities(), entityStore.listRelationships()); continue; }
 
     history.push({ role: 'user', content: msg });
 
@@ -86,7 +93,8 @@ while (true) {
     ui.endResponse();
 
     history.push({ role: 'assistant', content: reply });
-    await memory.process(msg, reply);
+    const result = await memory.process(msg, reply);
+    if (result.entities) ui.entityOp(result.entities.entitiesProcessed, result.entities.relationshipsProcessed);
     console.log();
 }
 

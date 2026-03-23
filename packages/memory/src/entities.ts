@@ -26,6 +26,19 @@ export interface Relationship {
     timestamp?: number;
 }
 
+export interface TraversalNode {
+    entity: string;
+    relation: string;
+    depth: number;
+    path: string[];
+}
+
+export interface TraversalResult {
+    start: string;
+    maxDepth: number;
+    nodes: TraversalNode[];
+}
+
 export interface EntityStoreOptions {
     /** Collection for entities */
     entityCollection: MemoryStore;
@@ -118,10 +131,21 @@ export class EntityStore {
     }
 
     /**
-     * List all entities.
+     * Get all relationships for an entity (shorthand for getRelated).
      */
-    listEntities(): MemoryItem[] {
-        return this.entities.list({ limit: 100 });
+    async relationsOf(entityName: string): Promise<Relationship[]> {
+        return this.getRelated(entityName);
+    }
+
+    /**
+     * List all entities, optionally filtered by type.
+     */
+    listEntities(options?: { type?: string; limit?: number }): MemoryItem[] {
+        const all = this.entities.list({ limit: options?.limit ?? 100 });
+        if (options?.type) {
+            return all.filter(e => e.metadata?.type === options.type);
+        }
+        return all;
     }
 
     /**
@@ -143,6 +167,47 @@ export class EntityStore {
      */
     relationCount(): number {
         return this.relations.count();
+    }
+
+    /**
+     * Traverse the entity graph — multi-hop BFS from a starting entity.
+     * Returns all reachable entities within the given depth.
+     */
+    async traverse(startEntity: string, maxDepth = 2): Promise<TraversalResult> {
+        const visited = new Set<string>();
+        const queue: Array<{ entity: string; depth: number; path: string[]; relation: string }> = [
+            { entity: startEntity, depth: 0, path: [startEntity], relation: '' },
+        ];
+        const nodes: TraversalNode[] = [];
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (current.depth > maxDepth || visited.has(current.entity)) continue;
+            visited.add(current.entity);
+
+            const rels = await this.getRelated(current.entity);
+            for (const rel of rels) {
+                const next = rel.source === current.entity ? rel.target : rel.source;
+                const nextPath = [...current.path, next];
+
+                if (!visited.has(next)) {
+                    nodes.push({
+                        entity: next,
+                        relation: rel.relation,
+                        depth: current.depth + 1,
+                        path: nextPath,
+                    });
+                    queue.push({
+                        entity: next,
+                        depth: current.depth + 1,
+                        path: nextPath,
+                        relation: rel.relation,
+                    });
+                }
+            }
+        }
+
+        return { start: startEntity, maxDepth, nodes };
     }
 
     /**
@@ -236,3 +301,4 @@ export class EntityStore {
         return content.split(/\s*\(/)[0].trim();
     }
 }
+

@@ -1,7 +1,7 @@
 /**
- * 🧠 BrainBank Chatbot — Vercel AI SDK Integration
+ * 🧠 BrainBank Chatbot — Vercel AI SDK Integration + Entities
  *
- * Same deterministic memory pipeline, using Vercel AI SDK for the LLM.
+ * Same deterministic memory pipeline + entity graph, using Vercel AI SDK for the LLM.
  * No Vercel API key needed — uses your OPENAI_API_KEY directly.
  *
  * Install:
@@ -12,7 +12,7 @@
  */
 
 import { BrainBank } from '../../src/index.ts';
-import { Memory } from '../../packages/memory/src/index.ts';
+import { Memory, EntityStore } from '../../packages/memory/src/index.ts';
 import type { LLMProvider, ChatMessage } from '../../packages/memory/src/index.ts';
 import { generateText, streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
@@ -39,13 +39,19 @@ const vercelProvider: LLMProvider = {
     },
 };
 
-// ─── BrainBank + Memory ─────────────────────────────
+// ─── BrainBank + Memory + Entities ──────────────────
 
 const brain = new BrainBank({ dbPath: DB_PATH });
 await brain.initialize();
 
+const entityStore = new EntityStore({
+    entityCollection: brain.collection('entities'),
+    relationCollection: brain.collection('relationships'),
+});
+
 const memory = new Memory(brain.collection('memories'), {
     llm: vercelProvider,
+    entityStore,
     onOperation: (op) => ui.memoryOp(op.action, op.fact, op.reason),
 });
 
@@ -76,7 +82,7 @@ async function chat(history: { role: string; content: string }[]): Promise<strin
 // ─── Main Loop ──────────────────────────────────────
 
 ui.header(`${MODEL} (Vercel AI SDK)`, DB_PATH);
-ui.showMemories(memory.recall(5), memory.count());
+ui.showMemories(memory.recall(5), memory.count(), entityStore.entityCount(), entityStore.relationCount());
 
 const input = ui.createInput();
 const history: { role: string; content: string }[] = [];
@@ -86,6 +92,7 @@ while (true) {
     if (!msg.trim()) continue;
     if (msg.toLowerCase() === 'quit') break;
     if (msg.toLowerCase() === 'memories') { ui.listMemories(memory.recall(50)); continue; }
+    if (msg.toLowerCase() === 'entities') { ui.listEntities(entityStore.listEntities(), entityStore.listRelationships()); continue; }
 
     history.push({ role: 'user', content: msg });
 
@@ -94,7 +101,8 @@ while (true) {
     ui.endResponse();
 
     history.push({ role: 'assistant', content: reply });
-    await memory.process(msg, reply);
+    const result = await memory.process(msg, reply);
+    if (result.entities) ui.entityOp(result.entities.entitiesProcessed, result.entities.relationshipsProcessed);
     console.log();
 }
 

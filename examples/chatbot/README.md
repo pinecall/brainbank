@@ -1,12 +1,12 @@
-# Chatbot with Deterministic Memory
+# Chatbot with Deterministic Memory + Entity Graph
 
-A CLI chatbot that **automatically** extracts and stores memories after every conversation turn — no function calling, no relying on the model to "remember" to save.
+A CLI chatbot that **automatically** extracts memories and entities after every conversation turn — no function calling, no relying on the model to "remember" to save.
 
 ### Structure
 
 ```
 examples/chatbot/
-├── ui.ts                ← ANSI colors, readline, formatting (shared)
+├── lib/ui.ts            ← ANSI colors, readline, formatting (shared)
 ├── chatbot.ts           ← OpenAI direct (default)
 ├── with-langchain.ts    ← LangChain integration
 └── with-vercel-ai.ts    ← Vercel AI SDK integration
@@ -39,7 +39,7 @@ User message → LLM response (streaming)
         │  ① Extract facts + entities (LLM)  │
         │  ② Search existing memories         │
         │  ③ Dedup: ADD / UPDATE / NONE       │
-        │  ④ Upsert entities (if enabled)     │
+        │  ④ Upsert entities + relationships  │
         │  ⑤ Execute operations               │
         └────────────────────────────────────┘
 ```
@@ -51,23 +51,40 @@ All steps use `gpt-4.1-nano` (cheapest model) — cost is negligible.
 ```
 Session 1:
   🆕 First session — no memories yet
-  You → My name is Berna, I prefer TypeScript
+  You → My name is Berna, I work at Pinecall
     💾 +memory: User's name is Berna
-    💾 +memory: User prefers TypeScript
+    💾 +memory: User works at Pinecall
+    🔗 +2 entities, +1 relationships
 
-  You → I also like functional programming. We chose SQLite.
-    ⏭  skip: functional programming (already captured)
-    💾 +memory: Decided to use SQLite
+  You → Tell Juan to migrate payments to Stripe
+    💾 +memory: Juan needs to migrate payments to Stripe
+    🔗 +2 entities, +1 relationships
+
+  entities
+  🔗 4 entities:
+     • Berna (person, 1x)
+     • Pinecall (organization, 1x)
+     • Juan (person, 1x)
+     • Stripe (service, 1x)
+  ↔  2 relationships:
+     • Berna → works_at → Pinecall
+     • Juan → migrating_to → Stripe
 
 Session 2:
-  💾 3 memories loaded
-     • User's name is Berna
-     • User prefers TypeScript
-     • Decided to use SQLite
-  You → What do you know about me?
-  Bot → You're Berna! You prefer TypeScript and functional programming,
-        and you've chosen SQLite for your project.
+  💾 2 memories loaded
+  🔗 4 entities, 2 relationships
+  You → What do you know about our team?
+  Bot → I know Berna works at Pinecall, and Juan is handling
+        the migration to Stripe!
 ```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `quit` | Exit the chatbot |
+| `memories` | List all stored memories |
+| `entities` | Show entity graph (entities + relationships) |
 
 ## Framework Adapters
 
@@ -82,7 +99,7 @@ interface LLMProvider {
 Each variant shows how to wrap a framework's LLM into this interface:
 
 | File | Framework | Adapter pattern |
-|------|-----------|-----------------|
+|------|-----------|-----------------| 
 | `chatbot.ts` | OpenAI (fetch) | Built-in `OpenAIProvider` |
 | `with-langchain.ts` | LangChain | `ChatOpenAI.invoke()` → string |
 | `with-vercel-ai.ts` | Vercel AI SDK | `generateText()` → string |

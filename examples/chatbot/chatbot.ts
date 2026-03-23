@@ -1,7 +1,7 @@
 /**
- * 🧠 BrainBank Chatbot — Deterministic Memory (OpenAI)
+ * 🧠 BrainBank Chatbot — Deterministic Memory + Entities (OpenAI)
  *
- * Automatic fact extraction after every turn. No function calling.
+ * Automatic fact extraction + entity graph after every turn.
  * Uses @brainbank/memory for the pipeline and OpenAI directly for chat.
  *
  * Run:
@@ -9,7 +9,7 @@
  */
 
 import { BrainBank } from '../../src/index.ts';
-import { Memory, OpenAIProvider } from '../../packages/memory/src/index.ts';
+import { Memory, EntityStore, OpenAIProvider } from '../../packages/memory/src/index.ts';
 import * as ui from './lib/ui.ts';
 
 // ─── Config ─────────────────────────────────────────
@@ -22,13 +22,19 @@ if (!process.env.OPENAI_API_KEY) {
     process.exit(1);
 }
 
-// ─── BrainBank + Memory ─────────────────────────────
+// ─── BrainBank + Memory + Entities ──────────────────
 
 const brain = new BrainBank({ dbPath: DB_PATH });
 await brain.initialize();
 
+const entityStore = new EntityStore({
+    entityCollection: brain.collection('entities'),
+    relationCollection: brain.collection('relationships'),
+});
+
 const memory = new Memory(brain.collection('memories'), {
     llm: new OpenAIProvider({ model: MODEL }),
+    entityStore,
     onOperation: (op) => ui.memoryOp(op.action, op.fact, op.reason),
 });
 
@@ -78,7 +84,7 @@ function systemPrompt(): string {
 // ─── Main Loop ──────────────────────────────────────
 
 ui.header(MODEL, DB_PATH);
-ui.showMemories(memory.recall(5), memory.count());
+ui.showMemories(memory.recall(5), memory.count(), entityStore.entityCount(), entityStore.relationCount());
 
 const input = ui.createInput();
 const history: { role: string; content: string }[] = [];
@@ -88,6 +94,7 @@ while (true) {
     if (!msg.trim()) continue;
     if (msg.toLowerCase() === 'quit') break;
     if (msg.toLowerCase() === 'memories') { ui.listMemories(memory.recall(50)); continue; }
+    if (msg.toLowerCase() === 'entities') { ui.listEntities(entityStore.listEntities(), entityStore.listRelationships()); continue; }
 
     history.push({ role: 'user', content: msg });
 
@@ -96,7 +103,8 @@ while (true) {
     ui.endResponse();
 
     history.push({ role: 'assistant', content: reply });
-    await memory.process(msg, reply);
+    const result = await memory.process(msg, reply);
+    if (result.entities) ui.entityOp(result.entities.entitiesProcessed, result.entities.relationshipsProcessed);
     console.log();
 }
 

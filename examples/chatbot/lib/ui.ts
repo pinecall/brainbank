@@ -16,6 +16,7 @@ export const c = {
     yellow: '\x1b[33m',
     magenta: '\x1b[35m',
     red: '\x1b[31m',
+    blue: '\x1b[34m',
 } as const;
 
 // ─── Display helpers ────────────────────────────────
@@ -26,14 +27,17 @@ export function header(model: string, db: string) {
     console.log(`${c.dim}  Model: ${model} · DB: ${db}${c.reset}`);
 }
 
-export function showMemories(memories: { content: string }[], total: number) {
+export function showMemories(memories: { content: string }[], total: number, entityCount = 0, relationCount = 0) {
     if (total > 0) {
         console.log(`${c.magenta}  💾 ${total} memories loaded${c.reset}`);
         for (const m of memories) console.log(`${c.dim}     • ${m.content}${c.reset}`);
     } else {
         console.log(`${c.yellow}  🆕 First session — no memories yet${c.reset}`);
     }
-    console.log(`${c.dim}  Type "quit" to exit · "memories" to list all${c.reset}`);
+    if (entityCount > 0) {
+        console.log(`${c.blue}  🔗 ${entityCount} entities, ${relationCount} relationships${c.reset}`);
+    }
+    console.log(`${c.dim}  Type "quit" to exit · "memories" to list · "entities" to see graph${c.reset}`);
     console.log();
 }
 
@@ -43,11 +47,33 @@ export function listMemories(memories: { content: string }[]) {
     console.log();
 }
 
+export function listEntities(entities: { content: string; metadata?: Record<string, any> }[], relationships: { metadata?: Record<string, any> }[]) {
+    console.log(`\n${c.blue}  🔗 ${entities.length} entities:${c.reset}`);
+    for (const e of entities) {
+        const type = e.metadata?.type ?? 'unknown';
+        const mentions = e.metadata?.mentionCount ?? 1;
+        console.log(`${c.dim}     • ${e.content.split('(')[0].trim()} (${type}, ${mentions}x)${c.reset}`);
+    }
+    if (relationships.length > 0) {
+        console.log(`${c.blue}  ↔  ${relationships.length} relationships:${c.reset}`);
+        for (const r of relationships) {
+            console.log(`${c.dim}     • ${r.metadata?.source} → ${r.metadata?.relation} → ${r.metadata?.target}${c.reset}`);
+        }
+    }
+    console.log();
+}
+
 export function memoryOp(action: string, fact: string, reason?: string) {
     const icon = action === 'ADD' ? '💾' : action === 'UPDATE' ? '🔄' : '⏭ ';
     const label = action === 'ADD' ? '+memory' : action === 'UPDATE' ? 'updated' : 'skip';
     const suffix = action === 'NONE' && reason ? ` (${reason})` : '';
     console.log(`${c.dim}  ${icon} ${label}: ${fact}${suffix}${c.reset}`);
+}
+
+export function entityOp(entitiesProcessed: number, relationshipsProcessed: number) {
+    if (entitiesProcessed > 0 || relationshipsProcessed > 0) {
+        console.log(`${c.dim}  🔗 +${entitiesProcessed} entities, +${relationshipsProcessed} relationships${c.reset}`);
+    }
 }
 
 export function bye() {

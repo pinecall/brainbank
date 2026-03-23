@@ -96,14 +96,31 @@ const context = memory.buildContext();
 |--------|-------------|
 | `upsert(entity)` | Add or update entity (increments mention count) |
 | `relate(source, target, relation, context?)` | Add a relationship |
-| `findEntity(name)` | Search entities by name |
+| `findEntity(name)` | Search entities by name (semantic) |
 | `getRelated(entityName)` | Get all relationships for an entity |
-| `listEntities()` | List all entities |
+| `relationsOf(entityName)` | Shorthand for `getRelated()` |
+| `listEntities({ type?, limit? })` | List entities, optionally filtered by type |
 | `listRelationships()` | List all relationships |
+| `traverse(entity, maxDepth?)` | Multi-hop BFS graph traversal (default: 2 hops) |
 | `entityCount()` | Total entity count |
 | `relationCount()` | Total relationship count |
 | `buildContext(entityName?)` | Build markdown context (all or specific entity) |
 | `processExtraction(entities, relationships)` | Batch process from LLM response |
+
+#### Graph Traversal
+
+```typescript
+// Explore the entity graph from a starting point
+const graph = await entityStore.traverse('Juan', 2);
+// graph.nodes → [
+//   { entity: "Stripe", relation: "migrating_to", depth: 1, path: ["Juan", "Stripe"] },
+//   { entity: "Payments", relation: "uses", depth: 2, path: ["Juan", "Stripe", "Payments"] }
+// ]
+
+// Filter entities by type
+const people = entityStore.listEntities({ type: 'person' });
+const services = entityStore.listEntities({ type: 'service' });
+```
 
 ## Framework Integration
 
