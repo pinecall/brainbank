@@ -238,4 +238,79 @@ export const tests = {
         brain.close();
         cleanup(db);
     },
+
+    async 'index({ modules: ["docs"] }) only indexes docs'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
+            .use(docs());
+        await brain.initialize();
+
+        // Create temp docs
+        const docsDir = `/tmp/brainbank-modules-test-${Date.now()}`;
+        fs.mkdirSync(docsDir, { recursive: true });
+        fs.writeFileSync(`${docsDir}/test.md`, '# Test\n\nSome content for testing modules filter.');
+
+        await brain.addCollection({ name: 'test-docs', path: docsDir, pattern: '**/*.md' });
+
+        const result = await brain.index({ modules: ['docs'] });
+
+        // Should have docs but NOT code or git (no code/git indexers loaded)
+        assert.ok(result.docs, 'should have docs result');
+        assert.ok(!result.code, 'should NOT have code result');
+        assert.ok(!result.git, 'should NOT have git result');
+        assert.ok(result.docs!['test-docs'], 'should have test-docs collection');
+        assert.equal(result.docs!['test-docs'].indexed, 1);
+
+        brain.close();
+        cleanup(db);
+        fs.rmSync(docsDir, { recursive: true });
+    },
+
+    async 'index({ modules: ["code"] }) skips docs even if loaded'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
+            .use(docs());
+        await brain.initialize();
+
+        const docsDir = `/tmp/brainbank-skip-test-${Date.now()}`;
+        fs.mkdirSync(docsDir, { recursive: true });
+        fs.writeFileSync(`${docsDir}/skip.md`, '# Skip\n\nThis should not be indexed.');
+
+        await brain.addCollection({ name: 'skip-docs', path: docsDir, pattern: '**/*.md' });
+
+        const result = await brain.index({ modules: ['code'] });
+
+        // code indexer not loaded so result.code is undefined, but docs should also be undefined
+        assert.ok(!result.code, 'no code indexer loaded');
+        assert.ok(!result.docs, 'docs should be skipped with modules: ["code"]');
+        assert.ok(!result.git, 'git should be skipped');
+
+        brain.close();
+        cleanup(db);
+        fs.rmSync(docsDir, { recursive: true });
+    },
+
+    async 'index() with no modules param indexes everything available'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
+            .use(docs());
+        await brain.initialize();
+
+        const docsDir = `/tmp/brainbank-all-test-${Date.now()}`;
+        fs.mkdirSync(docsDir, { recursive: true });
+        fs.writeFileSync(`${docsDir}/all.md`, '# All\n\nDefault should index this.');
+
+        await brain.addCollection({ name: 'all-docs', path: docsDir, pattern: '**/*.md' });
+
+        const result = await brain.index();
+
+        // Only docs loaded, so only docs should have results
+        assert.ok(result.docs, 'should have docs result with default modules');
+        assert.ok(result.docs!['all-docs'], 'should have all-docs collection');
+        assert.equal(result.docs!['all-docs'].indexed, 1);
+
+        brain.close();
+        cleanup(db);
+        fs.rmSync(docsDir, { recursive: true });
+    },
 };
