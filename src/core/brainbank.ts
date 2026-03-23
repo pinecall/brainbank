@@ -492,8 +492,8 @@ export class BrainBank extends EventEmitter {
     async hybridSearch(query: string, options?: {
         codeK?: number; gitK?: number; memoryK?: number;
         minScore?: number; useMMR?: boolean;
-        /** Include KV collections in the fusion. */
-        collections?: string[];
+        /** Include KV collections in the fusion. Keys = collection names, values = max results per collection. */
+        collections?: Record<string, number>;
     }): Promise<SearchResult[]> {
         await this.initialize();
 
@@ -513,10 +513,10 @@ export class BrainBank extends EventEmitter {
         }
 
         // Include KV collections in the fusion
-        if (options?.collections?.length) {
-            for (const name of options.collections) {
+        if (options?.collections && Object.keys(options.collections).length > 0) {
+            for (const [name, k] of Object.entries(options.collections)) {
                 const col = this.collection(name);
-                const hits = await col.search(query, { k: 5 });
+                const hits = await col.search(query, { k });
                 if (hits.length > 0) {
                     resultLists.push(hits.map(h => ({
                         type: 'collection' as const,

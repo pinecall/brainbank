@@ -350,7 +350,7 @@ server.registerTool(
             query: z.string().describe('Search query — works with both keywords and natural language'),
             codeK: z.number().optional().default(8).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
-            collections: z.array(z.string()).optional().describe('KV collection names to include in search fusion (e.g. ["errors", "decisions"])'),
+            collections: z.record(z.string(), z.number()).optional().describe('KV collections to include in fusion: { "collectionName": maxResults }. Example: { "errors": 5, "decisions": 3 }'),
             repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
         }),
     },
