@@ -582,8 +582,8 @@ brainbank kv search conversations "what did we decide about auth"
 
 | Example | Description | Run |
 |---------|-------------|-----|
-| [chatbot.ts](examples/chatbot.ts) | CLI chatbot with GPT-4.1-nano that remembers past sessions | `OPENAI_API_KEY=sk-... npx tsx examples/chatbot.ts` |
-| [collections.ts](examples/collections.ts) | Collections, search, tags, metadata linking | `npx tsx examples/collections.ts` |
+| [chatbot.ts](examples/chatbot.ts) | CLI chatbot with streaming + persistent memory (context injection + function calling) | `OPENAI_API_KEY=sk-... npx tsx examples/chatbot.ts` |
+| [collections.ts](examples/collections.ts) | Collections, semantic search, tags, metadata linking | `npx tsx examples/collections.ts` |
 
 ---
 
