@@ -771,7 +771,7 @@ Without a reranker, BrainBank uses pure RRF fusion — which is already producti
 
 `@brainbank/memory` adds **deterministic memory extraction** to any LLM conversation. After every turn, it automatically extracts facts, deduplicates against existing memories, and decides `ADD` / `UPDATE` / `NONE` — no function calling needed.
 
-Optionally extracts **entities and relationships** (knowledge graph) from the same LLM call — no extra cost.
+Optionally extracts **entities and relationships** (knowledge graph) from the same LLM call — no extra cost. Includes **LLM-powered entity resolution** to merge aliases (e.g. "TS" → "TypeScript").
 
 Inspired by [mem0](https://github.com/mem0ai/mem0)'s pipeline, but framework-agnostic and built on BrainBank collections.
 
@@ -786,15 +786,17 @@ import { Memory, EntityStore, OpenAIProvider } from '@brainbank/memory';
 const brain = new BrainBank({ dbPath: './memory.db' });
 await brain.initialize();
 
+const llm = new OpenAIProvider({ model: 'gpt-4.1-nano' });
+
 // Opt-in entity extraction (knowledge graph)
-const entityStore = new EntityStore({
-  entityCollection: brain.collection('entities'),
-  relationCollection: brain.collection('relationships'),
+const entityStore = new EntityStore(brain, {
+  onEntity: (op) => console.log(`${op.action}: ${op.name}`),
 });
 
-const memory = new Memory(brain.collection('memories'), {
-  llm: new OpenAIProvider({ model: 'gpt-4.1-nano' }),
-  entityStore,  // optional — omit for facts-only mode
+const memory = new Memory(brain, {
+  llm,              // auto-shared with EntityStore
+  entityStore,      // optional — omit for facts-only mode
+  onOperation: (op) => console.log(`${op.action}: ${op.fact}`),
 });
 
 // After every conversation turn
