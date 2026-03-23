@@ -1,10 +1,10 @@
 /**
- * BrainBank — Tree-Sitter Chunker Benchmark (in-process)
+ * Grammar Support: Tree-Sitter Language Verification
  * 
- * Tests chunking across ALL supported languages in a single process.
- * Uses smaller code samples to minimize memory usage.
+ * Parses code samples with all 9 supported language grammars.
+ * Validates AST node extraction and measures parse speed.
  * 
- * Usage: node --experimental-vm-modules test/benchmark-chunker.mjs
+ * Usage: node test/benchmarks/grammar-support.mjs
  */
 
 import { createRequire } from 'node:module';
