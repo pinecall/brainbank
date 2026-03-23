@@ -17,9 +17,31 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 
 ---
 
+## Why BrainBank?
+
+Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external databases, or LLM calls just to store a memory. BrainBank takes a different approach:
+
+| | **BrainBank** | **mem0** | **Zep** | **LangMem** |
+|---|:---:|:---:|:---:|:---:|
+| Infrastructure | **SQLite file** | Vector DB + cloud | Neo4j + cloud | LangGraph Platform |
+| LLM needed to store? | **No** | Yes | Yes | Yes |
+| Code-aware | **30+ languages, git, co-edits** | ✗ | ✗ | ✗ |
+| Custom indexers | **`.use()` plugin system** | ✗ | ✗ | ✗ |
+| Search | **Vector + BM25 + RRF** | Vector only | Vector + graph | Vector only |
+| Framework lock-in | **None** | Optional | Zep cloud | LangChain |
+| Portable | **Copy one file** | Tied to DB | Tied to cloud | Tied to platform |
+
+**In short:**
+- **$0 memory bill** — no LLM calls to extract/consolidate. You store what you want, BrainBank embeds deterministically
+- **Code-first** — the only memory layer that understands code structure, git history, and file co-edit relationships
+- **No vendor lock-in** — plain TypeScript, works with any agent framework or none at all
+- **Truly portable** — `.brainbank/brainbank.db` is a normal file. Copy it, back it up, `git lfs` it
+
 ### Table of Contents
 
+- [Why BrainBank?](#why-brainbank)
 - [Installation](#installation)
+- [Quick Start](#quick-start)
 - [CLI](#cli)
 - [Programmatic API](#programmatic-api)
   - [Indexers](#indexers)
@@ -65,6 +87,50 @@ npm install @brainbank/mcp
 ```
 
 ---
+
+## Quick Start
+
+Get semantic search over your codebase in under a minute:
+
+```typescript
+import { BrainBank } from 'brainbank';
+import { code } from 'brainbank/code';
+import { git } from 'brainbank/git';
+
+const brain = new BrainBank({ repoPath: '.' })
+  .use(code())
+  .use(git());
+
+await brain.index();  // indexes code + git history (incremental)
+
+// Search across everything
+const results = await brain.hybridSearch('authentication middleware');
+console.log(results.map(r => `${r.filePath}:${r.line} (${r.score.toFixed(2)})`));
+
+// Store agent memory
+const log = brain.collection('decisions');
+await log.add(
+  'Switched from bcrypt to argon2id for password hashing. ' +
+  'Argon2id is memory-hard and recommended by OWASP for new projects. ' +
+  'Updated src/auth/hash.ts and all tests.',
+  { tags: ['security', 'auth'] }
+);
+
+// Recall later: "what did we decide about password hashing?"
+const hits = await log.search('password hashing decision');
+
+await brain.close();
+```
+
+Or use the CLI — zero code:
+
+```bash
+npm install -g brainbank
+brainbank index .                          # index code + git
+brainbank hsearch "rate limiting"           # hybrid search
+brainbank kv add decisions "Use Redis..."   # store a memory
+brainbank kv search decisions "caching"     # recall it
+```
 
 ## CLI
 
