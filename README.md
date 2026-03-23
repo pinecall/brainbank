@@ -56,10 +56,30 @@ BrainBank can be used entirely from the command line — no config file needed.
 
 ### Indexing
 
+`index` processes **code files + git history** only. Document collections are indexed separately with `docs`.
+
 ```bash
 brainbank index [path]                      # Index code + git history
+brainbank index [path] --force              # Force re-index everything
+brainbank index [path] --depth 200          # Limit git commit depth
 brainbank docs [--collection <name>]        # Index document collections
 ```
+
+> **Multi-repo:** If `[path]` contains multiple Git subdirectories (no root `.git/`), BrainBank auto-detects them and indexes all into one shared DB. See [Multi-Repository Indexing](#multi-repository-indexing).
+
+### Watch Mode
+
+Auto-re-index code files when they change. Watches for file changes and re-indexes incrementally:
+
+```bash
+brainbank watch                             # Watch repo, auto re-index on save
+# ━━━ BrainBank Watch ━━━
+#   Watching /path/to/repo for changes...
+#   14:30:02 ✓ code: src/api.ts
+#   14:30:05 ✓ code: src/routes.ts
+```
+
+> Watch mode monitors **code files only** — git history and document collections are not affected by file-system changes and must be re-indexed explicitly.
 
 ### Document Collections
 
@@ -101,6 +121,7 @@ brainbank kv clear <coll>                   # Clear all items
 ```bash
 brainbank stats                             # Show index statistics
 brainbank reembed                           # Re-embed all vectors (provider switch)
+brainbank watch                             # Watch files, auto re-index on change
 brainbank serve                             # Start MCP server (stdio)
 ```
 
