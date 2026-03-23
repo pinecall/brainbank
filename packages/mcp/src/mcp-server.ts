@@ -196,14 +196,33 @@ server.registerTool(
         title: 'BrainBank Index',
         description: 'Index (or re-index) the repository code and git history. Run this before searching if the codebase has changed. Indexing is incremental — only changed files are processed.',
         inputSchema: z.object({
+            modules: z.array(z.enum(['code', 'git', 'docs'])).optional().describe('Which modules to index. Default: all available (code, git, docs)'),
+            docsPath: z.string().optional().describe('Path to a docs folder to register and index. Creates a doc collection named after the folder.'),
             forceReindex: z.boolean().optional().default(false).describe('Force re-index of all files, even unchanged ones'),
             gitDepth: z.number().optional().default(500).describe('Number of git commits to index'),
             repo: z.string().optional().describe('Repository path to index (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ forceReindex, gitDepth, repo }) => {
+    async ({ modules, docsPath, forceReindex, gitDepth, repo }) => {
         const brainbank = await getBrainBank(repo);
-        const result = await brainbank.index({ forceReindex, gitDepth });
+
+        // Auto-register docs collection if docsPath provided
+        if (docsPath) {
+            const absPath = path.resolve(docsPath);
+            const collName = path.basename(absPath);
+            try {
+                brainbank.module('docs').addCollection!({
+                    name: collName,
+                    path: absPath,
+                    pattern: '**/*.md',
+                    ignore: ['deprecated/**', 'node_modules/**'],
+                });
+            } catch {
+                // docs module not loaded — ignore
+            }
+        }
+
+        const result = await brainbank.index({ modules, forceReindex, gitDepth });
 
         const lines = [
             '## Indexing Complete',
@@ -212,9 +231,15 @@ server.registerTool(
             `**Git**: ${result.git?.indexed ?? 0} commits indexed, ${result.git?.skipped ?? 0} skipped`,
         ];
 
+        if (result.docs) {
+            for (const [name, stat] of Object.entries(result.docs)) {
+                lines.push(`**Docs [${name}]**: ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
+            }
+        }
+
         const stats = brainbank.stats();
         lines.push('');
-        lines.push(`**Totals**: ${stats.code?.chunks ?? 0} code chunks, ${stats.git?.commits ?? 0} commits`);
+        lines.push(`**Totals**: ${stats.code?.chunks ?? 0} code chunks, ${stats.git?.commits ?? 0} commits, ${stats.documents?.documents ?? 0} docs`);
 
         return { content: [{ type: 'text', text: lines.join('\n') }] };
     },

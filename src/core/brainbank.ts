@@ -293,52 +293,69 @@ export class BrainBank extends EventEmitter {
     // ── Indexing ─────────────────────────────────────
 
     /**
-     * Index code and git history in one call.
+     * Index code, git, and/or docs in one call.
      * Incremental — only processes changes since last run.
+     * @param modules - Which modules to index. Default: all available (['code', 'git', 'docs'])
      */
     async index(options: {
+        modules?: ('code' | 'git' | 'docs')[];
         gitDepth?: number;
         forceReindex?: boolean;
         onProgress?: (stage: string, msg: string) => void;
-    } = {}): Promise<{ code?: IndexResult; git?: IndexResult }> {
+    } = {}): Promise<{ code?: IndexResult; git?: IndexResult; docs?: Record<string, { indexed: number; skipped: number; chunks: number }> }> {
         await this.initialize();
 
-        const result: { code?: IndexResult; git?: IndexResult } = {};
+        const want = new Set(options.modules ?? ['code', 'git', 'docs']);
+        const result: { code?: IndexResult; git?: IndexResult; docs?: Record<string, { indexed: number; skipped: number; chunks: number }> } = {};
 
         // Index ALL code-type indexers (code, code:frontend, code:backend, etc.)
-        const codeMods = this._findAllByType('code');
-        for (const mod of codeMods) {
-            const label = mod.name === 'code' ? 'code' : mod.name;
-            options.onProgress?.(label, 'Starting...');
-            const r = await mod.index!({
-                forceReindex: options.forceReindex,
-                onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
-            });
-            // Merge results
-            if (result.code) {
-                result.code.indexed += r.indexed;
-                result.code.skipped += r.skipped;
-                result.code.chunks = (result.code.chunks ?? 0) + (r.chunks ?? 0);
-            } else {
-                result.code = r;
+        if (want.has('code')) {
+            const codeMods = this._findAllByType('code');
+            for (const mod of codeMods) {
+                const label = mod.name === 'code' ? 'code' : mod.name;
+                options.onProgress?.(label, 'Starting...');
+                const r = await mod.index!({
+                    forceReindex: options.forceReindex,
+                    onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
+                });
+                // Merge results
+                if (result.code) {
+                    result.code.indexed += r.indexed;
+                    result.code.skipped += r.skipped;
+                    result.code.chunks = (result.code.chunks ?? 0) + (r.chunks ?? 0);
+                } else {
+                    result.code = r;
+                }
             }
         }
 
         // Index ALL git-type indexers
-        const gitMods = this._findAllByType('git');
-        for (const mod of gitMods) {
-            const label = mod.name === 'git' ? 'git' : mod.name;
-            options.onProgress?.(label, 'Starting...');
-            const r = await mod.index!({
-                depth: options.gitDepth ?? this._config.gitDepth,
-                onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
-            });
-            if (result.git) {
-                result.git.indexed += r.indexed;
-                result.git.skipped += r.skipped;
-            } else {
-                result.git = r;
+        if (want.has('git')) {
+            const gitMods = this._findAllByType('git');
+            for (const mod of gitMods) {
+                const label = mod.name === 'git' ? 'git' : mod.name;
+                options.onProgress?.(label, 'Starting...');
+                const r = await mod.index!({
+                    depth: options.gitDepth ?? this._config.gitDepth,
+                    onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
+                });
+                if (result.git) {
+                    result.git.indexed += r.indexed;
+                    result.git.skipped += r.skipped;
+                } else {
+                    result.git = r;
+                }
             }
+        }
+
+        // Index document collections
+        if (want.has('docs') && this._modules.has('docs')) {
+            options.onProgress?.('docs', 'Starting...');
+            const docsResults = await this.module('docs').indexCollections!({
+                onProgress: (coll: string, file: string, cur: number, total: number) =>
+                    options.onProgress?.('docs', `[${coll}] ${cur}/${total}: ${file}`),
+            });
+            result.docs = docsResults;
         }
 
         this.emit('indexed', result);
