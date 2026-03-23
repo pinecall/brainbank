@@ -1,6 +1,6 @@
 {
     "name": "@brainbank/reranker",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Qwen3 cross-encoder reranker plugin for BrainBank — 640MB local model, opt-in",
     "type": "module",
     "main": "dist/index.js",
@@ -14,7 +14,7 @@
         "test": "node --import tsx test/integration/reranker.test.ts"
     },
     "peerDependencies": {
-        "brainbank": ">=0.2.0",
+        "brainbank": ">=0.1.0",
         "node-llama-cpp": "^3.18.1"
     },
     "peerDependenciesMeta": {

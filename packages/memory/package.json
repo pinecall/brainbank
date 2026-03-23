@@ -1,6 +1,6 @@
 {
     "name": "@brainbank/memory",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Deterministic memory extraction and deduplication for LLM conversations — extract, dedup, ADD/UPDATE/NONE",
     "type": "module",
     "main": "dist/index.js",
@@ -13,7 +13,7 @@
         "build": "tsup"
     },
     "peerDependencies": {
-        "brainbank": ">=0.2.0"
+        "brainbank": ">=0.1.0"
     },
     "peerDependenciesMeta": {
         "brainbank": { "optional": true }
