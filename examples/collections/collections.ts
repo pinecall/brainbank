@@ -4,7 +4,7 @@
  * Store and search structured agent memory.
  * Run: npx tsx examples/collections.ts
  */
-import { BrainBank } from '../src/index.ts';
+import { BrainBank } from '../../src/index.ts';
 import * as fs from 'node:fs';
 
 const DB = '/tmp/brainbank-collections-demo.db';

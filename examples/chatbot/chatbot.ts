@@ -18,7 +18,7 @@
  *   OPENAI_API_KEY=sk-... npx tsx examples/chatbot.ts
  */
 
-import { BrainBank } from '../src/index.ts';
+import { BrainBank } from '../../src/index.ts';
 import * as readline from 'node:readline';
 
 // ─── ANSI Colors ────────────────────────────────────
