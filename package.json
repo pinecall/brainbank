@@ -1,7 +1,7 @@
 {
     "name": "brainbank",
     "version": "0.2.0",
-    "description": "Semantic knowledge bank for AI agents — code indexing, git history, learned patterns, vector search",
+    "description": "Semantic long-term memory for AI agents — modular code/docs/git/conversation indexing with hybrid search in a single SQLite file",
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",

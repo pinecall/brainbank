@@ -1,6 +1,6 @@
 # 🧠 BrainBank
 
-**Semantic knowledge bank for AI agents** — indexes code, documents, and git history into a single SQLite file with hybrid search (vector + BM25 + RRF). Supports multi-repository indexing into a shared database.
+**Semantic long-term memory for AI agents** — modular code/docs/git/conversation indexing with hybrid search in a single SQLite file.
 
 BrainBank gives LLMs a searchable long-term memory that persists between sessions.
 
@@ -234,6 +234,30 @@ await investigations.add(
 );
 
 // "empty search results after switching embedding" → finds exact investigation
+```
+
+**Linking across collections** — use metadata to connect decisions to conversations and code:
+
+```typescript
+// Link a decision back to the conversation that produced it
+await decisions.add(
+  `ADR-015: Migrate from Express to Fastify for the API layer. Rationale: ` +
+  `Fastify provides schema-based validation out of the box, 2x throughput ` +
+  `in benchmarks, and native TypeScript support. Migration path: replace ` +
+  `route handlers one module at a time, starting with /api/auth.`,
+  {
+    tags: ['architecture', 'api'],
+    metadata: {
+      conversation: 'session-2024-03-20',  // links to conversation
+      files: ['src/api/server.ts', 'src/api/routes/auth.ts'],  // links to code
+    },
+  }
+);
+
+// Search finds the decision, metadata lets the agent trace back to context
+const results = await decisions.search('why did we switch from express');
+const relatedFiles = results[0].metadata.files;
+// → agent can now also search code: brain.searchCode('fastify auth route')
 ```
 
 **Collection management:**
