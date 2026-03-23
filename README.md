@@ -1,8 +1,8 @@
 # 🧠 BrainBank
 
-**Semantic long-term memory for AI agents** — modular code/docs/git/conversation indexing with hybrid search in a single SQLite file.
+**Persistent, searchable memory for AI agents.** Index your codebase, git history, documents, and any custom data into a single SQLite file — then search it all with hybrid vector + keyword retrieval.
 
-BrainBank gives LLMs a searchable long-term memory that persists between sessions.
+BrainBank gives LLMs a long-term memory that persists between sessions.
 
 - **All-in-one** — core + code + git + docs + CLI in a single `brainbank` package
 - **Pluggable indexers** — `.use()` only what you need (code, git, docs, or custom)
