@@ -1,5 +1,5 @@
 /**
- * BrainBank Integration Test — Memory + Entity Extraction (Real LLM)
+ * @brainbank/memory — Integration Test: Memory + Entity Extraction (Real LLM)
  *
  * End-to-end pipeline with REAL OpenAI calls:
  *   - Fact extraction + entity extraction in same LLM call
@@ -8,13 +8,16 @@
  *   - System prompt context building
  *
  * Requires: OPENAI_API_KEY env var
+ *
+ * Run:
+ *   npm test -- --integration --filter memory-entities
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { BrainBank } from '../helpers.ts';
-import { Memory, EntityStore, OpenAIProvider } from '../../packages/memory/src/index.ts';
+import { Memory, EntityStore, OpenAIProvider } from '../../src/index.ts';
 
 export const name = 'Memory + Entities (Real LLM)';
 
