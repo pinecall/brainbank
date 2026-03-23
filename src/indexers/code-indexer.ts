@@ -73,7 +73,7 @@ export class CodeIndexer {
 
             const ext = path.extname(filePath).toLowerCase();
             const language = SUPPORTED_EXTENSIONS[ext] ?? 'text';
-            const chunks = this._chunker.chunk(rel, content, language);
+            const chunks = await this._chunker.chunk(rel, content, language);
 
             for (const chunk of chunks) {
                 // Build embedding text with file context
