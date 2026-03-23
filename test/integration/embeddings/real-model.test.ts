@@ -12,9 +12,9 @@
  */
 
 import * as fs from 'node:fs';
-import { BrainBank } from '../../src/core/brainbank.ts';
-import { LocalEmbedding } from '../../src/embeddings/local.ts';
-import type { Reranker } from '../../src/types.ts';
+import { BrainBank } from '../../../src/core/brainbank.ts';
+import { LocalEmbedding } from '../../../src/embeddings/local.ts';
+import type { Reranker } from '../../../src/types.ts';
 
 export const name = 'Integration — Real Model';
 

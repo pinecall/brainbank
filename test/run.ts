@@ -60,9 +60,23 @@ function discoverTests(baseDir: string): TestFile[] {
         }
     }
 
+    // Scan root test/unit and test/integration
     for (const dir of dirs) {
         scanDir(path.join(baseDir, dir), dir);
     }
+
+    // Scan packages/*/test/unit and packages/*/test/integration
+    const pkgDir = path.join(path.dirname(baseDir), 'packages');
+    if (fs.existsSync(pkgDir)) {
+        for (const pkg of fs.readdirSync(pkgDir, { withFileTypes: true })) {
+            if (!pkg.isDirectory()) continue;
+            for (const dir of dirs) {
+                const pkgTestDir = path.join(pkgDir, pkg.name, 'test', dir);
+                scanDir(pkgTestDir, dir);
+            }
+        }
+    }
+
     return files;
 }
 

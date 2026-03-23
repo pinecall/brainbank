@@ -9,7 +9,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { BrainBank, code, hashEmbedding } from '../helpers.ts';
+import { BrainBank, code, hashEmbedding } from '../../helpers.ts';
 
 export const name = 'Code Indexer';
 
