@@ -58,12 +58,12 @@ function findRepoRoot(startDir: string): string {
     return path.resolve(startDir); // fallback: use startDir as-is
 }
 
-const repoPath = process.env.BRAINBANK_REPO || findRepoRoot(process.cwd());
+const defaultRepoPath = process.env.BRAINBANK_REPO || undefined;
 
 // ── Reranker (default: qwen3, set BRAINBANK_RERANKER=none to disable) ──
 
 async function createReranker() {
-    const rerankerEnv = process.env.BRAINBANK_RERANKER ?? 'qwen3';
+    const rerankerEnv = process.env.BRAINBANK_RERANKER ?? 'none';
     if (rerankerEnv === 'none') return undefined;
     if (rerankerEnv === 'qwen3') {
         const { Qwen3Reranker } = await import('../rerankers/qwen3-reranker.ts');
@@ -99,7 +99,13 @@ async function ensureShared() {
 }
 
 async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
-    const rp = targetRepo ?? repoPath;
+    const rp = targetRepo ?? defaultRepoPath;
+    if (!rp) {
+        throw new Error(
+            'No repository specified. Pass the `repo` parameter with the workspace path, ' +
+            'or set BRAINBANK_REPO environment variable.'
+        );
+    }
     const resolved = rp.replace(/\/+$/, ''); // normalize
 
     if (_pool.has(resolved)) return _pool.get(resolved)!;
@@ -348,14 +354,19 @@ server.registerTool(
         }),
     },
     async ({ query, codeK, gitK, repo }) => {
+        const t0 = performance.now();
         const brainbank = await getBrainBank(repo);
+        const t1 = performance.now();
         const results = await brainbank.hybridSearch(query, { codeK, gitK });
+        const t2 = performance.now();
+
+        const timing = `\n\n⏱ getBrainBank: ${(t1 - t0).toFixed(0)}ms | hybridSearch: ${(t2 - t1).toFixed(0)}ms | total: ${(t2 - t0).toFixed(0)}ms`;
 
         if (results.length === 0) {
-            return { content: [{ type: 'text', text: 'No results found for this query.' }] };
+            return { content: [{ type: 'text', text: 'No results found for this query.' + timing }] };
         }
 
-        return { content: [{ type: 'text', text: formatResults(results, 'Hybrid Search (Vector + BM25 → RRF)') }] };
+        return { content: [{ type: 'text', text: formatResults(results, 'Hybrid Search (Vector + BM25 → RRF)') + timing }] };
     },
 );
 

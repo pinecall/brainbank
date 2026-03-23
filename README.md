@@ -1,13 +1,14 @@
 # 🧠 BrainBank
 
-**Semantic knowledge bank for AI agents** — indexes code, documents, and git history into a single SQLite file with hybrid search (vector + BM25 + RRF).
+**Semantic knowledge bank for AI agents** — indexes code, documents, and git history into a single SQLite file with hybrid search (vector + BM25 + RRF). Supports multi-repository indexing into a shared database.
 
 BrainBank gives LLMs a searchable long-term memory that persists between sessions.
 
 - **Pluggable indexers** — `.use()` only what you need (code, git, docs)
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
 - **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
-- **Built-in reranker** — Qwen3-Reranker-0.6B local cross-encoder (default in MCP)
+- **Optional reranker** — Qwen3-Reranker-0.6B local cross-encoder (opt-in)
+- **Multi-repo** — Index multiple repositories into one shared database
 - **Portable** — single `.brainbank/brainbank.db` file
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 
@@ -31,6 +32,7 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - [Configuration](#configuration)
   - [Embedding Providers](#embedding-providers)
   - [Reranker](#reranker)
+- [Multi-Repository Indexing](#multi-repository-indexing)
 - [Indexing](#indexing-1)
   - [Incremental Indexing](#incremental-indexing)
   - [Re-embedding](#re-embedding)
@@ -403,7 +405,7 @@ No folder and no config file? The CLI uses the built-in indexers (`code`, `git`,
 
 ## MCP Server
 
-BrainBank ships with an MCP server (stdio) for AI tool integration. The Qwen3 reranker is **enabled by default** in MCP mode.
+BrainBank ships with an MCP server (stdio) for AI tool integration.
 
 ```bash
 brainbank serve
@@ -420,7 +422,6 @@ Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Deskto
       "command": "npx",
       "args": ["-y", "brainbank", "serve"],
       "env": {
-        "BRAINBANK_REPO": "/path/to/your/project",
         "BRAINBANK_EMBEDDING": "openai"
       }
     }
@@ -428,17 +429,11 @@ Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Deskto
 }
 ```
 
+The agent passes the `repo` parameter on each tool call based on the active workspace — no hardcoded paths needed.
+
 > Set `BRAINBANK_EMBEDDING` to `openai` for higher quality search (requires `OPENAI_API_KEY`). Omit to use the free local WASM embeddings.
 
-> `BRAINBANK_REPO` is required for IDE integrations since they launch MCP servers from `/` as cwd. For CLI usage (`brainbank serve` from your project dir), it auto-detects the repo root.
-
-To disable the reranker in MCP mode:
-
-```json
-"env": { "BRAINBANK_REPO": "/path/to/repo", "BRAINBANK_RERANKER": "none" }
-```
-
-The first search after startup will download the Qwen3-Reranker-0.6B model (~640MB, cached at `~/.cache/brainbank/models/`).
+> Optionally set `BRAINBANK_REPO` as a default fallback repo. If omitted, every tool call must include the `repo` parameter (recommended for multi-workspace setups).
 
 ### Available Tools
 
@@ -501,13 +496,32 @@ new OpenAIEmbedding({
 
 ### Reranker
 
-BrainBank includes a built-in cross-encoder reranker using **Qwen3-Reranker-0.6B** via `node-llama-cpp`. It runs 100% locally — no API keys needed.
+BrainBank includes an optional cross-encoder reranker using **Qwen3-Reranker-0.6B** via `node-llama-cpp`. It runs 100% locally — no API keys needed. The reranker is **disabled by default**.
+
+#### When to Use It
+
+The reranker runs local neural inference on every search result, which improves ranking precision but adds significant latency. Here are real benchmarks on a ~2100 file / 4000+ chunk codebase:
+
+| Metric | Without Reranker | With Reranker |
+|--------|-----------------|---------------|
+| **Warm query time** | ~480ms | ~5500ms |
+| **Cold start** | ~7s | ~12s |
+| **Memory overhead** | — | +640MB (model) |
+| **Ranking quality** | Good (RRF) | Slightly better |
+
+**Recommended:** Leave it disabled for interactive use (MCP, IDE integrations). The RRF fusion of vector + BM25 already produces high-quality results. Enable it only for:
+
+- Batch processing where latency doesn't matter
+- Very large codebases (50k+ files) where false positives are costly
+- Server environments with RAM to spare
+
+#### Enabling the Reranker
 
 ```typescript
 import { BrainBank, Qwen3Reranker } from 'brainbank';
 
 const brain = new BrainBank({
-  reranker: new Qwen3Reranker(),  // ~640MB model, auto-downloaded
+  reranker: new Qwen3Reranker(),  // ~640MB model, auto-downloaded on first use
 });
 ```
 
@@ -517,9 +531,17 @@ Or from the CLI:
 brainbank hsearch "auth middleware" --reranker qwen3
 ```
 
+Or via environment variable:
+
+```bash
+BRAINBANK_RERANKER=qwen3 brainbank serve
+```
+
+The model is cached at `~/.cache/brainbank/models/` after first download.
+
 #### Position-Aware Score Blending
 
-The reranker uses position-aware blending — trusting retrieval scores more for top results and the reranker more for lower-ranked results:
+When enabled, the reranker uses position-aware blending — trusting retrieval scores more for top results and the reranker more for lower-ranked results:
 
 | Position | Retrieval (RRF) | Reranker | Rationale |
 |----------|----------------|----------|----------|
@@ -542,17 +564,98 @@ const myReranker: Reranker = {
 };
 ```
 
-Without a reranker, BrainBank uses pure RRF fusion (still good quality).
+Without a reranker, BrainBank uses pure RRF fusion — which is already production-quality for most use cases.
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `BRAINBANK_REPO` | Repository path (default: auto-detected from `.git/`) |
+| `BRAINBANK_REPO` | Default repository path (optional — auto-detected from `.git/` or passed per tool call) |
 | `BRAINBANK_EMBEDDING` | Embedding provider: `local` (default), `openai` |
-| `BRAINBANK_RERANKER` | Reranker to use: `qwen3` (default in MCP), `none` to disable |
+| `BRAINBANK_RERANKER` | Reranker: `none` (default), `qwen3` to enable |
 | `BRAINBANK_DEBUG` | Show full stack traces |
 | `OPENAI_API_KEY` | Required when using `BRAINBANK_EMBEDDING=openai` |
+
+---
+
+## Multi-Repository Indexing
+
+BrainBank can index multiple repositories into a **single shared database**. This is useful for monorepos, microservices, or any project split across multiple Git repositories.
+
+### How It Works
+
+When you point BrainBank at a directory that contains multiple Git repositories (subdirectories with `.git/`), the CLI **auto-detects** them and creates namespaced indexers:
+
+```bash
+~/aurora/
+├── servicehub-frontend/   # .git/
+├── servicehub-backend/    # .git/
+└── servicehub-orchestrator/ # .git/
+```
+
+```bash
+brainbank index ~/aurora --depth 200
+```
+
+```
+━━━ BrainBank Index ━━━
+  Repo: /Users/you/aurora
+  Multi-repo: found 3 git repos: servicehub-frontend, servicehub-backend, servicehub-orchestrator
+  CODE:SERVICEHUB-BACKEND [0/1075] ...
+  CODE:SERVICEHUB-FRONTEND [0/719] ...
+  GIT:SERVICEHUB-ORCHESTRATOR [0/200] ...
+
+  Code: 2107 indexed, 4084 chunks
+  Git:  600 indexed (200 per repo)
+  Co-edit pairs: 1636
+```
+
+All code, git history, and co-edit relationships from every sub-repository go into **one** `.brainbank/brainbank.db` at the parent directory. Search queries automatically return results across all repositories:
+
+```bash
+brainbank hsearch "cancel job confirmation dialog" --repo ~/aurora
+# → Results from frontend Vue components, backend NestJS controllers,
+#   and orchestrator test scenarios — all in one search.
+```
+
+### Namespaced Indexers
+
+Each sub-repository gets its own namespaced indexer instances (e.g., `code:frontend`, `git:backend`). Same-type indexers share a single HNSW vector index for efficient memory usage and unified search.
+
+### Programmatic API
+
+```typescript
+import { BrainBank } from 'brainbank';
+import { code } from 'brainbank/code';
+import { git } from 'brainbank/git';
+
+const brain = new BrainBank({ repoPath: '~/aurora' })
+  .use(code({ name: 'code:frontend', repoPath: '~/aurora/frontend' }))
+  .use(code({ name: 'code:backend', repoPath: '~/aurora/backend' }))
+  .use(git({ name: 'git:frontend', repoPath: '~/aurora/frontend' }))
+  .use(git({ name: 'git:backend', repoPath: '~/aurora/backend' }));
+
+await brain.initialize();
+await brain.index();
+
+// Cross-repo search
+const results = await brain.hybridSearch('authentication guard');
+// → Results from both frontend and backend
+```
+
+### MCP Multi-Workspace
+
+The MCP server maintains a pool of BrainBank instances — one per unique `repo` path. Each tool call can target a different workspace:
+
+```typescript
+// Agent working in frontend workspace
+brainbank_hybrid_search({ query: "login form", repo: "/Users/you/aurora" })
+
+// Agent switches to a different project
+brainbank_hybrid_search({ query: "API routes", repo: "/Users/you/other-project" })
+```
+
+Instances are cached in memory after first initialization, so subsequent queries to the same repo are fast (~480ms).
 
 ---
 
@@ -662,7 +765,7 @@ brainbank reembed
 │  │  Embedding (Local WASM 384d │ OpenAI 1536d)      ││
 │  └──────────────────────────────────────────────────┘│
 │  ┌──────────────────────────────────────────────────┐│
-│  │  Qwen3-Reranker (default in MCP, cross-encoder)  ││
+│  │  Qwen3-Reranker (opt-in cross-encoder)            ││
 │  └──────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────┘
 ```
