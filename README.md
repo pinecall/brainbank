@@ -77,9 +77,10 @@ brainbank watch                             # Watch repo, auto re-index on save
 #   Watching /path/to/repo for changes...
 #   14:30:02 ✓ code: src/api.ts
 #   14:30:05 ✓ code: src/routes.ts
+#   14:30:08 ✓ csv: data/metrics.csv       ← custom indexer
 ```
 
-> Watch mode monitors **code files only** — git history and document collections are not affected by file-system changes and must be re-indexed explicitly.
+> Watch mode monitors **code files** by default. [Custom indexers](#custom-indexers) that implement `watchPatterns()` and `onFileChange()` are automatically picked up — their name appears in the console output alongside the built-in `code` indexer. Git history and document collections are not affected by file-system changes and must be re-indexed explicitly with `brainbank index` / `brainbank docs`.
 
 ### Document Collections
 
