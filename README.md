@@ -65,7 +65,6 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
   - [Re-embedding](#re-embedding)
 - [Architecture](#architecture)
   - [Search Pipeline](#search-pipeline)
-- [Testing](#testing)
 
 ---
 
@@ -747,23 +746,23 @@ BrainBank can index multiple repositories into a **single shared database**. Thi
 When you point BrainBank at a directory that contains multiple Git repositories (subdirectories with `.git/`), the CLI **auto-detects** them and creates namespaced indexers:
 
 ```bash
-~/aurora/
-├── servicehub-frontend/   # .git/
-├── servicehub-backend/    # .git/
-└── servicehub-orchestrator/ # .git/
+~/projects/
+├── webapp-frontend/   # .git/
+├── webapp-backend/    # .git/
+└── webapp-shared/     # .git/
 ```
 
 ```bash
-brainbank index ~/aurora --depth 200
+brainbank index ~/projects --depth 200
 ```
 
 ```
 ━━━ BrainBank Index ━━━
-  Repo: /Users/you/aurora
-  Multi-repo: found 3 git repos: servicehub-frontend, servicehub-backend, servicehub-orchestrator
-  CODE:SERVICEHUB-BACKEND [0/1075] ...
-  CODE:SERVICEHUB-FRONTEND [0/719] ...
-  GIT:SERVICEHUB-ORCHESTRATOR [0/200] ...
+  Repo: /Users/you/projects
+  Multi-repo: found 3 git repos: webapp-frontend, webapp-backend, webapp-shared
+  CODE:WEBAPP-BACKEND [0/1075] ...
+  CODE:WEBAPP-FRONTEND [0/719] ...
+  GIT:WEBAPP-SHARED [0/200] ...
 
   Code: 2107 indexed, 4084 chunks
   Git:  600 indexed (200 per repo)
@@ -773,9 +772,9 @@ brainbank index ~/aurora --depth 200
 All code, git history, and co-edit relationships from every sub-repository go into **one** `.brainbank/brainbank.db` at the parent directory. Search queries automatically return results across all repositories:
 
 ```bash
-brainbank hsearch "cancel job confirmation dialog" --repo ~/aurora
-# → Results from frontend Vue components, backend NestJS controllers,
-#   and orchestrator test scenarios — all in one search.
+brainbank hsearch "cancel job confirmation" --repo ~/projects
+# → Results from frontend components, backend controllers,
+#   and shared utilities — all in one search.
 ```
 
 ### Namespaced Indexers
@@ -789,11 +788,11 @@ import { BrainBank } from 'brainbank';
 import { code } from 'brainbank/code';
 import { git } from 'brainbank/git';
 
-const brain = new BrainBank({ repoPath: '~/aurora' })
-  .use(code({ name: 'code:frontend', repoPath: '~/aurora/frontend' }))
-  .use(code({ name: 'code:backend', repoPath: '~/aurora/backend' }))
-  .use(git({ name: 'git:frontend', repoPath: '~/aurora/frontend' }))
-  .use(git({ name: 'git:backend', repoPath: '~/aurora/backend' }));
+const brain = new BrainBank({ repoPath: '~/projects' })
+  .use(code({ name: 'code:frontend', repoPath: '~/projects/webapp-frontend' }))
+  .use(code({ name: 'code:backend', repoPath: '~/projects/webapp-backend' }))
+  .use(git({ name: 'git:frontend', repoPath: '~/projects/webapp-frontend' }))
+  .use(git({ name: 'git:backend', repoPath: '~/projects/webapp-backend' }));
 
 await brain.initialize();
 await brain.index();
@@ -808,8 +807,8 @@ const results = await brain.hybridSearch('authentication guard');
 The MCP server maintains a pool of BrainBank instances — one per unique `repo` path. Each tool call can target a different workspace:
 
 ```typescript
-// Agent working in frontend workspace
-brainbank_hybrid_search({ query: "login form", repo: "/Users/you/aurora" })
+// Agent working in one workspace
+brainbank_hybrid_search({ query: "login form", repo: "/Users/you/projects" })
 
 // Agent switches to a different project
 brainbank_hybrid_search({ query: "API routes", repo: "/Users/you/other-project" })
@@ -973,55 +972,6 @@ npm test -- --integration   # Full suite (211 tests, includes real models + all 
 npm test -- --filter code   # Filter by test name
 npm test -- --verbose       # Show assertion details
 ```
-
-### Test Structure
-
-```
-test/
-├── helpers.ts                      # Shared imports, mockEmbedding(), tmpDb()
-├── run.ts                          # Custom test runner (recursive discovery)
-├── unit/
-│   ├── core/
-│   │   ├── brainbank.test.ts       # Orchestrator & .use() pattern
-│   │   ├── collection.test.ts      # Dynamic KV collections
-│   │   ├── config.test.ts          # Configuration resolution
-│   │   ├── reembed.test.ts         # Re-embedding engine
-│   │   ├── schema.test.ts          # SQLite schema & migrations
-│   │   ├── tags-ttl.test.ts        # Tags, TTL & schema columns
-│   │   └── watch.test.ts           # Watch mode & custom indexer routing
-│   ├── embeddings/
-│   │   ├── math.test.ts            # Cosine similarity, normalize, distance
-│   │   └── openai-embedding.test.ts # OpenAI embedding provider
-│   ├── indexers/
-│   │   ├── chunker.test.ts         # Language-aware code chunking
-│   │   └── languages.test.ts       # Language registry
-│   ├── memory/
-│   │   └── notes.test.ts           # Note memory store
-│   ├── query/
-│   │   ├── bm25.test.ts            # BM25 full-text search
-│   │   ├── reranker.test.ts        # Pluggable reranker integration (mock)
-│   │   └── rrf.test.ts             # Reciprocal Rank Fusion
-│   └── vector/
-│       ├── hnsw.test.ts            # HNSW vector index
-│       └── mmr.test.ts             # Maximal Marginal Relevance
-└── integration/
-    ├── code.test.ts                # Code indexer end-to-end
-    ├── git.test.ts                 # Git indexer end-to-end
-    ├── docs.test.ts                # Docs indexer end-to-end
-    ├── memory.test.ts              # Memory lifecycle
-    ├── collections.test.ts         # KV collections end-to-end
-    ├── search.test.ts              # Unified search & getContext
-    └── real-model.test.ts          # Real MiniLM embedding
-
-packages/reranker/test/
-└── integration/
-    └── reranker.test.ts            # Qwen3 real model: ranking, dedup, pipeline
-```
-
-All test files import from `test/helpers.ts` which centralizes shared modules and provides:
-
-- **`mockEmbedding(dims?)`** — Deterministic mock embedding provider
-- **`tmpDb(label)`** — Generates unique temp database paths
 
 ---
 
