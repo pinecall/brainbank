@@ -348,9 +348,12 @@ server.registerTool(
         description: 'Best quality search: combines semantic vector search + BM25 keyword search using Reciprocal Rank Fusion. Catches both exact keyword matches AND conceptual similarities. Use this by default for all searches.',
         inputSchema: z.object({
             query: z.string().describe('Search query — works with both keywords and natural language'),
-            codeK: z.number().optional().default(8).describe('Max code results to return'),
-            gitK: z.number().optional().default(5).describe('Max git commit results to return'),
-            collections: z.record(z.string(), z.number()).optional().describe('KV collections to include in fusion: { "collectionName": maxResults }. Example: { "errors": 5, "decisions": 3 }'),
+            codeK: z.number().optional().default(8).describe('Max code results (shorthand for collections.code)'),
+            gitK: z.number().optional().default(5).describe('Max git results (shorthand for collections.git)'),
+            collections: z.record(z.string(), z.number()).optional().describe(
+                'Max results per source. Reserved keys: "code", "git", "docs" control built-in indexers. ' +
+                'Any other key is a KV collection. Example: { "code": 8, "git": 5, "errors": 3, "slack": 2 }'
+            ),
             repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
         }),
     },

@@ -490,41 +490,57 @@ export class BrainBank extends EventEmitter {
      * Best quality — catches both exact keyword matches and conceptual similarities.
      */
     async hybridSearch(query: string, options?: {
-        codeK?: number; gitK?: number; memoryK?: number;
+        /** @deprecated Use collections: { code: N } instead */
+        codeK?: number;
+        /** @deprecated Use collections: { git: N } instead */
+        gitK?: number;
+        memoryK?: number;
         minScore?: number; useMMR?: boolean;
-        /** Include KV collections in the fusion. Keys = collection names, values = max results per collection. */
+        /**
+         * Sources to include and max results per source.
+         * Reserved keys: "code", "git", "docs" control built-in indexers.
+         * Any other key is treated as a KV collection name.
+         * Example: { code: 8, git: 5, docs: 4, errors: 3, slack: 2 }
+         */
         collections?: Record<string, number>;
     }): Promise<SearchResult[]> {
         await this.initialize();
 
+        const cols = options?.collections ?? {};
+        // Backward compat: codeK/gitK fallback when not in collections
+        const codeK = cols.code ?? options?.codeK ?? 6;
+        const gitK = cols.git ?? options?.gitK ?? 5;
+        const docsK = cols.docs ?? 8;
+
         const resultLists: SearchResult[][] = [];
 
         if (this._search) {
+            const searchOpts = { ...options, codeK, gitK };
             const [vectorResults, bm25Results] = await Promise.all([
-                this._search.search(query, options),
-                Promise.resolve(this._bm25!.search(query, options)),
+                this._search.search(query, searchOpts),
+                Promise.resolve(this._bm25!.search(query, searchOpts)),
             ]);
             resultLists.push(vectorResults, bm25Results);
         }
 
         if (this.has('docs')) {
-            const docResults = await this.searchDocs(query, { k: 8 });
+            const docResults = await this.searchDocs(query, { k: docsK });
             if (docResults.length > 0) resultLists.push(docResults);
         }
 
-        // Include KV collections in the fusion
-        if (options?.collections && Object.keys(options.collections).length > 0) {
-            for (const [name, k] of Object.entries(options.collections)) {
-                const col = this.collection(name);
-                const hits = await col.search(query, { k });
-                if (hits.length > 0) {
-                    resultLists.push(hits.map(h => ({
-                        type: 'collection' as const,
-                        score: h.score ?? 0,
-                        content: h.content,
-                        metadata: { collection: name, id: h.id, ...h.metadata },
-                    })));
-                }
+        // Include KV collections (skip reserved keys)
+        const reserved = new Set(['code', 'git', 'docs']);
+        for (const [name, k] of Object.entries(cols)) {
+            if (reserved.has(name)) continue;
+            const col = this.collection(name);
+            const hits = await col.search(query, { k });
+            if (hits.length > 0) {
+                resultLists.push(hits.map(h => ({
+                    type: 'collection' as const,
+                    score: h.score ?? 0,
+                    content: h.content,
+                    metadata: { collection: name, id: h.id, ...h.metadata },
+                })));
             }
         }
 
