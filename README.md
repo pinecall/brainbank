@@ -27,7 +27,7 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 |---|:---:|:---:|:---:|:---:|
 | Infrastructure | **SQLite file** | Vector DB + cloud | Neo4j + cloud | LangGraph Platform |
 | LLM required to write | **No**¹ | Yes | Yes | Yes |
-| Code-aware | **30+ languages, git, co-edits** | ✗ | ✗ | ✗ |
+| Code-aware | **19 AST-parsed languages (tree-sitter), git, co-edits** | ✗ | ✗ | ✗ |
 | Custom indexers | **`.use()` plugin system** | ✗ | ✗ | ✗ |
 | Search | **Vector + BM25 + RRF** | Vector only | Vector + graph | Vector only |
 | Framework lock-in | **None** | Optional | Zep cloud | LangChain |
@@ -148,12 +148,15 @@ BrainBank can be used entirely from the command line — no config file needed.
 
 ### Indexing
 
-`index` processes **code files + git history** only. Document collections are indexed separately with `docs`.
+`index` processes **code files + git history** by default. Use `--only` to select specific modules, and `--docs` to include document collections.
 
 ```bash
 brainbank index [path]                      # Index code + git history
 brainbank index [path] --force              # Force re-index everything
 brainbank index [path] --depth 200          # Limit git commit depth
+brainbank index [path] --only code          # Index only code (skip git)
+brainbank index [path] --only git           # Index only git history
+brainbank index [path] --docs ~/docs        # Include a docs folder
 brainbank docs [--collection <name>]        # Index document collections
 ```
 
@@ -232,7 +235,7 @@ BrainBank uses pluggable indexers. Register only what you need with `.use()`:
 
 | Indexer | Import | Description |
 |---------|--------|-------------|
-| `code` | `brainbank/code` | Language-aware code chunking (30+ languages) |
+| `code` | `brainbank/code` | AST-aware code chunking via tree-sitter (19 languages) |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
 | `docs` | `brainbank/docs` | Document collections (markdown, wikis) |
 
@@ -899,6 +902,24 @@ Instances are cached in memory after first initialization, so subsequent queries
 
 ## Indexing
 
+### Code Chunking (tree-sitter)
+
+BrainBank uses **native tree-sitter** to parse source code into ASTs and extract semantic blocks — functions, classes, methods, interfaces — as individual chunks. This produces dramatically better embeddings than naive line-based splitting.
+
+**Supported languages (AST-parsed):**
+
+| Category | Languages |
+|----------|-----------|
+| Web | TypeScript, JavaScript, HTML, CSS |
+| Systems | Go, Rust, C, C++, Swift |
+| JVM | Java, Kotlin, Scala |
+| Scripting | Python, Ruby, PHP, Lua, Bash, Elixir |
+| .NET | C# |
+
+For large classes (>80 lines), the chunker descends into the class body and extracts each method as a separate chunk. For unsupported languages, it falls back to a sliding window with overlap.
+
+> Tree-sitter grammars are **optional dependencies**. If a grammar isn't installed, that language falls back to the generic sliding window. Install only the grammars you need: `npm install tree-sitter-ruby tree-sitter-go` etc.
+
 ### Incremental Indexing
 
 All indexing is **incremental by default** — only new or changed content is processed:
@@ -1035,7 +1056,7 @@ Final results (sorted by blended score)
 
 ### Data Flow
 
-1. **Index** — Indexers parse files into chunks
+1. **Index** — Indexers parse files into chunks (tree-sitter AST for code, heading-based for docs)
 2. **Embed** — Each chunk gets a vector (local WASM or OpenAI)
 3. **Store** — Chunks + vectors → SQLite, vectors → HNSW index
 4. **Search** — Query → HNSW k-NN + BM25 keyword → RRF fusion → optional reranker
