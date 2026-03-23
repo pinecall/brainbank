@@ -16,14 +16,16 @@
  *   await errors.add('Fixed null check', { file: 'api.ts' });
  */
 
+// ── Public API ──────────────────────────────────────
+
 export { BrainBank } from './core/brainbank.ts';
 
-// Indexer factories
+// Plugin factories
 export { code } from './plugins/code.ts';
 export { git } from './plugins/git.ts';
 export { docs } from './plugins/docs.ts';
 
-// Indexer types
+// Plugin types
 export type { Indexer, IndexerContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './plugins/types.ts';
 
 // Collections
@@ -40,9 +42,11 @@ export type {
     GitCommitRecord,
     LearningPattern, MemoryPattern, DistilledStrategy,
     SearchResult, SearchResultType,
+    CodeResult, CommitResult, PatternResult, DocumentResult, CollectionResult,
+    CodeResultMetadata, CommitResultMetadata, PatternResultMetadata, DocumentResultMetadata,
     ContextOptions,
     IndexStats, IndexResult,
-    ProgressCallback,
+    ProgressCallback, StageProgressCallback,
     CoEditSuggestion,
     DocumentCollection, DocChunk,
 } from './types.ts';
@@ -55,31 +59,31 @@ export type { ReembedResult, ReembedOptions } from './core/reembed.ts';
 export type { WatchOptions, Watcher } from './core/watch.ts';
 export { cosineSimilarity, normalize } from './embeddings/math.ts';
 
-// Rerankers — available via @brainbank/reranker package
+// Config
+export { resolveConfig, DEFAULTS } from './core/config.ts';
 
-// Vector
+// ── Internals (for custom plugins & power users) ────
+
+// Vector indices
 export { HNSWIndex } from './vector/hnsw.ts';
 export { searchMMR } from './vector/mmr.ts';
 
-// Indexers (internal implementations)
+// Indexer implementations
 export { CodeChunker } from './indexers/chunker.ts';
 export { CodeIndexer } from './indexers/code-indexer.ts';
 export { GitIndexer } from './indexers/git-indexer.ts';
 export { DocsIndexer } from './indexers/doc-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
-// Learning (agent patterns, strategies, notes)
+// Agent learning stores
 export { PatternStore } from './learning/pattern-store.ts';
 export { Consolidator } from './learning/consolidator.ts';
 export { NoteStore } from './learning/note-store.ts';
 export type { NoteDigest, StoredNote, RecallOptions } from './learning/note-store.ts';
 
-// Query
+// Search internals
 export { ContextBuilder } from './core/context-builder.ts';
 export { MultiIndexSearch } from './query/search.ts';
 export { CoEditAnalyzer } from './indexers/co-edits.ts';
 export { BM25Search } from './query/bm25.ts';
 export { reciprocalRankFusion } from './query/rrf.ts';
-
-// Config
-export { resolveConfig, DEFAULTS } from './core/config.ts';

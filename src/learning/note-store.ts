@@ -121,8 +121,8 @@ export class NoteStore {
 
             const fusedResults = reciprocalRankFusion(
                 [
-                    vectorHits.map(m => ({ type: 'pattern' as const, score: m.score ?? 0, content: m.summary, metadata: { id: m.id } })),
-                    bm25Hits.map(m => ({ type: 'pattern' as const, score: m.score ?? 0, content: m.summary, metadata: { id: m.id } })),
+                    vectorHits.map(m => ({ type: 'collection' as const, score: m.score ?? 0, content: m.summary, metadata: { id: m.id } })),
+                    bm25Hits.map(m => ({ type: 'collection' as const, score: m.score ?? 0, content: m.summary, metadata: { id: m.id } })),
                 ],
             );
 
@@ -132,7 +132,7 @@ export class NoteStore {
 
             results = fusedResults
                 .map(r => {
-                    const mem = allById.get(r.metadata.id);
+                    const mem = allById.get((r.metadata as any).id);
                     if (!mem) return null;
                     return { ...mem, score: r.score };
                 })

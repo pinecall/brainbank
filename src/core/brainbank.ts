@@ -34,7 +34,7 @@ import type { Indexer, IndexerContext } from '../plugins/types.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
-    ContextOptions, CoEditSuggestion, ProgressCallback,
+    ContextOptions, CoEditSuggestion, ProgressCallback, StageProgressCallback,
     DocumentCollection,
 } from '../types.ts';
 
@@ -301,7 +301,7 @@ export class BrainBank extends EventEmitter {
         modules?: ('code' | 'git' | 'docs')[];
         gitDepth?: number;
         forceReindex?: boolean;
-        onProgress?: (stage: string, msg: string) => void;
+        onProgress?: StageProgressCallback;
     } = {}): Promise<{ code?: IndexResult; git?: IndexResult; docs?: Record<string, { indexed: number; skipped: number; chunks: number }> }> {
         await this.initialize();
 
@@ -459,9 +459,10 @@ export class BrainBank extends EventEmitter {
             const docResults = await this.searchDocs(task, { k: options.codeResults ?? 4 });
             if (docResults.length > 0) {
                 const docSection = docResults.map(r => {
+                    const meta = r.metadata as Record<string, any>;
                     const header = r.context
-                        ? `**[${r.metadata.collection}]** ${r.metadata.title} — _${r.context}_`
-                        : `**[${r.metadata.collection}]** ${r.metadata.title}`;
+                        ? `**[${meta.collection}]** ${meta.title} — _${r.context}_`
+                        : `**[${meta.collection}]** ${meta.title}`;
                     return `${header}\n\n${r.content}`;
                 }).join('\n\n---\n\n');
                 sections.push(`## Relevant Documents\n\n${docSection}`);

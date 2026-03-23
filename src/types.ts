@@ -170,18 +170,92 @@ export interface DistilledStrategy {
 
 export type SearchResultType = 'code' | 'commit' | 'pattern' | 'document' | 'collection';
 
-export interface SearchResult {
-    type: SearchResultType;
+// Typed metadata per result type
+
+export interface CodeResultMetadata {
+    chunkType: string;
+    name?: string;
+    startLine: number;
+    endLine: number;
+    language: string;
+    searchType?: string;
+}
+
+export interface CommitResultMetadata {
+    hash: string;
+    shortHash: string;
+    author: string;
+    date: string;
+    files: string[];
+    additions?: number;
+    deletions?: number;
+    diff?: string;
+    searchType?: string;
+}
+
+export interface PatternResultMetadata {
+    taskType: string;
+    task: string;
+    outcome?: string;
+    successRate: number;
+    critique?: string;
+    searchType?: string;
+}
+
+export interface DocumentResultMetadata {
+    collection?: string;
+    path?: string;
+    searchType?: string;
+}
+
+// Discriminated union
+
+export interface CodeResult {
+    type: 'code';
     score: number;
-    /** File path (for code results) or document path */
-    filePath?: string;
-    /** Content / text */
+    filePath: string;
     content: string;
-    /** Context description (for document results) */
     context?: string;
-    /** Extra metadata depending on type */
+    metadata: CodeResultMetadata;
+}
+
+export interface CommitResult {
+    type: 'commit';
+    score: number;
+    filePath?: string;
+    content: string;
+    context?: string;
+    metadata: CommitResultMetadata;
+}
+
+export interface PatternResult {
+    type: 'pattern';
+    score: number;
+    filePath?: string;
+    content: string;
+    context?: string;
+    metadata: PatternResultMetadata;
+}
+
+export interface DocumentResult {
+    type: 'document';
+    score: number;
+    filePath?: string;
+    content: string;
+    context?: string;
+    metadata: DocumentResultMetadata;
+}
+
+export interface CollectionResult {
+    type: 'collection';
+    score: number;
+    filePath?: string;
+    content: string;
+    context?: string;
     metadata: Record<string, any>;
 }
+
+export type SearchResult = CodeResult | CommitResult | PatternResult | DocumentResult | CollectionResult;
 
 // ── Context Builder ─────────────────────────────────
 
@@ -269,7 +343,11 @@ export interface IndexStats {
 
 // ── Index Progress ──────────────────────────────────
 
+/** File-level progress (used by indexers). */
 export type ProgressCallback = (file: string, current: number, total: number) => void;
+
+/** Stage-level progress (used by BrainBank.index() orchestrator). */
+export type StageProgressCallback = (stage: string, message: string) => void;
 
 export interface IndexResult {
     indexed: number;
