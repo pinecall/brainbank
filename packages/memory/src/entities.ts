@@ -101,17 +101,17 @@ export class EntityStore {
     }
 
     /**
-     * Find an entity by name (semantic search).
+     * Find an entity by name (exact name match via search).
      */
     async findEntity(name: string): Promise<(MemoryItem & { metadata?: Record<string, any> }) | null> {
-        const results = await this.entities.search(name, { k: 3 });
-        // Find exact or closest match
+        const results = await this.entities.search(name, { k: 5 });
+        // Only match exact name (case-insensitive) — no fuzzy matching
         for (const r of results) {
             if (this.extractName(r.content).toLowerCase() === name.toLowerCase()) {
                 return r;
             }
         }
-        return results.length > 0 && (results[0].score ?? 0) > 0.8 ? results[0] : null;
+        return null;
     }
 
     /**
