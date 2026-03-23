@@ -36,10 +36,11 @@ User message → LLM response (streaming)
                     │
         ┌── @brainbank/memory ──────────────┐
         │                                    │
-        │  ① Extract atomic facts (LLM)      │
+        │  ① Extract facts + entities (LLM)  │
         │  ② Search existing memories         │
         │  ③ Dedup: ADD / UPDATE / NONE       │
-        │  ④ Execute operations               │
+        │  ④ Upsert entities (if enabled)     │
+        │  ⑤ Execute operations               │
         └────────────────────────────────────┘
 ```
 

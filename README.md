@@ -11,7 +11,7 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 - **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
 - **Multi-repo** — index multiple repositories into one shared database
 - **Portable** — single `.brainbank/brainbank.db` file
-- **Optional packages** — [`@brainbank/memory`](#memory) (deterministic fact extraction), [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder), [`@brainbank/mcp`](#mcp-server) (MCP server)
+- **Optional packages** — [`@brainbank/memory`](#memory) (fact extraction + entity graph), [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder), [`@brainbank/mcp`](#mcp-server) (MCP server)
 
 ![BrainBank Architecture](assets/architecture.png)
 
@@ -86,7 +86,7 @@ npm install brainbank
 
 | Package | When to install |
 |---------|----------------|
-| `@brainbank/memory` | Deterministic memory extraction for LLM conversations (mem0-style pipeline) |
+| `@brainbank/memory` | Deterministic memory extraction + entity graph for LLM conversations |
 | `@brainbank/reranker` | Cross-encoder reranker (Qwen3-0.6B, ~640MB model) |
 | `@brainbank/mcp` | MCP server for AI tool integration |
 
@@ -771,6 +771,8 @@ Without a reranker, BrainBank uses pure RRF fusion — which is already producti
 
 `@brainbank/memory` adds **deterministic memory extraction** to any LLM conversation. After every turn, it automatically extracts facts, deduplicates against existing memories, and decides `ADD` / `UPDATE` / `NONE` — no function calling needed.
 
+Optionally extracts **entities and relationships** (knowledge graph) from the same LLM call — no extra cost.
+
 Inspired by [mem0](https://github.com/mem0ai/mem0)'s pipeline, but framework-agnostic and built on BrainBank collections.
 
 ```bash
@@ -779,22 +781,30 @@ npm install @brainbank/memory
 
 ```typescript
 import { BrainBank } from 'brainbank';
-import { Memory, OpenAIProvider } from '@brainbank/memory';
+import { Memory, EntityStore, OpenAIProvider } from '@brainbank/memory';
 
 const brain = new BrainBank({ dbPath: './memory.db' });
 await brain.initialize();
 
-const memory = new Memory(brain.collection('memories'), {
-  llm: new OpenAIProvider({ model: 'gpt-4.1-nano' }),
+// Opt-in entity extraction (knowledge graph)
+const entityStore = new EntityStore({
+  entityCollection: brain.collection('entities'),
+  relationCollection: brain.collection('relationships'),
 });
 
-// After every conversation turn (deterministic, automatic)
-await memory.process(userMessage, assistantResponse);
-// → extracts facts, deduplicates, executes ADD/UPDATE/NONE
+const memory = new Memory(brain.collection('memories'), {
+  llm: new OpenAIProvider({ model: 'gpt-4.1-nano' }),
+  entityStore,  // optional — omit for facts-only mode
+});
 
-// For the system prompt
+// After every conversation turn
+const result = await memory.process(userMessage, assistantResponse);
+// result.operations → [{ fact, action: "ADD", reason }]
+// result.entities   → { entitiesProcessed: 2, relationshipsProcessed: 1 }
+
+// System prompt with memories + entities
 const context = memory.buildContext();
-// → "## Memories\n- User's name is Berna\n- Prefers TypeScript"
+// → "## Memories\n- User's name is Berna\n\n## Known Entities\n- Berna (person, 3x)\n..."
 ```
 
 The `LLMProvider` interface works with any framework:
