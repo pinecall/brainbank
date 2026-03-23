@@ -33,6 +33,8 @@ export interface IndexerContext {
     createHnsw(maxElements?: number): Promise<HNSWIndex>;
     /** Load existing vectors from a SQLite vectors table into an HNSW index + cache. */
     loadVectors(table: string, idCol: string, hnsw: HNSWIndex, cache: Map<number, Float32Array>): void;
+    /** Get or create a shared HNSW index by type (e.g. 'code', 'git'). For multi-repo support. */
+    getOrCreateSharedHnsw(type: string, maxElements?: number): Promise<{ hnsw: HNSWIndex; vecCache: Map<number, Float32Array>; isNew: boolean }>;
     /** Get or create a dynamic collection. */
     collection(name: string): Collection;
 }

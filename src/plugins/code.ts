@@ -7,6 +7,11 @@
  *   import { code } from 'brainbank/code';
  *   
  *   const brain = new BrainBank().use(code({ repoPath: '.' }));
+ *   
+ *   // Multi-repo: namespace to avoid key collisions
+ *   brain
+ *     .use(code({ repoPath: './frontend', name: 'code:frontend' }))
+ *     .use(code({ repoPath: './backend',  name: 'code:backend' }));
  */
 
 import type { BrainBankModule, ModuleContext } from './types.ts';
@@ -19,19 +24,30 @@ export interface CodeModuleOptions {
     repoPath?: string;
     /** Maximum file size in bytes. Default: from config */
     maxFileSize?: number;
+    /** Custom indexer name for multi-repo (e.g. 'code:frontend'). Default: 'code' */
+    name?: string;
 }
 
 class CodeModuleImpl implements BrainBankModule {
-    readonly name = 'code';
+    readonly name: string;
     hnsw!: HNSWIndex;
     indexer!: CodeIndexer;
     vecCache = new Map<number, Float32Array>();
 
-    constructor(private opts: CodeModuleOptions = {}) {}
+    constructor(private opts: CodeModuleOptions = {}) {
+        this.name = opts.name ?? 'code';
+    }
 
     async initialize(ctx: ModuleContext): Promise<void> {
-        this.hnsw = await ctx.createHnsw();
-        ctx.loadVectors('code_vectors', 'chunk_id', this.hnsw, this.vecCache);
+        // Use shared HNSW so all code indexers (code, code:frontend, etc.) share one index
+        const shared = await ctx.getOrCreateSharedHnsw('code');
+        this.hnsw = shared.hnsw;
+        this.vecCache = shared.vecCache;
+
+        // Only load vectors once (first code indexer to initialize)
+        if (shared.isNew) {
+            ctx.loadVectors('code_vectors', 'chunk_id', this.hnsw, this.vecCache);
+        }
 
         const repoPath = this.opts.repoPath ?? ctx.config.repoPath;
         this.indexer = new CodeIndexer(repoPath, {

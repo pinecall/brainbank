@@ -5,6 +5,11 @@
  * 
  *   import { git } from 'brainbank/git';
  *   brain.use(git({ depth: 500 }));
+ *   
+ *   // Multi-repo: namespace to avoid key collisions
+ *   brain
+ *     .use(git({ repoPath: './frontend', name: 'git:frontend' }))
+ *     .use(git({ repoPath: './backend',  name: 'git:backend' }));
  */
 
 import type { BrainBankModule, ModuleContext } from './types.ts';
@@ -20,20 +25,30 @@ export interface GitModuleOptions {
     depth?: number;
     /** Max diff bytes. Default: from config */
     maxDiffBytes?: number;
+    /** Custom indexer name for multi-repo (e.g. 'git:frontend'). Default: 'git' */
+    name?: string;
 }
 
 class GitModuleImpl implements BrainBankModule {
-    readonly name = 'git';
+    readonly name: string;
     hnsw!: HNSWIndex;
     indexer!: GitIndexer;
     coEdits!: CoEditAnalyzer;
     vecCache = new Map<number, Float32Array>();
 
-    constructor(private opts: GitModuleOptions = {}) {}
+    constructor(private opts: GitModuleOptions = {}) {
+        this.name = opts.name ?? 'git';
+    }
 
     async initialize(ctx: ModuleContext): Promise<void> {
-        this.hnsw = await ctx.createHnsw(500_000);
-        ctx.loadVectors('git_vectors', 'commit_id', this.hnsw, this.vecCache);
+        // Use shared HNSW so all git indexers share one index
+        const shared = await ctx.getOrCreateSharedHnsw('git', 500_000);
+        this.hnsw = shared.hnsw;
+        this.vecCache = shared.vecCache;
+
+        if (shared.isNew) {
+            ctx.loadVectors('git_vectors', 'commit_id', this.hnsw, this.vecCache);
+        }
 
         const repoPath = this.opts.repoPath ?? ctx.config.repoPath;
         this.indexer = new GitIndexer(repoPath, {

@@ -187,8 +187,29 @@ async function createBrain(repoPath?: string): Promise<BrainBank> {
 
     // 1. Built-in indexers (default: all three)
     const builtins = config?.builtins ?? ['code', 'git', 'docs'];
-    if (builtins.includes('code')) brain.use(code({ repoPath: rp }));
-    if (builtins.includes('git')) brain.use(git());
+
+    // Multi-repo detection: check if repoPath has no .git but subdirs do
+    const resolvedRp = path.resolve(rp);
+    const hasRootGit = fs.existsSync(path.join(resolvedRp, '.git'));
+    const gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp) : [];
+
+    if (gitSubdirs.length > 0 && (builtins.includes('code') || builtins.includes('git'))) {
+        // Multi-repo mode: create namespaced indexers for each subdir
+        console.log(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
+        for (const sub of gitSubdirs) {
+            if (builtins.includes('code')) {
+                brain.use(code({ repoPath: sub.path, name: `code:${sub.name}` }));
+            }
+            if (builtins.includes('git')) {
+                brain.use(git({ repoPath: sub.path, name: `git:${sub.name}` }));
+            }
+        }
+    } else {
+        // Single-repo mode (standard)
+        if (builtins.includes('code')) brain.use(code({ repoPath: rp }));
+        if (builtins.includes('git')) brain.use(git());
+    }
+
     if (builtins.includes('docs')) brain.use(docs());
 
     // 2. Auto-discovered from .brainbank/indexers/
@@ -204,6 +225,23 @@ async function createBrain(repoPath?: string): Promise<BrainBank> {
     }
 
     return brain;
+}
+
+/** Detect subdirectories that have their own .git repo. */
+function detectGitSubdirs(parentPath: string): { name: string; path: string }[] {
+    try {
+        const entries = fs.readdirSync(parentPath, { withFileTypes: true });
+        return entries
+            .filter(e =>
+                e.isDirectory() &&
+                !e.name.startsWith('.') &&
+                !e.name.startsWith('node_modules') &&
+                fs.existsSync(path.join(parentPath, e.name, '.git'))
+            )
+            .map(e => ({ name: e.name, path: path.join(parentPath, e.name) }));
+    } catch {
+        return [];
+    }
 }
 
 // ── Commands ────────────────────────────────────────

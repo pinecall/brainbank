@@ -12,9 +12,9 @@ import { searchMMR } from '../vector/mmr.ts';
 
 export interface SearchDeps {
     db: Database;
-    codeHnsw: HNSWIndex;
-    gitHnsw: HNSWIndex;
-    memHnsw: HNSWIndex;
+    codeHnsw?: HNSWIndex;
+    gitHnsw?: HNSWIndex;
+    memHnsw?: HNSWIndex;
     codeVecs: Map<number, Float32Array>;
     gitVecs: Map<number, Float32Array>;
     memVecs: Map<number, Float32Array>;

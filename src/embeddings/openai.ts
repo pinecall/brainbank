@@ -39,6 +39,7 @@ export class OpenAIEmbedding implements EmbeddingProvider {
     private _model: string;
     private _baseUrl: string;
     private _requestDims: number | undefined;
+    private _retrying = false;
 
     constructor(options: OpenAIEmbeddingOptions = {}) {
         this._apiKey = options.apiKey ?? process.env.OPENAI_API_KEY ?? '';
@@ -78,13 +79,19 @@ export class OpenAIEmbedding implements EmbeddingProvider {
         // No resources to release
     }
 
+    private _isTokenLimitError(errText: string): boolean {
+        return errText.includes('maximum input length') ||
+               errText.includes('maximum context length') ||
+               errText.includes('too many tokens');
+    }
+
     private async _request(input: string[]): Promise<Float32Array[]> {
         if (!this._apiKey) {
             throw new Error('OpenAI API key required. Set OPENAI_API_KEY env var or pass apiKey option.');
         }
 
         // Truncate texts that would exceed token limit (~4 chars per token, 8192 max)
-        const MAX_CHARS = 30_000;
+        const MAX_CHARS = 24_000;
         const safeInput = input.map(t => t.length > MAX_CHARS ? t.slice(0, MAX_CHARS) : t);
 
         const body: Record<string, any> = {
@@ -107,6 +114,26 @@ export class OpenAIEmbedding implements EmbeddingProvider {
 
         if (!res.ok) {
             const err = await res.text();
+            const isTokenLimit = res.status === 400 && this._isTokenLimitError(err);
+
+            // If token limit error in a batch, retry each item individually with more aggressive truncation
+            if (isTokenLimit && safeInput.length > 1) {
+                const results: Float32Array[] = [];
+                for (const text of safeInput) {
+                    const r = await this._request([text.slice(0, 8_000)]);
+                    results.push(r[0]);
+                }
+                return results;
+            }
+            // Last resort: if single item still fails, truncate to ~2k tokens
+            if (isTokenLimit && safeInput.length === 1 && !this._retrying) {
+                this._retrying = true;
+                try {
+                    return await this._request([safeInput[0].slice(0, 6_000)]);
+                } finally {
+                    this._retrying = false;
+                }
+            }
             throw new Error(`OpenAI embedding API error (${res.status}): ${err}`);
         }
 

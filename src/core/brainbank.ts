@@ -57,6 +57,9 @@ export class BrainBank extends EventEmitter {
     private _kvHnsw?: HNSWIndex;
     private _kvVecs = new Map<number, Float32Array>();
 
+    // Shared HNSW pool for multi-repo (code:frontend, code:backend share one HNSW)
+    private _sharedHnsw = new Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>();
+
     constructor(config: BrainBankConfig = {}) {
         super();
         this._config = resolveConfig(config);
@@ -90,15 +93,23 @@ export class BrainBank extends EventEmitter {
         return this.indexers;
     }
 
-    /** Check if an indexer is loaded. */
+    /** Check if an indexer is loaded. Also matches type prefix (e.g. 'code' matches 'code:frontend'). */
     has(name: string): boolean {
-        return this._modules.has(name);
+        if (this._modules.has(name)) return true;
+        // Check if any module starts with this type prefix
+        for (const key of this._modules.keys()) {
+            if (key.startsWith(name + ':')) return true;
+        }
+        return false;
     }
 
     /** Get an indexer instance. Throws if not loaded. */
     indexer<T extends Indexer = Indexer>(name: string): T {
         const mod = this._modules.get(name);
         if (!mod) {
+            // Fall back to finding by type prefix
+            const first = this._findFirstByType(name);
+            if (first) return first as T;
             throw new Error(
                 `BrainBank: Indexer '${name}' is not loaded. ` +
                 `Add .use(${name}()) to your BrainBank instance.`
@@ -110,6 +121,21 @@ export class BrainBank extends EventEmitter {
     /** @deprecated Use .indexer() instead. */
     module(name: string): Indexer {
         return this.indexer(name);
+    }
+
+    /** Find all indexers whose name equals or starts with the type prefix. */
+    private _findAllByType(type: string): Indexer[] {
+        return [...this._modules.values()].filter(
+            m => m.name === type || m.name.startsWith(type + ':')
+        );
+    }
+
+    /** Find the first indexer that matches the type. */
+    private _findFirstByType(type: string): Indexer | undefined {
+        for (const m of this._modules.values()) {
+            if (m.name === type || m.name.startsWith(type + ':')) return m;
+        }
+        return undefined;
     }
 
     // ── Initialization ──────────────────────────────
@@ -158,6 +184,20 @@ export class BrainBank extends EventEmitter {
             loadVectors: (table, idCol, hnsw, cache) => {
                 this._loadVectors(table, idCol, hnsw, cache);
             },
+            getOrCreateSharedHnsw: async (type: string, maxElements?: number) => {
+                const existing = this._sharedHnsw.get(type);
+                if (existing) return { ...existing, isNew: false };
+                const hnsw = await new HNSWIndex(
+                    config.embeddingDims,
+                    maxElements ?? config.maxElements,
+                    config.hnswM,
+                    config.hnswEfConstruction,
+                    config.hnswEfSearch,
+                ).init();
+                const vecCache = new Map<number, Float32Array>();
+                this._sharedHnsw.set(type, { hnsw, vecCache });
+                return { hnsw, vecCache, isNew: true };
+            },
             collection: (name: string) => this.collection(name),
         };
 
@@ -167,18 +207,19 @@ export class BrainBank extends EventEmitter {
         }
 
         // Cross-module search (needs code, git, or memory)
-        const codeMod = this._modules.get('code') as any;
-        const gitMod = this._modules.get('git') as any;
+        // For multi-repo: find ANY indexer that starts with 'code' or 'git'
+        const codeShared = this._sharedHnsw.get('code');
+        const gitShared = this._sharedHnsw.get('git');
         const memMod = this._modules.get('memory') as any;
 
-        if (codeMod || gitMod || memMod) {
+        if (codeShared || gitShared || memMod) {
             this._search = new UnifiedSearch({
                 db: this._db,
-                codeHnsw: codeMod?.hnsw,
-                gitHnsw: gitMod?.hnsw,
+                codeHnsw: codeShared?.hnsw,
+                gitHnsw: gitShared?.hnsw,
                 memHnsw: memMod?.hnsw,
-                codeVecs: codeMod?.vecCache ?? new Map(),
-                gitVecs: gitMod?.vecCache ?? new Map(),
+                codeVecs: codeShared?.vecCache ?? new Map(),
+                gitVecs: gitShared?.vecCache ?? new Map(),
                 memVecs: memMod?.vecCache ?? new Map(),
                 embedding: this._embedding,
                 reranker: this._config.reranker,
@@ -187,9 +228,10 @@ export class BrainBank extends EventEmitter {
             this._bm25 = new BM25Search(this._db);
         }
 
-        // Context builder (needs search + optional co-edits)
+        // Context builder (needs search + optional co-edits from first git indexer)
         if (this._search) {
-            this._contextBuilder = new ContextBuilder(this._search, gitMod?.coEdits);
+            const firstGit = this._findFirstByType('git') as any;
+            this._contextBuilder = new ContextBuilder(this._search, firstGit?.coEdits);
         }
 
         // Track embedding provider metadata
@@ -262,23 +304,41 @@ export class BrainBank extends EventEmitter {
         await this.initialize();
 
         const result: { code?: IndexResult; git?: IndexResult } = {};
-        const codeMod = this._modules.get('code') as any;
-        const gitMod = this._modules.get('git') as any;
 
-        if (codeMod) {
-            options.onProgress?.('code', 'Starting...');
-            result.code = await codeMod.index({
+        // Index ALL code-type indexers (code, code:frontend, code:backend, etc.)
+        const codeMods = this._findAllByType('code');
+        for (const mod of codeMods) {
+            const label = mod.name === 'code' ? 'code' : mod.name;
+            options.onProgress?.(label, 'Starting...');
+            const r = await mod.index!({
                 forceReindex: options.forceReindex,
-                onProgress: (f: string, i: number, t: number) => options.onProgress?.('code', `[${i}/${t}] ${f}`),
+                onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
             });
+            // Merge results
+            if (result.code) {
+                result.code.indexed += r.indexed;
+                result.code.skipped += r.skipped;
+                result.code.chunks = (result.code.chunks ?? 0) + (r.chunks ?? 0);
+            } else {
+                result.code = r;
+            }
         }
 
-        if (gitMod) {
-            options.onProgress?.('git', 'Starting...');
-            result.git = await gitMod.index({
+        // Index ALL git-type indexers
+        const gitMods = this._findAllByType('git');
+        for (const mod of gitMods) {
+            const label = mod.name === 'git' ? 'git' : mod.name;
+            options.onProgress?.(label, 'Starting...');
+            const r = await mod.index!({
                 depth: options.gitDepth ?? this._config.gitDepth,
-                onProgress: (f: string, i: number, t: number) => options.onProgress?.('git', `[${i}/${t}] ${f}`),
+                onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
             });
+            if (result.git) {
+                result.git.indexed += r.indexed;
+                result.git.skipped += r.skipped;
+            } else {
+                result.git = r;
+            }
         }
 
         this.emit('indexed', result);
