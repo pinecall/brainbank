@@ -70,16 +70,16 @@ export { GitIndexer } from './indexers/git-indexer.ts';
 export { DocIndexer } from './indexers/doc-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
-// Memory (still available for custom indexers)
-export { PatternStore } from './memory/pattern-store.ts';
-export { Consolidator } from './memory/consolidator.ts';
-export { NoteStore } from './memory/note-store.ts';
-export type { NoteDigest, StoredNote, RecallOptions } from './memory/note-store.ts';
+// Learning (agent patterns, strategies, notes)
+export { PatternStore } from './learning/pattern-store.ts';
+export { Consolidator } from './learning/consolidator.ts';
+export { NoteStore } from './learning/note-store.ts';
+export type { NoteDigest, StoredNote, RecallOptions } from './learning/note-store.ts';
 
 // Query
-export { ContextBuilder } from './query/context-builder.ts';
+export { ContextBuilder } from './core/context-builder.ts';
 export { UnifiedSearch } from './query/search.ts';
-export { CoEditAnalyzer } from './query/co-edits.ts';
+export { CoEditAnalyzer } from './indexers/co-edits.ts';
 export { BM25Search } from './query/bm25.ts';
 export { reciprocalRankFusion } from './query/rrf.ts';
 

@@ -6,10 +6,10 @@
  */
 
 import { BrainBank } from '../src/core/brainbank.ts';
-import { Database } from '../src/storage/database.ts';
+import { Database } from '../src/core/database.ts';
 import { HNSWIndex } from '../src/vector/hnsw.ts';
 import { BM25Search } from '../src/query/bm25.ts';
-import { NoteStore } from '../src/memory/note-store.ts';
+import { NoteStore } from '../src/learning/note-store.ts';
 import { OpenAIEmbedding } from '../src/embeddings/openai.ts';
 import { Collection } from '../src/core/collection.ts';
 import { CodeChunker } from '../src/indexers/chunker.ts';

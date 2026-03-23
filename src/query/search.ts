@@ -5,7 +5,7 @@
  * and returns typed results sorted by relevance.
  */
 
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { searchMMR } from '../vector/mmr.ts';

@@ -13,7 +13,7 @@
  *     .use(code({ repoPath: '.' }));
  */
 
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import type { ResolvedConfig } from '../types.ts';

@@ -15,7 +15,7 @@
 import type { BrainBankModule, ModuleContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { GitIndexer } from '../indexers/git-indexer.ts';
-import { CoEditAnalyzer } from '../query/co-edits.ts';
+import { CoEditAnalyzer } from '../indexers/co-edits.ts';
 import type { IndexResult, ProgressCallback, CoEditSuggestion } from '../types.ts';
 
 export interface GitModuleOptions {

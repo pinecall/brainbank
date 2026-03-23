@@ -48,7 +48,7 @@
         "test": "node --import tsx test/run.ts",
         "test:integration": "node --import tsx test/run.ts --integration",
         "test:verbose": "node --import tsx test/run.ts --verbose",
-        "dev": "tsx src/integrations/cli.ts"
+        "dev": "tsx src/cli.ts"
     },
     "engines": {
         "node": ">=18"

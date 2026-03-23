@@ -10,8 +10,8 @@
 
 import type { BrainBankModule, ModuleContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
-import { NoteStore } from '../memory/note-store.ts';
-import type { NoteDigest, StoredNote, RecallOptions } from '../memory/note-store.ts';
+import { NoteStore } from '../learning/note-store.ts';
+import type { NoteDigest, StoredNote, RecallOptions } from '../learning/note-store.ts';
 
 export interface NotesModuleOptions {}
 

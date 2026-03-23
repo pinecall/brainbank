@@ -10,7 +10,7 @@
  *   - "long":  Compressed to patterns + decisions only
  */
 
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider, SearchResult } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { BM25Search } from '../query/bm25.ts';

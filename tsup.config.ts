@@ -8,7 +8,7 @@ export default defineConfig({
         'docs': 'src/plugins/docs.ts',
         'notes': 'src/plugins/notes.ts',
         'memory': 'src/plugins/memory.ts',
-        'cli': 'src/integrations/cli.ts',
+        'cli': 'src/cli.ts',
     },
     tsconfig: 'tsconfig.build.json',
     format: ['esm'],

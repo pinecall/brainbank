@@ -6,7 +6,7 @@
  * Uses Porter stemming + unicode61 tokenizer.
  */
 
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { SearchResult } from '../types.ts';
 import { sanitizeFTS, normalizeBM25 } from './fts-utils.ts';
 

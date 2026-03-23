@@ -6,7 +6,7 @@
  * Searchable by semantic similarity via HNSW.
  */
 
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider, MemoryPattern } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 

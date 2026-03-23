@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CodeChunker } from './chunker.ts';
 import { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isIgnoredDir, isIgnoredFile } from './languages.ts';
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider, ProgressCallback, IndexResult } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 

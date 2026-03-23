@@ -123,9 +123,9 @@ async function main() {
         'src/indexers/chunker.ts',
         'src/core/collection.ts',
         'src/query/search.ts',
-        'src/integrations/cli.ts',
+        'src/cli.ts',
         'src/indexers/code-indexer.ts',
-        'src/query/context-builder.ts',
+        'src/core/context-builder.ts',
     ];
 
     // Step 1: Chunk

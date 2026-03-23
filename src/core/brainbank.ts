@@ -19,13 +19,13 @@
 
 import { EventEmitter } from 'node:events';
 import { resolveConfig } from './config.ts';
-import { Database } from '../storage/database.ts';
+import { Database } from './database.ts';
 import { HNSWIndex } from '../vector/hnsw.ts';
 import { LocalEmbedding } from '../embeddings/local.ts';
 import { UnifiedSearch } from '../query/search.ts';
 import { BM25Search } from '../query/bm25.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
-import { ContextBuilder } from '../query/context-builder.ts';
+import { ContextBuilder } from './context-builder.ts';
 import { Collection } from './collection.ts';
 import { reembedAll, setEmbeddingMeta, detectProviderMismatch } from './reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from './watch.ts';

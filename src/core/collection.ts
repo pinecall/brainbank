@@ -9,7 +9,7 @@
  *   const hits = await errors.search('null pointer');
  */
 
-import type { Database } from '../storage/database.ts';
+import type { Database } from './database.ts';
 import type { EmbeddingProvider, Reranker } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';

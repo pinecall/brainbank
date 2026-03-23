@@ -10,7 +10,7 @@
 
 import type { BrainBankModule, ModuleContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider, DocumentCollection, SearchResult } from '../types.ts';
 import { DocIndexer } from '../indexers/doc-indexer.ts';
 

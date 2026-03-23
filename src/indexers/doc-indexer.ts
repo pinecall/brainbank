@@ -12,7 +12,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { glob } from 'node:fs/promises';
-import type { Database } from '../storage/database.ts';
+import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider, VectorIndex } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 

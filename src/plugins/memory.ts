@@ -10,10 +10,10 @@
 
 import type { BrainBankModule, ModuleContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
-import type { Database } from '../storage/database.ts';
-import { PatternStore } from '../memory/pattern-store.ts';
-import { Consolidator } from '../memory/consolidator.ts';
-import { StrategyDistiller } from '../memory/strategy-distiller.ts';
+import type { Database } from '../core/database.ts';
+import { PatternStore } from '../learning/pattern-store.ts';
+import { Consolidator } from '../learning/consolidator.ts';
+import { StrategyDistiller } from '../learning/strategy-distiller.ts';
 import type { MemoryPattern, DistilledStrategy } from '../types.ts';
 
 export interface MemoryModuleOptions {}
