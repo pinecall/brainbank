@@ -54,6 +54,7 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
   - [Document Collections](#document-collections)
   - [Context Generation](#context-generation)
   - [Custom Indexers](#custom-indexers)
+  - [AI Agent Integration](#ai-agent-integration)
   - [Watch Mode](#watch-mode)
 - [MCP Server](#mcp-server)
 - [Configuration](#configuration)
@@ -557,6 +558,91 @@ Everything lives in `.brainbank/` — DB, config, and custom indexers:
 ```
 
 No folder and no config file? The CLI uses the built-in indexers (`code`, `git`, `docs`).
+
+---
+
+### AI Agent Integration
+
+Use an `AGENTS.md` (or `.cursor/rules`) file to instruct AI coding agents to automatically store conversations and decisions in BrainBank. This works with **Antigravity**, **Claude Code**, **Cursor**, and any agent that reads project-level instructions.
+
+#### Example `AGENTS.md`
+
+Add this to your project root so agents know how to use BrainBank:
+
+> **Memory**
+>
+> This project uses BrainBank for persistent agent memory.
+>
+> **After completing a task**, store a conversation summary:
+> `brainbank kv add conversations "Refactored auth from middleware to AuthService class. Used DI with constructor injection for testability. JWT + refresh tokens + RBAC."`
+>
+> **When making a design decision**, record it:
+> `brainbank kv add decisions "ADR: Use Fastify over Express. Schema validation, 2x throughput, native TS. Migrate one module at a time."`
+>
+> **Before starting work**, search for relevant context:
+> `brainbank hsearch "auth middleware"` · `brainbank kv search decisions "auth"` · `brainbank kv search conversations "auth"`
+
+The agent reads these instructions and automatically stores/retrieves memories via the CLI — no custom indexer needed.
+
+#### Custom Indexer: Auto-Indexing Conversations
+
+For agents that produce structured conversation logs (like Antigravity's `brain/` directory), write a custom indexer that ingests them automatically:
+
+```typescript
+// .brainbank/indexers/conversations.ts
+import type { Indexer, IndexerContext } from 'brainbank';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+export default {
+  name: 'conversations',
+
+  async initialize(ctx: IndexerContext) {
+    const conversations = ctx.collection('conversations');
+    const decisions = ctx.collection('decisions');
+
+    // Scan for conversation log files (e.g. from Antigravity's brain/)
+    const logsDir = path.join(ctx.repoPath, '.gemini/antigravity/brain');
+    if (!fs.existsSync(logsDir)) return;
+
+    for (const dir of fs.readdirSync(logsDir)) {
+      const logFile = path.join(logsDir, dir, '.system_generated/logs/overview.txt');
+      if (!fs.existsSync(logFile)) continue;
+
+      const content = fs.readFileSync(logFile, 'utf-8');
+      if (content.length < 100) continue;  // skip trivial conversations
+
+      await conversations.add(content, {
+        tags: ['auto'],
+        metadata: { session: dir, source: 'antigravity' },
+      });
+    }
+  },
+
+  // Auto-reindex when new conversation logs appear
+  watchPatterns() {
+    return ['.gemini/antigravity/brain/**/overview.txt'];
+  },
+
+  async onFileChange(filePath: string) {
+    // re-index triggers on new conversation logs
+    return false;  // let initialize() handle the full re-scan
+  },
+} satisfies Indexer;
+```
+
+Now `brainbank index` automatically picks up conversation logs alongside code and git:
+
+```bash
+brainbank index
+# ━━━ BrainBank Index ━━━
+#   code: 500 files, 1200 chunks
+#   git:  200 commits
+#   conversations: 42 sessions indexed
+
+brainbank kv search conversations "what did we decide about auth"
+# → session from 3 days ago with full discussion context
+```
 
 ---
 
