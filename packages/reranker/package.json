@@ -1,6 +1,6 @@
 {
     "name": "@brainbank/reranker",
-    "version": "0.2.0",
+    "version": "0.1.0",
     "description": "Qwen3 cross-encoder reranker plugin for BrainBank — 640MB local model, opt-in",
     "type": "module",
     "main": "dist/index.js",
