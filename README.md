@@ -48,6 +48,21 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 npm install brainbank
 ```
 
+### Optional Packages
+
+| Package | When to install |
+|---------|----------------|
+| `@brainbank/reranker` | Cross-encoder reranker (Qwen3-0.6B, ~640MB model) |
+| `@brainbank/mcp` | MCP server for AI tool integration |
+
+```bash
+# Reranker — improves search ranking with local neural inference
+npm install @brainbank/reranker node-llama-cpp
+
+# MCP server — for Antigravity, Claude Desktop, etc.
+npm install @brainbank/mcp
+```
+
 ---
 
 ## CLI
@@ -442,7 +457,7 @@ Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Deskto
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "brainbank", "serve"],
+      "args": ["-y", "@brainbank/mcp"],
       "env": {
         "BRAINBANK_EMBEDDING": "openai"
       }
@@ -478,7 +493,8 @@ The agent passes the `repo` parameter on each tool call based on the active work
 ## Configuration
 
 ```typescript
-import { BrainBank, OpenAIEmbedding, Qwen3Reranker } from 'brainbank';
+import { BrainBank, OpenAIEmbedding } from 'brainbank';
+import { Qwen3Reranker } from '@brainbank/reranker';  // separate package
 
 const brain = new BrainBank({
   repoPath: '.',
@@ -540,7 +556,8 @@ The reranker runs local neural inference on every search result, which improves 
 #### Enabling the Reranker
 
 ```typescript
-import { BrainBank, Qwen3Reranker } from 'brainbank';
+import { BrainBank } from 'brainbank';
+import { Qwen3Reranker } from '@brainbank/reranker';
 
 const brain = new BrainBank({
   reranker: new Qwen3Reranker(),  // ~640MB model, auto-downloaded on first use
@@ -861,20 +878,23 @@ test/
 │   │   └── notes.test.ts           # Note memory store
 │   ├── query/
 │   │   ├── bm25.test.ts            # BM25 full-text search
-│   │   ├── reranker.test.ts        # Pluggable reranker integration
+│   │   ├── reranker.test.ts        # Pluggable reranker integration (mock)
 │   │   └── rrf.test.ts             # Reciprocal Rank Fusion
 │   └── vector/
 │       ├── hnsw.test.ts            # HNSW vector index
 │       └── mmr.test.ts             # Maximal Marginal Relevance
 └── integration/
-    ├── code.test.ts            # Code indexer: index → search → skip → reindex
-    ├── git.test.ts             # Git indexer: commits → search → co-edits
-    ├── docs.test.ts            # Docs indexer: collections → search → context
-    ├── memory.test.ts          # Memory: learn → search → consolidate → distill
-    ├── collections.test.ts     # KV collections: vector/hybrid/BM25 search, TTL, trim
-    ├── search.test.ts          # Unified search: brain.search() + getContext
-    ├── reranker.test.ts        # Qwen3 reranker: real model, relevance scoring, pipeline
-    └── real-model.test.ts      # Real MiniLM embedding + cross-encoder reranker
+    ├── code.test.ts                # Code indexer end-to-end
+    ├── git.test.ts                 # Git indexer end-to-end
+    ├── docs.test.ts                # Docs indexer end-to-end
+    ├── memory.test.ts              # Memory lifecycle
+    ├── collections.test.ts         # KV collections end-to-end
+    ├── search.test.ts              # Unified search & getContext
+    └── real-model.test.ts          # Real MiniLM embedding
+
+packages/reranker/test/
+└── integration/
+    └── reranker.test.ts            # Qwen3 real model: ranking, dedup, pipeline
 ```
 
 All test files import from `test/helpers.ts` which centralizes shared modules and provides:

@@ -12,7 +12,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { Qwen3Reranker } from '../../src/rerankers/qwen3-reranker.ts';
+import { Qwen3Reranker } from '../../src/qwen3-reranker.ts';
 import { BrainBank, code, hashEmbedding } from '../helpers.ts';
 import { execSync } from 'node:child_process';
 

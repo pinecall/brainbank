@@ -9,7 +9,10 @@
         ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
     },
     "files": ["dist/"],
-    "scripts": { "build": "tsup" },
+    "scripts": {
+        "build": "tsup",
+        "test": "node --import tsx test/integration/reranker.test.ts"
+    },
     "peerDependencies": {
         "brainbank": ">=0.2.0",
         "node-llama-cpp": "^3.18.1"
