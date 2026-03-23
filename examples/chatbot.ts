@@ -203,7 +203,7 @@ async function chat(messages: Message[]): Promise<string> {
                 if (delta.tool_calls) {
                     for (const tc of delta.tool_calls) {
                         if (tc.index >= toolCalls.length) {
-                            toolCalls.push({ id: tc.id, function: { name: '', arguments: '' } });
+                            toolCalls.push({ id: tc.id, type: 'function', function: { name: '', arguments: '' } });
                         }
                         if (tc.function?.name) toolCalls[tc.index].function.name += tc.function.name;
                         if (tc.function?.arguments) toolCalls[tc.index].function.arguments += tc.function.arguments;
