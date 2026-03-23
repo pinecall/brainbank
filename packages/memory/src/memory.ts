@@ -100,6 +100,9 @@ export class Memory {
         this.extractPrompt = options.extractPrompt ?? (options.entityStore ? EXTRACT_WITH_ENTITIES_PROMPT : EXTRACT_PROMPT);
         this.dedupPrompt = options.dedupPrompt ?? DEDUP_PROMPT;
         this.onOperation = options.onOperation;
+
+        // Auto-share LLM with EntityStore for entity resolution
+        if (this.entityStore) this.entityStore.setLLM(this.llm);
     }
 
     /**

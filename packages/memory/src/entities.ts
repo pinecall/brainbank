@@ -77,7 +77,7 @@ export interface EntityStoreOptions {
 export class EntityStore {
     private readonly entities: MemoryStore;
     private readonly relations: MemoryStore;
-    private readonly llm?: LLMProvider;
+    private llm?: LLMProvider;
     private readonly onEntity?: EntityStoreOptions['onEntity'];
 
     constructor(options: EntityStoreOptions) {
@@ -85,6 +85,11 @@ export class EntityStore {
         this.relations = options.relationCollection;
         this.llm = options.llm;
         this.onEntity = options.onEntity;
+    }
+
+    /** @internal — used by Memory to share its LLM if EntityStore doesn't have one */
+    setLLM(llm: LLMProvider): void {
+        if (!this.llm) this.llm = llm;
     }
 
     /**

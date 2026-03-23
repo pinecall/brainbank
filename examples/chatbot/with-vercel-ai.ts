@@ -47,7 +47,6 @@ await brain.initialize();
 const entityStore = new EntityStore({
     entityCollection: brain.collection('entities'),
     relationCollection: brain.collection('relationships'),
-    llm: vercelProvider,
     onEntity: (op) => ui.entityEvent(op),
 });
 

@@ -32,7 +32,6 @@ const llm = new OpenAIProvider({ model: MODEL });
 const entityStore = new EntityStore({
     entityCollection: brain.collection('entities'),
     relationCollection: brain.collection('relationships'),
-    llm,
     onEntity: (op) => ui.entityEvent(op),
 });
 

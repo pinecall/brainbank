@@ -45,7 +45,6 @@ tests['setup: create brain + memory + entityStore'] = async () => {
     entityStore = new EntityStore({
         entityCollection: brain.collection('entities'),
         relationCollection: brain.collection('relationships'),
-        llm,
     });
 
     memory = new Memory(brain.collection('memories'), {
