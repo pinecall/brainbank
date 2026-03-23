@@ -9,7 +9,7 @@
 import type { LLMProvider, ChatMessage } from './llm.js';
 import { EXTRACT_PROMPT, EXTRACT_WITH_ENTITIES_PROMPT, DEDUP_PROMPT } from './prompts.js';
 import { EntityStore } from './entities.js';
-import type { Entity, Relationship } from './entities.js';
+import type { Entity, Relationship, CollectionProvider } from './entities.js';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -74,6 +74,9 @@ export interface MemoryOptions {
 
     /** Called for each memory operation */
     onOperation?: (op: MemoryOperation) => void;
+
+    /** Custom collection name for memories. Default: 'memories' */
+    collectionName?: string;
 }
 
 // ─── Memory Class ───────────────────────────────────
@@ -89,8 +92,27 @@ export class Memory {
     private readonly dedupPrompt: string;
     private readonly onOperation?: (op: MemoryOperation) => void;
 
-    constructor(store: MemoryStore, options: MemoryOptions) {
-        this.store = store;
+    /**
+     * Create a Memory instance.
+     *
+     * @example Recommended (pass brain directly)
+     * ```typescript
+     * const memory = new Memory(brain, { llm });
+     * ```
+     *
+     * @example Legacy (pass collection directly)
+     * ```typescript
+     * const memory = new Memory(brain.collection('memories'), { llm });
+     * ```
+     */
+    constructor(provider: CollectionProvider, options: MemoryOptions);
+    constructor(store: MemoryStore, options: MemoryOptions);
+    constructor(providerOrStore: CollectionProvider | MemoryStore, options: MemoryOptions) {
+        if ('collection' in providerOrStore && typeof providerOrStore.collection === 'function') {
+            this.store = providerOrStore.collection(options.collectionName ?? 'memories');
+        } else {
+            this.store = providerOrStore as MemoryStore;
+        }
         this.llm = options.llm;
         this.entityStore = options.entityStore;
         this.maxFacts = options.maxFacts ?? 5;

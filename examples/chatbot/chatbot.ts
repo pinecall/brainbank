@@ -29,13 +29,11 @@ await brain.initialize();
 
 const llm = new OpenAIProvider({ model: MODEL });
 
-const entityStore = new EntityStore({
-    entityCollection: brain.collection('entities'),
-    relationCollection: brain.collection('relationships'),
+const entityStore = new EntityStore(brain, {
     onEntity: (op) => ui.entityEvent(op),
 });
 
-const memory = new Memory(brain.collection('memories'), {
+const memory = new Memory(brain, {
     llm,
     entityStore,
     onOperation: (op) => ui.memoryOp(op.action, op.fact, op.reason),

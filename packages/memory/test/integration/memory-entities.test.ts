@@ -45,12 +45,9 @@ tests['setup: create brain + memory + entityStore'] = async () => {
 
     const llm = new OpenAIProvider({ model: 'gpt-4.1-nano' });
 
-    entityStore = new EntityStore({
-        entityCollection: brain.collection('entities'),
-        relationCollection: brain.collection('relationships'),
-    });
+    entityStore = new EntityStore(brain);
 
-    memory = new Memory(brain.collection('memories'), {
+    memory = new Memory(brain, {
         llm,
         entityStore,
     });

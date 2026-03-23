@@ -61,6 +61,25 @@ export interface TraversalResult {
     nodes: TraversalNode[];
 }
 
+/** Object with a .collection() method — satisfied by BrainBank */
+export interface CollectionProvider {
+    collection(name: string): MemoryStore;
+}
+
+export interface EntityStoreConfig {
+    /** Optional LLM for intelligent entity resolution */
+    llm?: LLMProvider;
+    /** Callback fired for each entity operation */
+    onEntity?: (op: { action: 'NEW' | 'UPDATED' | 'RELATED'; name: string; type?: string; detail?: string }) => void;
+    /** Custom entity collection name. Default: 'entities' */
+    entityCollectionName?: string;
+    /** Custom relationship collection name. Default: 'relationships' */
+    relationCollectionName?: string;
+}
+
+/**
+ * @deprecated Use `new EntityStore(brain, config?)` instead.
+ */
 export interface EntityStoreOptions {
     /** Collection for entities */
     entityCollection: MemoryStore;
@@ -78,13 +97,42 @@ export class EntityStore {
     private readonly entities: MemoryStore;
     private readonly relations: MemoryStore;
     private llm?: LLMProvider;
-    private readonly onEntity?: EntityStoreOptions['onEntity'];
+    private readonly onEntity?: EntityStoreConfig['onEntity'];
 
-    constructor(options: EntityStoreOptions) {
-        this.entities = options.entityCollection;
-        this.relations = options.relationCollection;
-        this.llm = options.llm;
-        this.onEntity = options.onEntity;
+    /**
+     * Create an EntityStore.
+     *
+     * @example Simple (recommended)
+     * ```typescript
+     * const entityStore = new EntityStore(brain);
+     * ```
+     *
+     * @example With config
+     * ```typescript
+     * const entityStore = new EntityStore(brain, {
+     *   onEntity: (op) => console.log(op),
+     * });
+     * ```
+     */
+    constructor(provider: CollectionProvider, config?: EntityStoreConfig);
+    /** @deprecated Pass a CollectionProvider (brain) instead */
+    constructor(options: EntityStoreOptions);
+    constructor(providerOrOptions: CollectionProvider | EntityStoreOptions, config?: EntityStoreConfig) {
+        if ('collection' in providerOrOptions && typeof providerOrOptions.collection === 'function') {
+            // New API: EntityStore(brain, config?)
+            const c = config ?? {};
+            this.entities = providerOrOptions.collection(c.entityCollectionName ?? 'entities');
+            this.relations = providerOrOptions.collection(c.relationCollectionName ?? 'relationships');
+            this.llm = c.llm;
+            this.onEntity = c.onEntity;
+        } else {
+            // Legacy API: EntityStore({ entityCollection, relationCollection })
+            const opts = providerOrOptions as EntityStoreOptions;
+            this.entities = opts.entityCollection;
+            this.relations = opts.relationCollection;
+            this.llm = opts.llm;
+            this.onEntity = opts.onEntity;
+        }
     }
 
     /** @internal — used by Memory to share its LLM if EntityStore doesn't have one */

@@ -44,13 +44,11 @@ const vercelProvider: LLMProvider = {
 const brain = new BrainBank({ dbPath: DB_PATH });
 await brain.initialize();
 
-const entityStore = new EntityStore({
-    entityCollection: brain.collection('entities'),
-    relationCollection: brain.collection('relationships'),
+const entityStore = new EntityStore(brain, {
     onEntity: (op) => ui.entityEvent(op),
 });
 
-const memory = new Memory(brain.collection('memories'), {
+const memory = new Memory(brain, {
     llm: vercelProvider,
     entityStore,
     onOperation: (op) => ui.memoryOp(op.action, op.fact, op.reason),
