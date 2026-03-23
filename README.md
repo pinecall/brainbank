@@ -29,11 +29,13 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 | LLM required to write | **No**¹ | Yes | Yes | Yes |
 | Code-aware | **19 AST-parsed languages (tree-sitter), git, co-edits** | ✗ | ✗ | ✗ |
 | Custom indexers | **`.use()` plugin system** | ✗ | ✗ | ✗ |
-| Search | **Vector + BM25 + RRF** | Vector only | Vector + graph | Vector only |
+| Search | **Vector + BM25 + RRF** | Vector + graph² | Vector + BM25 + graph | Vector only |
 | Framework lock-in | **None** | Optional | Zep cloud | LangChain |
 | Portable | **Copy one file** | Tied to DB | Tied to cloud | Tied to platform |
 
 > ¹ mem0 and Zep use LLMs to auto-extract memories from raw text. BrainBank is explicit — you decide what gets stored. Less magic, more control.
+>
+> ² mem0's graph store (mem0g) is available in the paid platform version.
 
 **In short:**
 - **Code-first** — the only memory layer that understands code structure, git history, and file co-edit relationships
