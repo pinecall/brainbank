@@ -7,8 +7,8 @@
  */
 
 import type { SearchResult, CoEditSuggestion, ContextOptions } from '../types.ts';
-import type { UnifiedSearch } from './search.ts';
-import type { CoEditAnalyzer } from './co-edits.ts';
+import type { UnifiedSearch } from '../query/search.ts';
+import type { CoEditAnalyzer } from '../indexers/co-edits.ts';
 
 export class ContextBuilder {
     constructor(
