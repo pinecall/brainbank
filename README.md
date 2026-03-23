@@ -11,7 +11,7 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 - **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
 - **Multi-repo** — index multiple repositories into one shared database
 - **Portable** — single `.brainbank/brainbank.db` file
-- **Optional packages** — [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder) and [`@brainbank/mcp`](#mcp-server) (MCP server) as separate lightweight installs
+- **Optional packages** — [`@brainbank/memory`](#memory) (deterministic fact extraction), [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder), [`@brainbank/mcp`](#mcp-server) (MCP server)
 
 ![BrainBank Architecture](assets/architecture.png)
 
@@ -61,6 +61,7 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 - [Configuration](#configuration)
   - [Embedding Providers](#embedding-providers)
   - [Reranker](#reranker)
+- [Memory](#memory)
 - [Multi-Repository Indexing](#multi-repository-indexing)
 - [Indexing](#indexing-1)
   - [Incremental Indexing](#incremental-indexing)
@@ -751,6 +752,53 @@ const myReranker: Reranker = {
 ```
 
 Without a reranker, BrainBank uses pure RRF fusion — which is already production-quality for most use cases.
+
+---
+
+## Memory
+
+`@brainbank/memory` adds **deterministic memory extraction** to any LLM conversation. After every turn, it automatically extracts facts, deduplicates against existing memories, and decides `ADD` / `UPDATE` / `NONE` — no function calling needed.
+
+Inspired by [mem0](https://github.com/mem0ai/mem0)'s pipeline, but framework-agnostic and built on BrainBank collections.
+
+```bash
+npm install @brainbank/memory
+```
+
+```typescript
+import { BrainBank } from 'brainbank';
+import { Memory, OpenAIProvider } from '@brainbank/memory';
+
+const brain = new BrainBank({ dbPath: './memory.db' });
+await brain.initialize();
+
+const memory = new Memory(brain.collection('memories'), {
+  llm: new OpenAIProvider({ model: 'gpt-4.1-nano' }),
+});
+
+// After every conversation turn (deterministic, automatic)
+await memory.process(userMessage, assistantResponse);
+// → extracts facts, deduplicates, executes ADD/UPDATE/NONE
+
+// For the system prompt
+const context = memory.buildContext();
+// → "## Memories\n- User's name is Berna\n- Prefers TypeScript"
+```
+
+The `LLMProvider` interface works with any framework:
+
+| Framework | Adapter |
+|-----------|--------|
+| OpenAI | Built-in `OpenAIProvider` |
+| LangChain | `ChatOpenAI.invoke()` → string |
+| Vercel AI SDK | `generateText()` → string |
+| Any LLM | Implement `{ generate(messages) → string }` |
+
+> 📂 See [examples/chatbot](examples/chatbot/) for runnable demos with all three frameworks.
+
+> 📦 Full docs: [packages/memory/README.md](packages/memory/README.md)
+
+---
 
 ### Environment Variables
 
