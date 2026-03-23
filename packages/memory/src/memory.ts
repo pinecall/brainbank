@@ -2,11 +2,14 @@
  * @brainbank/memory — Deterministic Memory Pipeline
  *
  * Automatic fact extraction and deduplication for LLM conversations.
+ * Optionally extracts entities and relationships (knowledge graph).
  * Runs after every turn: extract → search → dedup → ADD/UPDATE/NONE.
  */
 
 import type { LLMProvider, ChatMessage } from './llm.js';
-import { EXTRACT_PROMPT, DEDUP_PROMPT } from './prompts.js';
+import { EXTRACT_PROMPT, EXTRACT_WITH_ENTITIES_PROMPT, DEDUP_PROMPT } from './prompts.js';
+import { EntityStore } from './entities.js';
+import type { Entity, Relationship } from './entities.js';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -25,6 +28,16 @@ export interface MemoryOperation {
     reason: string;
 }
 
+export interface EntityOperation {
+    entitiesProcessed: number;
+    relationshipsProcessed: number;
+}
+
+export interface ProcessResult {
+    operations: MemoryOperation[];
+    entities?: EntityOperation;
+}
+
 /**
  * Collection interface — matches BrainBank's collection API.
  * Implement this to use a different storage backend.
@@ -40,6 +53,9 @@ export interface MemoryStore {
 export interface MemoryOptions {
     /** LLM provider for extraction and dedup */
     llm: LLMProvider;
+
+    /** Entity store for knowledge graph (opt-in) */
+    entityStore?: EntityStore;
 
     /** Max facts to extract per turn. Default: 5 */
     maxFacts?: number;
@@ -65,6 +81,7 @@ export interface MemoryOptions {
 export class Memory {
     private readonly store: MemoryStore;
     private readonly llm: LLMProvider;
+    private readonly entityStore?: EntityStore;
     private readonly maxFacts: number;
     private readonly maxMemories: number;
     private readonly dedupTopK: number;
@@ -75,22 +92,26 @@ export class Memory {
     constructor(store: MemoryStore, options: MemoryOptions) {
         this.store = store;
         this.llm = options.llm;
+        this.entityStore = options.entityStore;
         this.maxFacts = options.maxFacts ?? 5;
         this.maxMemories = options.maxMemories ?? 50;
         this.dedupTopK = options.dedupTopK ?? 3;
-        this.extractPrompt = options.extractPrompt ?? EXTRACT_PROMPT;
+        // Use entity-aware prompt when entityStore is provided
+        this.extractPrompt = options.extractPrompt ?? (options.entityStore ? EXTRACT_WITH_ENTITIES_PROMPT : EXTRACT_PROMPT);
         this.dedupPrompt = options.dedupPrompt ?? DEDUP_PROMPT;
         this.onOperation = options.onOperation;
     }
 
     /**
-     * Process a conversation turn — extract facts and store/update memories.
+     * Process a conversation turn — extract facts (and optionally entities) and store/update memories.
      * This is the main entry point. Call after every user↔assistant exchange.
      */
-    async process(userMessage: string, assistantMessage: string): Promise<MemoryOperation[]> {
-        // Step 1: Extract atomic facts
-        const facts = await this.extract(userMessage, assistantMessage);
-        if (facts.length === 0) return [];
+    async process(userMessage: string, assistantMessage: string): Promise<ProcessResult> {
+        // Step 1: Extract atomic facts (and entities if enabled)
+        const extraction = await this.extract(userMessage, assistantMessage);
+        if (extraction.facts.length === 0 && extraction.entities.length === 0) {
+            return { operations: [] };
+        }
 
         // Step 2: Get existing memories for dedup
         const existing = this.store.list({ limit: this.maxMemories });
@@ -98,7 +119,7 @@ export class Memory {
         // Step 3: Dedup and execute each fact
         const operations: MemoryOperation[] = [];
 
-        for (const fact of facts) {
+        for (const fact of extraction.facts) {
             const op = await this.dedup(fact, existing);
             operations.push(op);
             this.onOperation?.(op);
@@ -125,7 +146,18 @@ export class Memory {
             }
         }
 
-        return operations;
+        // Step 4: Process entities and relationships (if enabled)
+        let entityOps: EntityOperation | undefined;
+        if (this.entityStore && (extraction.entities.length > 0 || extraction.relationships.length > 0)) {
+            const context = `${userMessage} — ${assistantMessage}`.slice(0, 200);
+            entityOps = await this.entityStore.processExtraction(
+                extraction.entities,
+                extraction.relationships,
+                context,
+            );
+        }
+
+        return { operations, entities: entityOps };
     }
 
     /**
@@ -150,29 +182,53 @@ export class Memory {
     }
 
     /**
-     * Build a system prompt section with all memories.
+     * Build a system prompt section with all memories (and entities if enabled).
      * Drop this into your system prompt.
      */
     buildContext(limit = 20): string {
+        const parts: string[] = [];
+
         const items = this.store.list({ limit });
-        if (items.length === 0) return '';
-        return '## Memories\n' + items.map(m => `- ${m.content}`).join('\n');
+        if (items.length > 0) {
+            parts.push('## Memories\n' + items.map(m => `- ${m.content}`).join('\n'));
+        }
+
+        if (this.entityStore) {
+            const entityCtx = this.entityStore.buildContext();
+            if (entityCtx) parts.push(entityCtx);
+        }
+
+        return parts.join('\n\n');
+    }
+
+    /**
+     * Get entity store (if enabled).
+     */
+    getEntityStore(): EntityStore | undefined {
+        return this.entityStore;
     }
 
     // ─── Internal ───────────────────────────────────
 
-    private async extract(userMsg: string, assistantMsg: string): Promise<string[]> {
+    private async extract(userMsg: string, assistantMsg: string): Promise<{
+        facts: string[];
+        entities: Array<{ name: string; type: string; attributes?: Record<string, any> }>;
+        relationships: Array<{ source: string; target: string; relation: string }>;
+    }> {
         const response = await this.llm.generate([
             { role: 'system', content: this.extractPrompt },
             { role: 'user', content: `User: ${userMsg}\n\nAssistant: ${assistantMsg}` },
-        ], { json: true, maxTokens: 300 });
+        ], { json: true, maxTokens: 500 });
 
         try {
             const parsed = JSON.parse(response);
-            const facts: string[] = parsed.facts ?? [];
-            return facts.slice(0, this.maxFacts);
+            return {
+                facts: (parsed.facts ?? []).slice(0, this.maxFacts),
+                entities: parsed.entities ?? [],
+                relationships: parsed.relationships ?? [],
+            };
         } catch {
-            return [];
+            return { facts: [], entities: [], relationships: [] };
         }
     }
 

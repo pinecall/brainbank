@@ -1,14 +1,19 @@
 {
     "name": "@brainbank/memory",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "Deterministic memory extraction and deduplication for LLM conversations — extract, dedup, ADD/UPDATE/NONE",
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "exports": {
-        ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
     },
-    "files": ["dist/"],
+    "files": [
+        "dist/"
+    ],
     "scripts": {
         "build": "tsup"
     },
@@ -16,7 +21,9 @@
         "brainbank": ">=0.1.0"
     },
     "peerDependenciesMeta": {
-        "brainbank": { "optional": true }
+        "brainbank": {
+            "optional": true
+        }
     },
     "repository": {
         "type": "git",
@@ -24,8 +31,16 @@
         "directory": "packages/memory"
     },
     "keywords": [
-        "memory", "llm", "ai", "agent", "langchain", "deduplication",
-        "fact-extraction", "conversation-memory", "rag", "brainbank"
+        "memory",
+        "llm",
+        "ai",
+        "agent",
+        "langchain",
+        "deduplication",
+        "fact-extraction",
+        "conversation-memory",
+        "rag",
+        "brainbank"
     ],
     "author": "Bernardo Castro <bernardo@pinecall.io>",
     "license": "MIT"

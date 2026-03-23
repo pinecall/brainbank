@@ -39,9 +39,9 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 
 **In short:**
 - **Code-first** — the only memory layer that understands code structure, git history, and file co-edit relationships
+- **Framework-agnostic** — plain TypeScript, works with any agent framework (LangChain, Vercel AI SDK, custom) or none at all. Unopinionated — doesn't force you into a specific pattern
 - **$0 memory bill** — no LLM calls to extract/consolidate. You store what you want, BrainBank embeds deterministically
 - **Truly portable** — `.brainbank/brainbank.db` is a normal file. Copy it, back it up, `git lfs` it
-- **No vendor lock-in** — plain TypeScript, works with any agent framework or none at all
 
 ### Table of Contents
 
