@@ -182,48 +182,74 @@ await brain.indexDocs();
 
 ### Collections
 
-The universal data primitive. Store anything, search semantically:
+The universal data primitive for agent memory. Store rich content, search semantically:
 
 ```typescript
-const errors = brain.collection('debug_errors');
+// ── Conversation Memory ─────────────────────────────
+// Store full conversation turns so the agent can recall past sessions
+const conversations = brain.collection('conversations');
 
-// Add items (auto-embedded for vector search)
-await errors.add('Null pointer in api.ts line 42', { metadata: { file: 'api.ts' } });
-await errors.add('Timeout on /users endpoint', { metadata: { file: 'routes.ts' } });
+await conversations.add(
+  `User asked to refactor the authentication module from Express middleware ` +
+  `to a dedicated AuthService class. We discussed the trade-offs of dependency ` +
+  `injection vs singleton pattern. Decided on DI with constructor injection ` +
+  `to keep it testable. Implemented in src/auth/auth-service.ts with JWT ` +
+  `validation, refresh token rotation, and role-based access control.`,
+  { tags: ['auth', 'refactor'], metadata: { session: '2024-03-15' } }
+);
 
-// Add with tags
-await errors.add('Auth token expired', {
-  tags: ['critical', 'auth'],
-  metadata: { file: 'auth.ts' },
-});
+// Later: "what did we decide about authentication?"
+const hits = await conversations.search('authentication architecture decisions');
+// → recalls the full refactoring discussion with context
 
-// Add with TTL (auto-expires after 7 days)
-await errors.add('Transient network error', {
-  tags: ['warning', 'network'],
-  ttl: '7d',
-});
+// ── Architecture Decision Records ───────────────────
+// Track design decisions so the agent stays consistent across sessions
+const decisions = brain.collection('decisions');
 
-// Search (hybrid: vector + keyword by default)
-const hits = await errors.search('null pointer', { k: 5 });
-// → [{ content: 'Null pointer in api.ts...', score: 0.92, tags: [], ... }]
+await decisions.add(
+  `ADR-012: Use SQLite with WAL mode for the local knowledge store instead of ` +
+  `PostgreSQL. Rationale: BrainBank should be portable (single file), work ` +
+  `offline, and require zero infrastructure. SQLite WAL mode supports ` +
+  `concurrent reads with a single writer, which is sufficient for our ` +
+  `use case. Trade-off: no multi-process writes, but BrainBank instances ` +
+  `are single-process by design. Alternatives considered: LevelDB (no SQL), ` +
+  `DuckDB (heavier, analytics-focused).`,
+  { tags: ['architecture', 'storage'] }
+);
 
-// Search with tag filter (items must have ALL specified tags)
-const critical = await errors.search('error', { tags: ['critical'] });
-const critAuth = await errors.search('error', { tags: ['critical', 'auth'] });
+// "why aren't we using postgres?" → retrieves the full ADR with rationale
 
-// List with tag filter
-errors.list({ tags: ['critical'] });
+// ── Error Investigation Journal ─────────────────────
+// Log detailed debugging sessions, not just error messages
+const investigations = brain.collection('investigations');
 
-// Manage
-errors.list({ limit: 20 });       // list items (newest first)
-errors.count();                   // total items
-errors.trim({ keep: 50 });        // keep N most recent
-errors.prune({ olderThan: '7d' });// remove older than 7 days
-errors.remove(id);                // remove by id
-errors.clear();                   // remove all
+await investigations.add(
+  `Investigation: HNSW index returning empty results after reembed. ` +
+  `Root cause: the index was initialized with dims=384 but reembed switched ` +
+  `to OpenAI (dims=1536). The HNSW index needs to be rebuilt with the new ` +
+  `dimensionality — it can't resize in place. Fix: added dimension check in ` +
+  `reembed() that rebuilds the HNSW index when dims change. Added regression ` +
+  `test in test/unit/core/reembed.test.ts.`,
+  { tags: ['bug', 'hnsw', 'resolved'], ttl: '90d' }
+);
 
-// List all collection names
-brain.listCollectionNames();      // → ['debug_errors', 'decisions', ...]
+// "empty search results after switching embedding" → finds exact investigation
+```
+
+**Collection management:**
+
+```typescript
+const col = brain.collection('any_name');
+
+col.list({ limit: 20 });          // list items (newest first)
+col.list({ tags: ['critical'] }); // filter by tags
+col.count();                      // total items
+col.trim({ keep: 50 });           // keep N most recent
+col.prune({ olderThan: '30d' });  // remove older than 30 days
+col.remove(id);                   // remove by id
+col.clear();                      // remove all
+
+brain.listCollectionNames();      // → ['conversations', 'decisions', ...]
 ```
 
 ### Watch Mode
