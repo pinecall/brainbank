@@ -19,23 +19,27 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 
 ## Why BrainBank?
 
+Built for a multi-repo codebase that needed unified AI context. Zero infrastructure, zero ongoing cost.
+
 Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external databases, or LLM calls just to store a memory. BrainBank takes a different approach:
 
 | | **BrainBank** | **mem0** | **Zep** | **LangMem** |
 |---|:---:|:---:|:---:|:---:|
 | Infrastructure | **SQLite file** | Vector DB + cloud | Neo4j + cloud | LangGraph Platform |
-| LLM needed to store? | **No** | Yes | Yes | Yes |
+| LLM required to write | **No**¹ | Yes | Yes | Yes |
 | Code-aware | **30+ languages, git, co-edits** | ✗ | ✗ | ✗ |
 | Custom indexers | **`.use()` plugin system** | ✗ | ✗ | ✗ |
 | Search | **Vector + BM25 + RRF** | Vector only | Vector + graph | Vector only |
 | Framework lock-in | **None** | Optional | Zep cloud | LangChain |
 | Portable | **Copy one file** | Tied to DB | Tied to cloud | Tied to platform |
 
+> ¹ mem0 and Zep use LLMs to auto-extract memories from raw text. BrainBank is explicit — you decide what gets stored. Less magic, more control.
+
 **In short:**
-- **$0 memory bill** — no LLM calls to extract/consolidate. You store what you want, BrainBank embeds deterministically
 - **Code-first** — the only memory layer that understands code structure, git history, and file co-edit relationships
-- **No vendor lock-in** — plain TypeScript, works with any agent framework or none at all
+- **$0 memory bill** — no LLM calls to extract/consolidate. You store what you want, BrainBank embeds deterministically
 - **Truly portable** — `.brainbank/brainbank.db` is a normal file. Copy it, back it up, `git lfs` it
+- **No vendor lock-in** — plain TypeScript, works with any agent framework or none at all
 
 ### Table of Contents
 
