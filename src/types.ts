@@ -134,9 +134,9 @@ export interface GitCommitRecord {
     isMerge: boolean;
 }
 
-// ── Agent Memory ────────────────────────────────────
+// ── Agent Learning ─────────────────────────────────────────
 
-export interface MemoryPattern {
+export interface LearningPattern {
     id?: number;
     /** Category (e.g. 'api', 'refactor', 'debug') */
     taskType: string;
@@ -155,6 +155,9 @@ export interface MemoryPattern {
     /** Latency in ms (optional tracking) */
     latencyMs?: number;
 }
+
+/** @deprecated Use LearningPattern instead */
+export type MemoryPattern = LearningPattern;
 
 export interface DistilledStrategy {
     taskType: string;
@@ -187,8 +190,8 @@ export interface ContextOptions {
     codeResults?: number;
     /** Max git commits to include. Default: 5 */
     gitResults?: number;
-    /** Max memory patterns to include. Default: 4 */
-    memoryResults?: number;
+    /** Max learning patterns to include. Default: 4 */
+    patternResults?: number;
     /** Files the agent is about to modify (improves co-edit suggestions) */
     affectedFiles?: string[];
     /** Minimum similarity score threshold. Default: 0.25 */

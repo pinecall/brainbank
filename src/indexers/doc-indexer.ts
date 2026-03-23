@@ -4,7 +4,7 @@
  * Indexes generic document collections (markdown, text, etc.)
  * with heading-aware smart chunking, inspired by qmd.
  * 
- *   const indexer = new DocIndexer(db, embedding, hnsw, vecCache);
+ *   const indexer = new DocsIndexer(db, embedding, hnsw, vecCache);
  *   await indexer.indexCollection('notes', '/path/to/notes', '**\/*.md');
  */
 
@@ -43,9 +43,9 @@ const TARGET_CHARS = 3000;       // ~900 tokens
 const WINDOW_CHARS = 600;        // search window before cutoff
 const MIN_CHUNK_CHARS = 200;     // don't create tiny chunks
 
-// ── DocIndexer ──────────────────────────────────────
+// ── DocsIndexer ──────────────────────────────────────
 
-export class DocIndexer {
+export class DocsIndexer {
     constructor(
         private _db: Database,
         private _embedding: EmbeddingProvider,

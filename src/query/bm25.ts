@@ -2,7 +2,7 @@
  * BrainBank — BM25 Full-Text Search
  * 
  * Keyword search via SQLite FTS5 with BM25 ranking.
- * Searches across code chunks, git commits, and memory patterns.
+ * Searches across code chunks, git commits, and learning patterns.
  * Uses Porter stemming + unicode61 tokenizer.
  */
 
@@ -15,8 +15,8 @@ export interface BM25Options {
     codeK?: number;
     /** Max git results. Default: 5 */
     gitK?: number;
-    /** Max memory results. Default: 4 */
-    memoryK?: number;
+    /** Max pattern results. Default: 4 */
+    patternK?: number;
 }
 
 export class BM25Search {
@@ -28,7 +28,7 @@ export class BM25Search {
      * Query syntax: simple words, OR, NOT, "exact phrases", prefix*
      */
     search(query: string, options: BM25Options = {}): SearchResult[] {
-        const { codeK = 8, gitK = 5, memoryK = 4 } = options;
+        const { codeK = 8, gitK = 5, patternK = 4 } = options;
         const results: SearchResult[] = [];
 
         const ftsQuery = sanitizeFTS(query);
@@ -101,8 +101,8 @@ export class BM25Search {
             } catch {}
         }
 
-        // ── Memory search ──────────────────────────
-        if (memoryK > 0) {
+        // ── Pattern search ──────────────────────────
+        if (patternK > 0) {
             try {
                 const rows = this._db.prepare(`
                     SELECT p.id, p.task_type, p.task, p.approach, p.outcome,
@@ -113,7 +113,7 @@ export class BM25Search {
                     WHERE fts_patterns MATCH ? AND p.success_rate >= 0.5
                     ORDER BY score ASC
                     LIMIT ?
-                `).all(ftsQuery, memoryK) as any[];
+                `).all(ftsQuery, patternK) as any[];
 
                 for (const r of rows) {
                     results.push({

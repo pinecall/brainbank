@@ -24,9 +24,7 @@ export { git } from './plugins/git.ts';
 export { docs } from './plugins/docs.ts';
 
 // Indexer types
-export type { Indexer, IndexerContext } from './plugins/types.ts';
-// Backward compat
-export type { BrainBankModule, ModuleContext } from './plugins/types.ts';
+export type { Indexer, IndexerContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './plugins/types.ts';
 
 // Collections
 export { Collection } from './core/collection.ts';
@@ -40,7 +38,7 @@ export type {
     VectorIndex, SearchHit,
     CodeChunk,
     GitCommitRecord,
-    MemoryPattern, DistilledStrategy,
+    LearningPattern, MemoryPattern, DistilledStrategy,
     SearchResult, SearchResultType,
     ContextOptions,
     IndexStats, IndexResult,
@@ -67,7 +65,7 @@ export { searchMMR } from './vector/mmr.ts';
 export { CodeChunker } from './indexers/chunker.ts';
 export { CodeIndexer } from './indexers/code-indexer.ts';
 export { GitIndexer } from './indexers/git-indexer.ts';
-export { DocIndexer } from './indexers/doc-indexer.ts';
+export { DocsIndexer } from './indexers/doc-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Learning (agent patterns, strategies, notes)
@@ -78,7 +76,7 @@ export type { NoteDigest, StoredNote, RecallOptions } from './learning/note-stor
 
 // Query
 export { ContextBuilder } from './core/context-builder.ts';
-export { UnifiedSearch } from './query/search.ts';
+export { MultiIndexSearch } from './query/search.ts';
 export { CoEditAnalyzer } from './indexers/co-edits.ts';
 export { BM25Search } from './query/bm25.ts';
 export { reciprocalRankFusion } from './query/rrf.ts';

@@ -1,7 +1,7 @@
 /**
  * BrainBank Integration Test — Unified Search + Context
  *
- * Tests brain.search() across all modules (code + git + memory),
+ * Tests brain.search() across all modules (code + git + learning),
  * brain.getContext() for system prompts, and minScore filtering.
  * Uses all 4 modules wired together.
  */
@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
-import { BrainBank, code, git, docs, memory, hashEmbedding } from '../../helpers.ts';
+import { BrainBank, code, git, docs, learning, hashEmbedding } from '../../helpers.ts';
 
 export const name = 'Unified Search + Context';
 
@@ -50,14 +50,14 @@ tests['setup: brain with code + git + docs + memory'] = async () => {
         .use(code({ repoPath: repoDir }))
         .use(git({ repoPath: repoDir }))
         .use(docs())
-        .use(memory());
+        .use(learning());
     await brain.initialize();
 
     await brain.index({ forceReindex: true });
     await brain.addCollection({ name: 'guide', path: docsDir, pattern: '**/*.md' });
     await brain.indexDocs();
 
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.indexer('learning') as any;
     await mem.learn({ task: 'Fix auth bug', taskType: 'debug', approach: 'Check token flow', outcome: 'Fixed', successRate: 0.9 });
 
     assert.ok(brain);
@@ -67,7 +67,7 @@ tests['brain.search(): returns code + commit + pattern'] = async () => {
     const assert = (await import('node:assert')).strict;
     // Query matches: code (auth.ts), commits ("feat: auth and database"), patterns ("Fix auth bug")
     // Disable MMR to avoid diversity penalty filtering types with low vector overlap
-    const results = await brain.search('auth database feat', { minScore: 0, useMMR: false, codeK: 10, gitK: 10, memoryK: 10 });
+    const results = await brain.search('auth database feat', { minScore: 0, useMMR: false, codeK: 10, gitK: 10, patternK: 10 });
 
     assert.ok(results.length > 0, `got ${results.length} results`);
     const types = new Set(results.map(r => r.type));
@@ -96,9 +96,9 @@ tests['brain.search(): commit results have hash + author'] = async () => {
     assert.ok(commits[0].metadata?.author, 'has author');
 };
 
-tests['brain.search(): memory patterns have approach'] = async () => {
+tests['brain.search(): learning patterns have approach'] = async () => {
     const assert = (await import('node:assert')).strict;
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.indexer('learning') as any;
     const results = await mem.search('auth bug fix');
 
     assert.ok(results.length > 0, 'has patterns');

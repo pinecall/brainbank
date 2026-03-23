@@ -8,22 +8,20 @@
  *   brain.use(notes());
  */
 
-import type { BrainBankModule, ModuleContext } from './types.ts';
+import type { Indexer, IndexerContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { NoteStore } from '../learning/note-store.ts';
 import type { NoteDigest, StoredNote, RecallOptions } from '../learning/note-store.ts';
 
-export interface NotesModuleOptions {}
-
-class NotesModuleImpl implements BrainBankModule {
+class NotesPlugin implements Indexer {
     readonly name = 'notes';
     hnsw!: HNSWIndex;
     store!: NoteStore;
     vecCache = new Map<number, Float32Array>();
 
-    constructor(private opts: NotesModuleOptions = {}) {}
 
-    async initialize(ctx: ModuleContext): Promise<void> {
+
+    async initialize(ctx: IndexerContext): Promise<void> {
         this.hnsw = await ctx.createHnsw(100_000);
         ctx.loadVectors('note_vectors', 'note_id', this.hnsw, this.vecCache);
         this.store = new NoteStore(ctx.db, ctx.embedding, this.hnsw, this.vecCache);
@@ -59,7 +57,7 @@ class NotesModuleImpl implements BrainBankModule {
     }
 }
 
-/** Create a notes memory module. */
-export function notes(opts?: NotesModuleOptions): BrainBankModule {
-    return new NotesModuleImpl(opts);
+/** Create a notes plugin. */
+export function notes(): Indexer {
+    return new NotesPlugin();
 }

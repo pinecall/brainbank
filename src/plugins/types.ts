@@ -39,7 +39,7 @@ export interface IndexerContext {
     collection(name: string): Collection;
 }
 
-// ── Indexer Interface ──────────────────────────────
+// ── Indexer Interface ──────────────────────────────────
 
 export interface Indexer {
     /** Unique indexer name (e.g. 'code', 'git', 'docs'). */
@@ -48,61 +48,61 @@ export interface Indexer {
     /** Initialize the indexer (create HNSW, load vectors, etc.). */
     initialize(ctx: IndexerContext): Promise<void>;
 
-    // ── Optional capabilities (built-in indexers) ──────
-
-    /** Index content. Implemented by code and git indexers. */
+    // Optional capabilities — use composed interfaces below for strict typing
+    /** Index content (code, git plugins). */
     index?(options?: any): Promise<any>;
-
-    /** Search indexed content. Implemented by docs indexer. */
+    /** Search indexed content (docs plugin). */
     search?(query: string, options?: any): Promise<any[]>;
-
-    // ── Document collection methods (docs indexer) ─────
-
-    /** Register a document collection. */
+    /** Register a document collection (docs plugin). */
     addCollection?(collection: any): void;
-
-    /** Remove a collection. */
+    /** Remove a collection (docs plugin). */
     removeCollection?(name: string): void;
-
-    /** List registered collections. */
+    /** List registered collections (docs plugin). */
     listCollections?(): any[];
-
-    /** Index all or specific collections. */
+    /** Index collections (docs plugin). */
     indexCollections?(options?: any): Promise<any>;
-
-    // ── Context metadata (docs indexer) ────────────────
-
-    /** Add context description for a collection path. */
+    /** Add context for a collection path (docs plugin). */
     addContext?(collection: string, path: string, context: string): void;
-
-    /** Remove context for a collection path. */
+    /** Remove context (docs plugin). */
     removeContext?(collection: string, path: string): void;
-
-    /** List all context entries. */
+    /** List context entries (docs plugin). */
     listContexts?(): any[];
-
-    // ── Watch & lifecycle ──────────────────────────────
-
-    /**
-     * Called by watch mode when a file changes.
-     * Return true if this indexer handled the change.
-     * If not implemented, watch will fall back to brain.index().
-     */
+    /** Watch mode: handle file change (returns true if handled). */
     onFileChange?(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
-
-    /**
-     * Glob patterns this indexer watches.
-     * If not set, defaults to all supported code extensions.
-     */
+    /** Glob patterns for watch mode. */
     watchPatterns?(): string[];
 
     /** Return stats for this indexer. */
     stats?(): Record<string, any>;
-
     /** Clean up resources. */
     close?(): void;
 }
 
-// Backward compatibility aliases
-export type BrainBankModule = Indexer;
-export type ModuleContext = IndexerContext;
+// ── Indexer Capabilities (composed via intersection) ──
+
+/** Indexers that can scan and index content. */
+export interface IndexablePlugin extends Indexer {
+    index(options?: any): Promise<any>;
+}
+
+/** Indexers that can search indexed content. */
+export interface SearchablePlugin extends Indexer {
+    search(query: string, options?: any): Promise<any[]>;
+}
+
+/** Indexers that support file watch mode. */
+export interface WatchablePlugin extends Indexer {
+    onFileChange(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
+    watchPatterns(): string[];
+}
+
+/** Indexers that manage document collections. */
+export interface CollectionPlugin extends Indexer {
+    addCollection(collection: any): void;
+    removeCollection(name: string): void;
+    listCollections(): any[];
+    indexCollections(options?: any): Promise<any>;
+    addContext?(collection: string, path: string, context: string): void;
+    removeContext?(collection: string, path: string): void;
+    listContexts?(): any[];
+}

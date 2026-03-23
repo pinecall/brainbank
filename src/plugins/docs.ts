@@ -8,30 +8,28 @@
  *   brain.use(docs());
  */
 
-import type { BrainBankModule, ModuleContext } from './types.ts';
+import type { Indexer, IndexerContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import type { Database } from '../core/database.ts';
 import type { EmbeddingProvider, DocumentCollection, SearchResult } from '../types.ts';
-import { DocIndexer } from '../indexers/doc-indexer.ts';
+import { DocsIndexer } from '../indexers/doc-indexer.ts';
 
-export interface DocsModuleOptions {}
-
-class DocsModuleImpl implements BrainBankModule {
+class DocsPlugin implements Indexer {
     readonly name = 'docs';
     hnsw!: HNSWIndex;
-    indexer!: DocIndexer;
+    indexer!: DocsIndexer;
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
 
-    constructor(private opts: DocsModuleOptions = {}) {}
 
-    async initialize(ctx: ModuleContext): Promise<void> {
+
+    async initialize(ctx: IndexerContext): Promise<void> {
         this._db = ctx.db;
         this._embedding = ctx.embedding;
         this.hnsw = await ctx.createHnsw();
         ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
-        this.indexer = new DocIndexer(ctx.db, ctx.embedding, this.hnsw, this.vecCache);
+        this.indexer = new DocsIndexer(ctx.db, ctx.embedding, this.hnsw, this.vecCache);
     }
 
     /** Register a document collection. */
@@ -178,7 +176,7 @@ class DocsModuleImpl implements BrainBankModule {
     }
 }
 
-/** Create a document collections module. */
-export function docs(opts?: DocsModuleOptions): BrainBankModule {
-    return new DocsModuleImpl(opts);
+/** Create a document collections plugin. */
+export function docs(): Indexer {
+    return new DocsPlugin();
 }

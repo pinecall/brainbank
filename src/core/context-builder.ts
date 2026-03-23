@@ -7,12 +7,12 @@
  */
 
 import type { SearchResult, CoEditSuggestion, ContextOptions } from '../types.ts';
-import type { UnifiedSearch } from '../query/search.ts';
+import type { MultiIndexSearch } from '../query/search.ts';
 import type { CoEditAnalyzer } from '../indexers/co-edits.ts';
 
 export class ContextBuilder {
     constructor(
-        private _search: UnifiedSearch,
+        private _search: MultiIndexSearch,
         private _coEdits: CoEditAnalyzer,
     ) {}
 
@@ -24,7 +24,7 @@ export class ContextBuilder {
         const {
             codeResults = 6,
             gitResults = 5,
-            memoryResults = 4,
+            patternResults = 4,
             affectedFiles = [],
             minScore = 0.25,
             useMMR = true,
@@ -35,7 +35,7 @@ export class ContextBuilder {
         const results = await this._search.search(task, {
             codeK: codeResults,
             gitK: gitResults,
-            memoryK: memoryResults,
+            patternK: patternResults,
             minScore,
             useMMR,
             mmrLambda,
@@ -116,7 +116,7 @@ export class ContextBuilder {
         }
 
         // ── Memory Results ──────────────────────────
-        const memHits = results.filter(r => r.type === 'pattern').slice(0, memoryResults);
+        const memHits = results.filter(r => r.type === 'pattern').slice(0, patternResults);
         if (memHits.length > 0) {
             parts.push('## Learned Patterns\n');
             for (const p of memHits) {

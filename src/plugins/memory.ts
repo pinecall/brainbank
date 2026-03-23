@@ -1,25 +1,23 @@
 /**
- * BrainBank — Memory Module
+ * BrainBank — Learning Plugin
  * 
  * Agent learns from completed tasks — stores patterns,
  * consolidates failures, distills strategies.
  * 
- *   import { memory } from 'brainbank/memory';
- *   brain.use(memory());
+ *   import { learning } from 'brainbank/learning';
+ *   brain.use(learning());
  */
 
-import type { BrainBankModule, ModuleContext } from './types.ts';
+import type { Indexer, IndexerContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import type { Database } from '../core/database.ts';
 import { PatternStore } from '../learning/pattern-store.ts';
 import { Consolidator } from '../learning/consolidator.ts';
 import { StrategyDistiller } from '../learning/strategy-distiller.ts';
-import type { MemoryPattern, DistilledStrategy } from '../types.ts';
+import type { LearningPattern, DistilledStrategy } from '../types.ts';
 
-export interface MemoryModuleOptions {}
-
-class MemoryModuleImpl implements BrainBankModule {
-    readonly name = 'memory';
+class LearningPlugin implements Indexer {
+    readonly name = 'learning';
     hnsw!: HNSWIndex;
     patternStore!: PatternStore;
     consolidator!: Consolidator;
@@ -27,9 +25,9 @@ class MemoryModuleImpl implements BrainBankModule {
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
 
-    constructor(private opts: MemoryModuleOptions = {}) {}
 
-    async initialize(ctx: ModuleContext): Promise<void> {
+
+    async initialize(ctx: IndexerContext): Promise<void> {
         this._db = ctx.db;
         this.hnsw = await ctx.createHnsw(100_000);
         ctx.loadVectors('memory_vectors', 'pattern_id', this.hnsw, this.vecCache);
@@ -46,7 +44,7 @@ class MemoryModuleImpl implements BrainBankModule {
     }
 
     /** Store a learned pattern. */
-    async learn(pattern: MemoryPattern): Promise<number> {
+    async learn(pattern: LearningPattern): Promise<number> {
         const id = await this.patternStore.learn(pattern);
 
         // Auto-consolidate every 50 patterns
@@ -58,7 +56,7 @@ class MemoryModuleImpl implements BrainBankModule {
     }
 
     /** Search for similar patterns. */
-    async search(query: string, k: number = 4): Promise<(MemoryPattern & { score: number })[]> {
+    async search(query: string, k: number = 4): Promise<(LearningPattern & { score: number })[]> {
         return this.patternStore.search(query, k);
     }
 
@@ -81,7 +79,7 @@ class MemoryModuleImpl implements BrainBankModule {
     }
 }
 
-/** Create an agent memory (learning) module. */
-export function memory(opts?: MemoryModuleOptions): BrainBankModule {
-    return new MemoryModuleImpl(opts);
+/** Create an agent learning plugin. */
+export function learning(): Indexer {
+    return new LearningPlugin();
 }

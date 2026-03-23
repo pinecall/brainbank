@@ -30,7 +30,7 @@ import {
 import { code } from '../src/plugins/code.ts';
 import { git } from '../src/plugins/git.ts';
 import { docs } from '../src/plugins/docs.ts';
-import { memory } from '../src/plugins/memory.ts';
+import { learning } from '../src/plugins/memory.ts';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 
@@ -116,7 +116,7 @@ export {
     code,
     git,
     docs,
-    memory,
+    learning,
 };
 
 export type { EmbeddingProvider, Reranker };

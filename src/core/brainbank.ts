@@ -22,7 +22,7 @@ import { resolveConfig } from './config.ts';
 import { Database } from './database.ts';
 import { HNSWIndex } from '../vector/hnsw.ts';
 import { LocalEmbedding } from '../embeddings/local.ts';
-import { UnifiedSearch } from '../query/search.ts';
+import { MultiIndexSearch } from '../query/search.ts';
 import { BM25Search } from '../query/bm25.ts';
 import { reciprocalRankFusion } from '../query/rrf.ts';
 import { ContextBuilder } from './context-builder.ts';
@@ -45,7 +45,7 @@ export class BrainBank extends EventEmitter {
     private _modules = new Map<string, Indexer>();
 
     // Cross-module search (created if code/git/memory are present)
-    private _search?: UnifiedSearch;
+    private _search?: MultiIndexSearch;
     private _bm25?: BM25Search;
     private _contextBuilder?: ContextBuilder;
 
@@ -208,19 +208,19 @@ export class BrainBank extends EventEmitter {
 
         // Cross-module search (needs code, git, or memory)
         // For multi-repo: find ANY indexer that starts with 'code' or 'git'
-        const codeShared = this._sharedHnsw.get('code');
-        const gitShared = this._sharedHnsw.get('git');
-        const memMod = this._modules.get('memory') as any;
+        const codeMod = this._sharedHnsw.get('code');
+        const gitMod = this._sharedHnsw.get('git');
+        const memMod = this._modules.get('learning') as any;
 
-        if (codeShared || gitShared || memMod) {
-            this._search = new UnifiedSearch({
+        if (codeMod || gitMod || memMod) {
+            this._search = new MultiIndexSearch({
                 db: this._db,
-                codeHnsw: codeShared?.hnsw,
-                gitHnsw: gitShared?.hnsw,
-                memHnsw: memMod?.hnsw,
-                codeVecs: codeShared?.vecCache ?? new Map(),
-                gitVecs: gitShared?.vecCache ?? new Map(),
-                memVecs: memMod?.vecCache ?? new Map(),
+                codeHnsw: codeMod?.hnsw,
+                gitHnsw: gitMod?.hnsw,
+                patternHnsw: memMod?.hnsw,
+                codeVecs: codeMod?.vecCache ?? new Map(),
+                gitVecs: gitMod?.vecCache ?? new Map(),
+                patternVecs: memMod?.vecCache ?? new Map(),
                 embedding: this._embedding,
                 reranker: this._config.reranker,
             });
@@ -474,7 +474,7 @@ export class BrainBank extends EventEmitter {
 
     /** Semantic search across all loaded modules. */
     async search(query: string, options?: {
-        codeK?: number; gitK?: number; memoryK?: number;
+        codeK?: number; gitK?: number; patternK?: number;
         minScore?: number; useMMR?: boolean;
     }): Promise<SearchResult[]> {
         await this.initialize();
@@ -490,14 +490,14 @@ export class BrainBank extends EventEmitter {
     async searchCode(query: string, k: number = 8): Promise<SearchResult[]> {
         this.module('code'); // throws if not loaded
         await this.initialize();
-        return this._search!.search(query, { codeK: k, gitK: 0, memoryK: 0 });
+        return this._search!.search(query, { codeK: k, gitK: 0, patternK: 0 });
     }
 
     /** Semantic search over commits only. */
     async searchCommits(query: string, k: number = 8): Promise<SearchResult[]> {
         this.module('git'); // throws if not loaded
         await this.initialize();
-        return this._search!.search(query, { codeK: 0, gitK: k, memoryK: 0 });
+        return this._search!.search(query, { codeK: 0, gitK: k, patternK: 0 });
     }
 
     // ── Hybrid Search ───────────────────────────────
@@ -511,7 +511,7 @@ export class BrainBank extends EventEmitter {
         codeK?: number;
         /** @deprecated Use collections: { git: N } instead */
         gitK?: number;
-        memoryK?: number;
+        patternK?: number;
         minScore?: number; useMMR?: boolean;
         /**
          * Sources to include and max results per source.
@@ -585,7 +585,7 @@ export class BrainBank extends EventEmitter {
 
     /** BM25 keyword search only (no embeddings needed). */
     searchBM25(query: string, options?: {
-        codeK?: number; gitK?: number; memoryK?: number;
+        codeK?: number; gitK?: number; patternK?: number;
     }): SearchResult[] {
         if (!this._bm25) return [];
         return this._bm25.search(query, options);
@@ -616,7 +616,7 @@ export class BrainBank extends EventEmitter {
     /** Get co-edit suggestions for a file. */
     coEdits(filePath: string, limit: number = 5): CoEditSuggestion[] {
         const gitMod = this.module('git') as any;
-        return gitMod.suggest(filePath, limit);
+        return gitMod.suggestCoEdits(filePath, limit);
     }
 
     // ── Stats ───────────────────────────────────────
@@ -710,13 +710,13 @@ export class BrainBank extends EventEmitter {
         // Indexer-managed HNSW indices
         const codeMod = this._modules.get('code') as any;
         const gitMod = this._modules.get('git') as any;
-        const memMod = this._modules.get('memory') as any;
+        const memMod = this._modules.get('learning') as any;
         const docsMod = this._modules.get('docs') as any;
         const notesMod = this._modules.get('notes') as any;
 
         if (codeMod?.hnsw) hnswMap.set('code', { hnsw: codeMod.hnsw, vecs: codeMod.vecCache });
         if (gitMod?.hnsw) hnswMap.set('git', { hnsw: gitMod.hnsw, vecs: gitMod.vecCache });
-        if (memMod?.hnsw) hnswMap.set('memory', { hnsw: memMod.hnsw, vecs: memMod.vecCache });
+        if (memMod?.hnsw) hnswMap.set('learning', { hnsw: memMod.hnsw, vecs: memMod.vecCache });
         if (notesMod?.hnsw) hnswMap.set('notes', { hnsw: notesMod.hnsw, vecs: notesMod.vecCache });
         if (docsMod?.hnsw) hnswMap.set('docs', { hnsw: docsMod.hnsw, vecs: docsMod.vecCache });
 

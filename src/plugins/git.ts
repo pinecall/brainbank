@@ -12,13 +12,13 @@
  *     .use(git({ repoPath: './backend',  name: 'git:backend' }));
  */
 
-import type { BrainBankModule, ModuleContext } from './types.ts';
+import type { Indexer, IndexerContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { GitIndexer } from '../indexers/git-indexer.ts';
 import { CoEditAnalyzer } from '../indexers/co-edits.ts';
 import type { IndexResult, ProgressCallback, CoEditSuggestion } from '../types.ts';
 
-export interface GitModuleOptions {
+export interface GitPluginOptions {
     /** Repository path. Default: from config */
     repoPath?: string;
     /** Max commits to index. Default: from config */
@@ -29,18 +29,18 @@ export interface GitModuleOptions {
     name?: string;
 }
 
-class GitModuleImpl implements BrainBankModule {
+class GitPlugin implements Indexer {
     readonly name: string;
     hnsw!: HNSWIndex;
     indexer!: GitIndexer;
     coEdits!: CoEditAnalyzer;
     vecCache = new Map<number, Float32Array>();
 
-    constructor(private opts: GitModuleOptions = {}) {
+    constructor(private opts: GitPluginOptions = {}) {
         this.name = opts.name ?? 'git';
     }
 
-    async initialize(ctx: ModuleContext): Promise<void> {
+    async initialize(ctx: IndexerContext): Promise<void> {
         // Use shared HNSW so all git indexers share one index
         const shared = await ctx.getOrCreateSharedHnsw('git', 500_000);
         this.hnsw = shared.hnsw;
@@ -68,7 +68,7 @@ class GitModuleImpl implements BrainBankModule {
         return this.indexer.index(options);
     }
 
-    suggest(filePath: string, limit: number = 5): CoEditSuggestion[] {
+    suggestCoEdits(filePath: string, limit: number = 5): CoEditSuggestion[] {
         return this.coEdits.suggest(filePath, limit);
     }
 
@@ -77,7 +77,7 @@ class GitModuleImpl implements BrainBankModule {
     }
 }
 
-/** Create a git history module. */
-export function git(opts?: GitModuleOptions): BrainBankModule {
-    return new GitModuleImpl(opts);
+/** Create a git history plugin. */
+export function git(opts?: GitPluginOptions): Indexer {
+    return new GitPlugin(opts);
 }

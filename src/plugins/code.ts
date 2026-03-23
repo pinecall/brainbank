@@ -14,12 +14,12 @@
  *     .use(code({ repoPath: './backend',  name: 'code:backend' }));
  */
 
-import type { BrainBankModule, ModuleContext } from './types.ts';
+import type { Indexer, IndexerContext } from './types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { CodeIndexer } from '../indexers/code-indexer.ts';
 import type { IndexResult, ProgressCallback } from '../types.ts';
 
-export interface CodeModuleOptions {
+export interface CodePluginOptions {
     /** Repository path to index. Default: '.' */
     repoPath?: string;
     /** Maximum file size in bytes. Default: from config */
@@ -28,17 +28,17 @@ export interface CodeModuleOptions {
     name?: string;
 }
 
-class CodeModuleImpl implements BrainBankModule {
+class CodePlugin implements Indexer {
     readonly name: string;
     hnsw!: HNSWIndex;
     indexer!: CodeIndexer;
     vecCache = new Map<number, Float32Array>();
 
-    constructor(private opts: CodeModuleOptions = {}) {
+    constructor(private opts: CodePluginOptions = {}) {
         this.name = opts.name ?? 'code';
     }
 
-    async initialize(ctx: ModuleContext): Promise<void> {
+    async initialize(ctx: IndexerContext): Promise<void> {
         // Use shared HNSW so all code indexers (code, code:frontend, etc.) share one index
         const shared = await ctx.getOrCreateSharedHnsw('code');
         this.hnsw = shared.hnsw;
@@ -70,7 +70,7 @@ class CodeModuleImpl implements BrainBankModule {
     }
 }
 
-/** Create a code indexing module. */
-export function code(opts?: CodeModuleOptions): BrainBankModule {
-    return new CodeModuleImpl(opts);
+/** Create a code indexing plugin. */
+export function code(opts?: CodePluginOptions): Indexer {
+    return new CodePlugin(opts);
 }

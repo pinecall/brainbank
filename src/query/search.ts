@@ -1,7 +1,7 @@
 /**
- * BrainBank — Unified Search
+ * BrainBank — Multi-Index Search
  * 
- * Searches across all three indices (code, git, memory)
+ * Searches across all three indices (code, git, learning patterns)
  * and returns typed results sorted by relevance.
  */
 
@@ -10,14 +10,14 @@ import type { EmbeddingProvider, Reranker, SearchResult } from '../types.ts';
 import type { HNSWIndex } from '../vector/hnsw.ts';
 import { searchMMR } from '../vector/mmr.ts';
 
-export interface SearchDeps {
+export interface SearchConfig {
     db: Database;
     codeHnsw?: HNSWIndex;
     gitHnsw?: HNSWIndex;
-    memHnsw?: HNSWIndex;
+    patternHnsw?: HNSWIndex;
     codeVecs: Map<number, Float32Array>;
     gitVecs: Map<number, Float32Array>;
-    memVecs: Map<number, Float32Array>;
+    patternVecs: Map<number, Float32Array>;
     embedding: EmbeddingProvider;
     reranker?: Reranker;
 }
@@ -27,8 +27,8 @@ export interface SearchOptions {
     codeK?: number;
     /** Max git results. Default: 5 */
     gitK?: number;
-    /** Max memory results. Default: 4 */
-    memoryK?: number;
+    /** Max pattern results. Default: 4 */
+    patternK?: number;
     /** Minimum similarity score. Default: 0.25 */
     minScore?: number;
     /** Use MMR for diversity. Default: true */
@@ -37,11 +37,11 @@ export interface SearchOptions {
     mmrLambda?: number;
 }
 
-export class UnifiedSearch {
-    private _deps: SearchDeps;
+export class MultiIndexSearch {
+    private _config: SearchConfig;
 
-    constructor(deps: SearchDeps) {
-        this._deps = deps;
+    constructor(config: SearchConfig) {
+        this._config = config;
     }
 
     /**
@@ -52,27 +52,27 @@ export class UnifiedSearch {
         const {
             codeK = 6,
             gitK = 5,
-            memoryK = 4,
+            patternK = 4,
             minScore = 0.25,
             useMMR = true,
             mmrLambda = 0.7,
         } = options;
 
-        const queryVec = await this._deps.embedding.embed(query);
+        const queryVec = await this._config.embedding.embed(query);
         const results: SearchResult[] = [];
 
         // ── Code search ────────────────────────────
-        if (this._deps.codeHnsw && this._deps.codeHnsw.size > 0) {
+        if (this._config.codeHnsw && this._config.codeHnsw.size > 0) {
             const hits = useMMR
-                ? searchMMR(this._deps.codeHnsw, queryVec, this._deps.codeVecs, codeK, mmrLambda)
-                : this._deps.codeHnsw.search(queryVec, codeK);
+                ? searchMMR(this._config.codeHnsw, queryVec, this._config.codeVecs, codeK, mmrLambda)
+                : this._config.codeHnsw.search(queryVec, codeK);
 
             if (hits.length > 0) {
                 const ids = hits.map(h => h.id);
                 const scoreMap = new Map(hits.map(h => [h.id, h.score]));
                 const placeholders = ids.map(() => '?').join(',');
 
-                const rows = this._deps.db.prepare(
+                const rows = this._config.db.prepare(
                     `SELECT * FROM code_chunks WHERE id IN (${placeholders})`
                 ).all(...ids) as any[];
 
@@ -98,15 +98,15 @@ export class UnifiedSearch {
         }
 
         // ── Git search ─────────────────────────────
-        if (this._deps.gitHnsw && this._deps.gitHnsw.size > 0) {
-            const hits = this._deps.gitHnsw.search(queryVec, gitK * 2);
+        if (this._config.gitHnsw && this._config.gitHnsw.size > 0) {
+            const hits = this._config.gitHnsw.search(queryVec, gitK * 2);
 
             if (hits.length > 0) {
                 const ids = hits.map(h => h.id);
                 const scoreMap = new Map(hits.map(h => [h.id, h.score]));
                 const placeholders = ids.map(() => '?').join(',');
 
-                const rows = this._deps.db.prepare(
+                const rows = this._config.db.prepare(
                     `SELECT * FROM git_commits WHERE id IN (${placeholders}) AND is_merge = 0`
                 ).all(...ids) as any[];
 
@@ -133,18 +133,18 @@ export class UnifiedSearch {
             }
         }
 
-        // ── Memory search ──────────────────────────
-        if (this._deps.memHnsw && this._deps.memHnsw.size > 0) {
+        // ── Pattern search ──────────────────────────
+        if (this._config.patternHnsw && this._config.patternHnsw.size > 0) {
             const hits = useMMR
-                ? searchMMR(this._deps.memHnsw, queryVec, this._deps.memVecs, memoryK, mmrLambda)
-                : this._deps.memHnsw.search(queryVec, memoryK);
+                ? searchMMR(this._config.patternHnsw, queryVec, this._config.patternVecs, patternK, mmrLambda)
+                : this._config.patternHnsw.search(queryVec, patternK);
 
             if (hits.length > 0) {
                 const ids = hits.map(h => h.id);
                 const scoreMap = new Map(hits.map(h => [h.id, h.score]));
                 const placeholders = ids.map(() => '?').join(',');
 
-                const rows = this._deps.db.prepare(
+                const rows = this._config.db.prepare(
                     `SELECT * FROM memory_patterns WHERE id IN (${placeholders}) AND success_rate >= 0.5`
                 ).all(...ids) as any[];
 
@@ -172,7 +172,7 @@ export class UnifiedSearch {
         results.sort((a, b) => b.score - a.score);
 
         // Apply re-ranking if available
-        if (this._deps.reranker && results.length > 1) {
+        if (this._config.reranker && results.length > 1) {
             return this._rerank(query, results);
         }
 
@@ -187,7 +187,7 @@ export class UnifiedSearch {
      * Top 11+:  40% retrieval / 60% reranker (trust reranker more)
      */
     private async _rerank(query: string, results: SearchResult[]): Promise<SearchResult[]> {
-        const reranker = this._deps.reranker!;
+        const reranker = this._config.reranker!;
         const documents = results.map(r => r.content);
         const scores = await reranker.rank(query, documents);
 
