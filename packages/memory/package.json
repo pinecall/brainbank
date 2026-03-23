@@ -1,6 +1,6 @@
 {
     "name": "@brainbank/memory",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "description": "Deterministic memory extraction and deduplication for LLM conversations — extract, dedup, ADD/UPDATE/NONE",
     "type": "module",
     "main": "dist/index.js",
