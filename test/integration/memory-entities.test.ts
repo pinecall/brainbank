@@ -40,13 +40,16 @@ tests['setup: create brain + memory + entityStore'] = async () => {
     brain = new BrainBank({ dbPath: path.join(tmpDir, 'test.db') });
     await brain.initialize();
 
+    const llm = new OpenAIProvider({ model: 'gpt-4.1-nano' });
+
     entityStore = new EntityStore({
         entityCollection: brain.collection('entities'),
         relationCollection: brain.collection('relationships'),
+        llm,
     });
 
     memory = new Memory(brain.collection('memories'), {
-        llm: new OpenAIProvider({ model: 'gpt-4.1-nano' }),
+        llm,
         entityStore,
     });
 

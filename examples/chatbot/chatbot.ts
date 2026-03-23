@@ -27,13 +27,17 @@ if (!process.env.OPENAI_API_KEY) {
 const brain = new BrainBank({ dbPath: DB_PATH });
 await brain.initialize();
 
+const llm = new OpenAIProvider({ model: MODEL });
+
 const entityStore = new EntityStore({
     entityCollection: brain.collection('entities'),
     relationCollection: brain.collection('relationships'),
+    llm,
+    onEntity: (op) => ui.entityEvent(op),
 });
 
 const memory = new Memory(brain.collection('memories'), {
-    llm: new OpenAIProvider({ model: MODEL }),
+    llm,
     entityStore,
     onOperation: (op) => ui.memoryOp(op.action, op.fact, op.reason),
 });
@@ -103,8 +107,7 @@ while (true) {
     ui.endResponse();
 
     history.push({ role: 'assistant', content: reply });
-    const result = await memory.process(msg, reply);
-    if (result.entities) ui.entityOp(result.entities.entitiesProcessed, result.entities.relationshipsProcessed);
+    await memory.process(msg, reply);
     console.log();
 }
 

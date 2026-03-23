@@ -17,6 +17,8 @@ export interface GenerateOptions {
     json?: boolean;
     /** Max tokens for response */
     maxTokens?: number;
+    /** Temperature for response (0 = deterministic) */
+    temperature?: number;
 }
 
 /**
@@ -92,6 +94,7 @@ export class OpenAIProvider implements LLMProvider {
                 model: this.model,
                 messages,
                 max_tokens: options?.maxTokens ?? 500,
+                ...(options?.temperature != null ? { temperature: options.temperature } : {}),
                 ...(options?.json ? { response_format: { type: 'json_object' } } : {}),
             }),
         });

@@ -44,6 +44,8 @@ await brain.initialize();
 const entityStore = new EntityStore({
     entityCollection: brain.collection('entities'),
     relationCollection: brain.collection('relationships'),
+    llm: langchainProvider,
+    onEntity: (op) => ui.entityEvent(op),
 });
 
 const memory = new Memory(brain.collection('memories'), {
@@ -93,8 +95,7 @@ while (true) {
     ui.endResponse();
 
     history.push({ role: 'assistant', content: reply });
-    const result = await memory.process(msg, reply);
-    if (result.entities) ui.entityOp(result.entities.entitiesProcessed, result.entities.relationshipsProcessed);
+    await memory.process(msg, reply);
     console.log();
 }
 

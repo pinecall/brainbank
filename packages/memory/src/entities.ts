@@ -3,9 +3,31 @@
  *
  * Manages entities and relationships extracted from conversations.
  * Uses BrainBank collections (SQLite) — no Neo4j or external graph DB needed.
+ * Optional LLM for intelligent entity resolution (e.g. merging "TS" with "TypeScript").
  */
 
 import type { MemoryStore, MemoryItem } from './memory.js';
+import type { LLMProvider } from './llm.js';
+
+// ─── Prompts ────────────────────────────────────────
+
+const ENTITY_RESOLVE_PROMPT = `You are an entity resolution engine. Given a NEW entity and a list of EXISTING entities, determine if the new entity refers to the same real-world thing as any existing one.
+
+Consider aliases, abbreviations, alternate names, and typos:
+- "TS" = "TypeScript"
+- "JS" = "JavaScript"
+- "berna" = "Berna"
+- "GCP" = "Google Cloud Platform"
+- "React.js" = "React"
+
+Respond with ONLY the matching entity name (exactly as listed) or "NONE" if no match.
+
+Existing entities:
+{entities}
+
+New entity: {newEntity}
+
+Match:`;
 
 // ─── Types ──────────────────────────────────────────
 
@@ -44,6 +66,10 @@ export interface EntityStoreOptions {
     entityCollection: MemoryStore;
     /** Collection for relationships */
     relationCollection: MemoryStore;
+    /** Optional LLM for intelligent entity resolution */
+    llm?: LLMProvider;
+    /** Callback fired for each entity operation */
+    onEntity?: (op: { action: 'NEW' | 'UPDATED' | 'RELATED'; name: string; type?: string; detail?: string }) => void;
 }
 
 // ─── EntityStore Class ──────────────────────────────
@@ -51,10 +77,14 @@ export interface EntityStoreOptions {
 export class EntityStore {
     private readonly entities: MemoryStore;
     private readonly relations: MemoryStore;
+    private readonly llm?: LLMProvider;
+    private readonly onEntity?: EntityStoreOptions['onEntity'];
 
     constructor(options: EntityStoreOptions) {
         this.entities = options.entityCollection;
         this.relations = options.relationCollection;
+        this.llm = options.llm;
+        this.onEntity = options.onEntity;
     }
 
     /**
@@ -76,6 +106,7 @@ export class EntityStore {
                     mentionCount: (existing.metadata?.mentionCount ?? 1) + 1,
                 },
             });
+            this.onEntity?.({ action: 'UPDATED', name: entity.name, type: entity.type, detail: `${(existing.metadata?.mentionCount ?? 1) + 1}x` });
         } else {
             await this.entities.add(this.serializeEntity(entity), {
                 metadata: {
@@ -86,6 +117,7 @@ export class EntityStore {
                     mentionCount: 1,
                 },
             });
+            this.onEntity?.({ action: 'NEW', name: entity.name, type: entity.type });
         }
     }
 
@@ -98,20 +130,61 @@ export class EntityStore {
         await this.relations.add(content, {
             metadata: { source, target, relation, context, timestamp: now },
         });
+        this.onEntity?.({ action: 'RELATED', name: source, detail: `${source} → ${relation} → ${target}` });
     }
 
     /**
-     * Find an entity by name (exact name match via search).
+     * Find an entity by name.
+     * 1. Exact name match (case-insensitive)
+     * 2. LLM resolution if available (e.g. "TS" → "TypeScript")
      */
     async findEntity(name: string): Promise<(MemoryItem & { metadata?: Record<string, any> }) | null> {
         const results = await this.entities.search(name, { k: 5 });
-        // Only match exact name (case-insensitive) — no fuzzy matching
+
+        // First: exact name match (case-insensitive)
         for (const r of results) {
             if (this.extractName(r.content).toLowerCase() === name.toLowerCase()) {
                 return r;
             }
         }
+
+        // Second: LLM resolution (if available and we have candidates)
+        if (this.llm && results.length > 0) {
+            const candidateNames = results.map(r => this.extractName(r.content));
+            const resolved = await this.resolveEntity(name, candidateNames);
+            if (resolved) {
+                return results.find(r => this.extractName(r.content) === resolved) ?? null;
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * Ask LLM if a new entity matches any existing entity.
+     * Returns the matching entity name or null.
+     */
+    private async resolveEntity(newEntity: string, existing: string[]): Promise<string | null> {
+        if (!this.llm || existing.length === 0) return null;
+
+        const prompt = ENTITY_RESOLVE_PROMPT
+            .replace('{entities}', existing.map(e => `- ${e}`).join('\n'))
+            .replace('{newEntity}', newEntity);
+
+        try {
+            const response = await this.llm.generate(
+                [{ role: 'user', content: prompt }],
+                { maxTokens: 50, temperature: 0 }
+            );
+            const match = response.trim();
+            if (match === 'NONE' || match === 'none') return null;
+
+            // Verify the response is actually one of the existing entities
+            const found = existing.find(e => e.toLowerCase() === match.toLowerCase());
+            return found ?? null;
+        } catch {
+            return null; // Fail silently — fall back to no match
+        }
     }
 
     /**

@@ -70,10 +70,11 @@ export function memoryOp(action: string, fact: string, reason?: string) {
     console.log(`${c.dim}  ${icon} ${label}: ${fact}${suffix}${c.reset}`);
 }
 
-export function entityOp(entitiesProcessed: number, relationshipsProcessed: number) {
-    if (entitiesProcessed > 0 || relationshipsProcessed > 0) {
-        console.log(`${c.dim}  🔗 +${entitiesProcessed} entities, +${relationshipsProcessed} relationships${c.reset}`);
-    }
+export function entityEvent(op: { action: string; name: string; type?: string; detail?: string }) {
+    const icon = op.action === 'NEW' ? '🔗' : op.action === 'UPDATED' ? '🔄' : '↔ ';
+    const label = op.action === 'NEW' ? '+entity' : op.action === 'UPDATED' ? 'entity' : 'relation';
+    const info = op.action === 'RELATED' && op.detail ? op.detail : `${op.name}${op.type ? ` (${op.type})` : ''}${op.detail ? ` ${op.detail}` : ''}`;
+    console.log(`${c.dim}  ${icon} ${label}: ${info}${c.reset}`);
 }
 
 export function bye() {
