@@ -114,7 +114,7 @@ const GRAMMARS: Record<string, () => LangGrammar | null> = {
     php: tryGrammar('tree-sitter-php', {
         class: ['class_declaration'],
         function: ['function_definition', 'method_declaration'],
-    }),
+    }, 'php'),
     lua: tryGrammar('tree-sitter-lua', {
         function: ['function_declaration'],
     }),
