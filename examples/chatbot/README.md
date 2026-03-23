@@ -1,9 +1,8 @@
-# Chatbot with Persistent Memory
+# Chatbot with Deterministic Memory
 
-A CLI chatbot that remembers conversations across sessions using a **hybrid memory strategy**:
+A CLI chatbot that **automatically** extracts and stores memories after every conversation turn — no function calling, no relying on the model to "remember" to save.
 
-1. **Context injection** — recent session summaries loaded into the system prompt at startup
-2. **Function calling** — the model autonomously decides when to search/save memories
+Inspired by [mem0](https://github.com/mem0ai/mem0)'s deterministic memory pipeline.
 
 ## Run
 
@@ -11,63 +10,66 @@ A CLI chatbot that remembers conversations across sessions using a **hybrid memo
 OPENAI_API_KEY=sk-... npx tsx examples/chatbot/chatbot.ts
 ```
 
-## Architecture
+## How it works
+
+After every conversation turn, a **post-turn memory pipeline** runs automatically:
 
 ```
-┌──────────────────────────────────────────────────┐
-│  System Prompt                                    │
-│  ┌──────────────────────────────────────────┐    │
-│  │ Last 5 session summaries (auto-injected) │    │
-│  └──────────────────────────────────────────┘    │
-│                                                   │
-│  User message → GPT-4.1-nano                      │
-│                    │                              │
-│           ┌───────┴───────┐                      │
-│           ▼               ▼                      │
-│    recall_memory()   save_fact()                  │
-│    (semantic search)  (persist to DB)             │
-│           │               │                      │
-│           ▼               ▼                      │
-│       BrainBank Collections (SQLite)              │
-│       ├── sessions (conversation summaries)       │
-│       └── facts (user preferences, knowledge)    │
-└──────────────────────────────────────────────────┘
+User message → LLM response (streaming)
+                    │
+                    ▼
+        ┌── Memory Pipeline (runs every turn) ──┐
+        │                                        │
+        │  ① Extract atomic facts (LLM call)     │
+        │     → ["Name is Berna", "Uses SQLite"]  │
+        │                                        │
+        │  ② Search existing memories (semantic)  │
+        │     → find similar stored facts         │
+        │                                        │
+        │  ③ Deduplicate (LLM call)               │
+        │     → ADD / UPDATE / NONE per fact      │
+        │                                        │
+        │  ④ Execute operations on BrainBank      │
+        └────────────────────────────────────────┘
 ```
 
-## Memory Strategy
+All 3 steps use `gpt-4.1-nano` (cheapest model) — extraction cost is negligible.
 
-| Strategy | When | What |
-|----------|------|------|
-| **Context injection** | At startup | Last 5 session summaries → system prompt |
-| **Function calling** | During chat | `recall_memory(query)` for deep search, `save_fact(content)` to persist |
+## Why not function calling?
 
-**Why hybrid?**
+| Approach | Problem |
+|----------|---------|
+| **Function calling** (`save_fact`) | Model decides *if* to save — it can forget, skip, or save the wrong thing |
+| **Deterministic pipeline** (this) | Extraction runs on *every turn* — nothing gets missed |
 
-- **Pure context injection** doesn't scale — 100 sessions won't fit in a prompt
-- **Pure function calling** misses recent context — the model might not search for what it should know
-- **Hybrid** gives the best of both: recent context always available, deeper memories searchable on demand
+The model never needs to decide what to save. A dedicated extraction prompt handles it.
+
+## Deduplication
+
+The pipeline doesn't blindly add facts. For each extracted fact, it:
+
+1. **Searches** existing memories for similar entries
+2. **Compares** the new fact with matches
+3. **Decides**: `ADD` (new info), `UPDATE` (refine existing), or `NONE` (already captured)
+
+```
+Turn 1: "My name is Berna, I prefer TypeScript"
+  💾 +memory: User's name is Berna
+  💾 +memory: User prefers TypeScript
+
+Turn 2: "I like functional programming. We chose SQLite."
+  ⏭  skip: functional programming (already have TypeScript preference)
+  💾 +memory: Decided to use SQLite for storage
+
+Turn 3: "What do you know about me?"
+  🔄 updated: Berna prefers TypeScript → Berna prefers TypeScript and functional programming
+```
 
 ## Features
 
-- 🎨 ANSI colors (zero external dependencies)
-- ⚡ Streaming responses via SSE
-- 🔧 Tool calls displayed in real-time (dim gray)
-- 💾 Auto-summarizes and saves session on exit
-- 🧠 Semantic search across all past sessions and facts
-
-## Example Session
-
-```
-Session 1:
-  🆕 First session — no memories yet
-  You → Remember my name is Berna and I prefer TypeScript
-    🔧 save_fact("Berna's name is Berna") → Saved ✅
-    🔧 save_fact("Berna prefers TypeScript over JavaScript") → Saved ✅
-  quit → 💾 Session saved
-
-Session 2:
-  💾 1 session(s), 2 fact(s) in memory
-  You → Do you remember who I am?
-    🔧 recall_memory("who am I", sessions) → score: 1.00
-  Bot → You're Berna, and you prefer TypeScript!
-```
+- 🎨 ANSI colors (zero dependencies)
+- ⚡ Streaming responses (SSE)
+- 💾 Automatic memory extraction after every turn
+- 🔄 Deduplication with ADD/UPDATE/NONE
+- 📋 Type `memories` to list all stored facts
+- 🧠 System prompt rebuilt with latest memories each turn
