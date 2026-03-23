@@ -57,9 +57,7 @@ export type { ReembedResult, ReembedOptions } from './core/reembed.ts';
 export type { WatchOptions, Watcher } from './core/watch.ts';
 export { cosineSimilarity, normalize } from './embeddings/math.ts';
 
-// Rerankers
-export { Qwen3Reranker } from './rerankers/qwen3-reranker.ts';
-export type { Qwen3RerankerOptions } from './rerankers/qwen3-reranker.ts';
+// Rerankers — available via @brainbank/reranker package
 
 // Vector
 export { HNSWIndex } from './vector/hnsw.ts';

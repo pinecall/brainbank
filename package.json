@@ -1,6 +1,6 @@
 {
     "name": "brainbank",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Semantic knowledge bank for AI agents — code indexing, git history, learned patterns, vector search",
     "type": "module",
     "main": "dist/index.js",
@@ -42,8 +42,9 @@
         "docs/"
     ],
     "scripts": {
-        "build": "tsup",
-        "prepublishOnly": "npm run build",
+        "build": "tsup && npm run build --workspaces --if-present",
+        "build:core": "tsup",
+        "prepublishOnly": "npm run build:core",
         "test": "node --import tsx test/run.ts",
         "test:integration": "node --import tsx test/run.ts --integration",
         "test:verbose": "node --import tsx test/run.ts --verbose",
@@ -69,14 +70,11 @@
     "author": "Bernardo Castro <bernardo@pinecall.io>",
     "license": "MIT",
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.27.1",
         "better-sqlite3": "^11.8.1",
-        "hnswlib-node": "^3.0.0",
-        "zod": "^4.3.6"
+        "hnswlib-node": "^3.0.0"
     },
     "optionalDependencies": {
         "@xenova/transformers": "^2.17.2",
-        "node-llama-cpp": "^3.18.1",
         "simple-git": "^3.27.0"
     },
     "devDependencies": {

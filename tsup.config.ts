@@ -9,7 +9,6 @@ export default defineConfig({
         'notes': 'src/plugins/notes.ts',
         'memory': 'src/plugins/memory.ts',
         'cli': 'src/integrations/cli.ts',
-        'mcp-server': 'src/integrations/mcp-server.ts',
     },
     tsconfig: 'tsconfig.build.json',
     format: ['esm'],
@@ -22,19 +21,17 @@ export default defineConfig({
         // dependencies — let consumers resolve
         'better-sqlite3',
         'hnswlib-node',
-        'zod',
-        '@modelcontextprotocol/sdk',
         // optional deps
         '@xenova/transformers',
-        'node-llama-cpp',
         'simple-git',
+        // separate packages (dynamic imports in CLI)
+        '@brainbank/reranker',
+        '@brainbank/mcp',
     ],
     banner: {
-        // CLI + MCP server need shebang
         js: '',
     },
     esbuildOptions(options) {
-        // Preserve dynamic imports for optional deps
         options.keepNames = true;
     },
 });

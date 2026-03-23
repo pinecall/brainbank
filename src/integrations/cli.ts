@@ -170,7 +170,7 @@ async function createBrain(repoPath?: string): Promise<BrainBank> {
     // Optional Qwen3 reranker via --reranker qwen3
     const rerankerFlag = getFlag('reranker');
     if (rerankerFlag === 'qwen3') {
-        const { Qwen3Reranker } = await import('../rerankers/qwen3-reranker.ts');
+        const { Qwen3Reranker } = await import('@brainbank/reranker');
         brainOpts.reranker = new Qwen3Reranker();
     }
 
@@ -790,7 +790,7 @@ async function cmdWatch() {
 }
 
 async function cmdServe() {
-    await import('./mcp-server.ts');
+    await import('@brainbank/mcp');
 }
 
 // ── Help ────────────────────────────────────────────
