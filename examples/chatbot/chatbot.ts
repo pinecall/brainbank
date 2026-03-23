@@ -10,7 +10,7 @@
 
 import { BrainBank } from '../../src/index.ts';
 import { Memory, OpenAIProvider } from '../../packages/memory/src/index.ts';
-import * as ui from './ui.ts';
+import * as ui from './lib/ui.ts';
 
 // ─── Config ─────────────────────────────────────────
 

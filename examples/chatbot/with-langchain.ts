@@ -15,7 +15,7 @@ import { Memory } from '../../packages/memory/src/index.ts';
 import type { LLMProvider } from '../../packages/memory/src/index.ts';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import * as ui from './ui.ts';
+import * as ui from './lib/ui.ts';
 
 // ─── Config ─────────────────────────────────────────
 
