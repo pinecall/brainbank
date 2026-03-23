@@ -13,7 +13,7 @@ BrainBank gives LLMs a searchable long-term memory that persists between session
 - **Portable** — single `.brainbank/brainbank.db` file
 - **Optional packages** — [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder) and [`@brainbank/mcp`](#mcp-server) (MCP server) as separate lightweight installs
 
-![BrainBank Architecture](docs/architecture.png)
+![BrainBank Architecture](assets/architecture.png)
 
 ---
 

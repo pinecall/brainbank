@@ -39,7 +39,7 @@
         "bin/",
         "LICENSE",
         "README.md",
-        "docs/"
+        "assets/"
     ],
     "scripts": {
         "build": "tsup && npm run build --workspaces --if-present",
