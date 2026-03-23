@@ -81,10 +81,14 @@ npm install brainbank
 
 | Package | When to install |
 |---------|----------------|
+| `@brainbank/memory` | Deterministic memory extraction for LLM conversations (mem0-style pipeline) |
 | `@brainbank/reranker` | Cross-encoder reranker (Qwen3-0.6B, ~640MB model) |
 | `@brainbank/mcp` | MCP server for AI tool integration |
 
 ```bash
+# Memory — automatic fact extraction & dedup for chatbots/agents
+npm install @brainbank/memory
+
 # Reranker — improves search ranking with local neural inference
 npm install @brainbank/reranker node-llama-cpp
 
