@@ -4,13 +4,14 @@
 
 BrainBank gives LLMs a searchable long-term memory that persists between sessions.
 
-- **Pluggable indexers** — `.use()` only what you need (code, git, docs)
+- **All-in-one** — core + code + git + docs + CLI in a single `brainbank` package
+- **Pluggable indexers** — `.use()` only what you need (code, git, docs, or custom)
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
-- **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
-- **Optional reranker** — Qwen3-Reranker-0.6B local cross-encoder (opt-in)
-- **Multi-repo** — Index multiple repositories into one shared database
-- **Portable** — single `.brainbank/brainbank.db` file
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
+- **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
+- **Multi-repo** — index multiple repositories into one shared database
+- **Portable** — single `.brainbank/brainbank.db` file
+- **Optional packages** — [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder) and [`@brainbank/mcp`](#mcp-server) (MCP server) as separate lightweight installs
 
 ![BrainBank Architecture](docs/architecture.png)
 
