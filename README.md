@@ -55,6 +55,7 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
   - [Context Generation](#context-generation)
   - [Custom Indexers](#custom-indexers)
   - [AI Agent Integration](#ai-agent-integration)
+  - [Examples](#examples)
   - [Watch Mode](#watch-mode)
 - [MCP Server](#mcp-server)
 - [Configuration](#configuration)
@@ -252,99 +253,32 @@ await brain.indexDocs();
 
 ### Collections
 
-The universal data primitive for agent memory. Store rich content, search semantically:
+Dynamic key-value collections with semantic search — the building block for agent memory:
 
 ```typescript
-// ── Conversation Memory ─────────────────────────────
-// Store full conversation turns so the agent can recall past sessions
-const conversations = brain.collection('conversations');
-
-await conversations.add(
-  `User asked to refactor the authentication module from Express middleware ` +
-  `to a dedicated AuthService class. We discussed the trade-offs of dependency ` +
-  `injection vs singleton pattern. Decided on DI with constructor injection ` +
-  `to keep it testable. Implemented in src/auth/auth-service.ts with JWT ` +
-  `validation, refresh token rotation, and role-based access control.`,
-  { tags: ['auth', 'refactor'], metadata: { session: '2024-03-15' } }
-);
-
-// Later: "what did we decide about authentication?"
-const hits = await conversations.search('authentication architecture decisions');
-// → recalls the full refactoring discussion with context
-
-// ── Architecture Decision Records ───────────────────
-// Track design decisions so the agent stays consistent across sessions
 const decisions = brain.collection('decisions');
 
+// Store rich content (auto-embedded for vector search)
 await decisions.add(
-  `ADR-012: Use SQLite with WAL mode for the local knowledge store instead of ` +
-  `PostgreSQL. Rationale: BrainBank should be portable (single file), work ` +
-  `offline, and require zero infrastructure. SQLite WAL mode supports ` +
-  `concurrent reads with a single writer, which is sufficient for our ` +
-  `use case. Trade-off: no multi-process writes, but BrainBank instances ` +
-  `are single-process by design. Alternatives considered: LevelDB (no SQL), ` +
-  `DuckDB (heavier, analytics-focused).`,
-  { tags: ['architecture', 'storage'] }
+  'Use SQLite with WAL mode instead of PostgreSQL. Portable single-file ' +
+  'storage, works offline, zero infrastructure.',
+  { tags: ['architecture'], metadata: { files: ['src/db.ts'] } }
 );
 
-// "why aren't we using postgres?" → retrieves the full ADR with rationale
+// Semantic search — finds by meaning, not keywords
+const hits = await decisions.search('why not postgres');
+// → [{ content: 'Use SQLite with WAL...', score: 0.95, tags: [...], metadata: {...} }]
 
-// ── Error Investigation Journal ─────────────────────
-// Log detailed debugging sessions, not just error messages
-const investigations = brain.collection('investigations');
-
-await investigations.add(
-  `Investigation: HNSW index returning empty results after reembed. ` +
-  `Root cause: the index was initialized with dims=384 but reembed switched ` +
-  `to OpenAI (dims=1536). The HNSW index needs to be rebuilt with the new ` +
-  `dimensionality — it can't resize in place. Fix: added dimension check in ` +
-  `reembed() that rebuilds the HNSW index when dims change. Added regression ` +
-  `test in test/unit/core/reembed.test.ts.`,
-  { tags: ['bug', 'hnsw', 'resolved'], ttl: '90d' }
-);
-
-// "empty search results after switching embedding" → finds exact investigation
+// Management
+decisions.list({ limit: 20 });          // newest first
+decisions.list({ tags: ['architecture'] }); // filter by tags
+decisions.count();                      // total items
+decisions.trim({ keep: 50 });           // keep N most recent
+decisions.prune({ olderThan: '30d' });  // remove older than 30 days
+brain.listCollectionNames();            // → ['decisions', ...]
 ```
 
-**Linking across collections** — use metadata to connect decisions to conversations and code:
-
-```typescript
-// Link a decision back to the conversation that produced it
-await decisions.add(
-  `ADR-015: Migrate from Express to Fastify for the API layer. Rationale: ` +
-  `Fastify provides schema-based validation out of the box, 2x throughput ` +
-  `in benchmarks, and native TypeScript support. Migration path: replace ` +
-  `route handlers one module at a time, starting with /api/auth.`,
-  {
-    tags: ['architecture', 'api'],
-    metadata: {
-      conversation: 'session-2024-03-20',  // links to conversation
-      files: ['src/api/server.ts', 'src/api/routes/auth.ts'],  // links to code
-    },
-  }
-);
-
-// Search finds the decision, metadata lets the agent trace back to context
-const results = await decisions.search('why did we switch from express');
-const relatedFiles = results[0].metadata.files;
-// → agent can now also search code: brain.searchCode('fastify auth route')
-```
-
-**Collection management:**
-
-```typescript
-const col = brain.collection('any_name');
-
-col.list({ limit: 20 });          // list items (newest first)
-col.list({ tags: ['critical'] }); // filter by tags
-col.count();                      // total items
-col.trim({ keep: 50 });           // keep N most recent
-col.prune({ olderThan: '30d' });  // remove older than 30 days
-col.remove(id);                   // remove by id
-col.clear();                      // remove all
-
-brain.listCollectionNames();      // → ['conversations', 'decisions', ...]
-```
+> 📂 See [examples/collections.ts](examples/collections.ts) for a complete runnable demo with cross-collection linking and metadata.
 
 ### Watch Mode
 
@@ -563,30 +497,54 @@ No folder and no config file? The CLI uses the built-in indexers (`code`, `git`,
 
 ### AI Agent Integration
 
-Use an `AGENTS.md` (or `.cursor/rules`) file to instruct AI coding agents to automatically store conversations and decisions in BrainBank. This works with **Antigravity**, **Claude Code**, **Cursor**, and any agent that reads project-level instructions.
+Teach your AI coding agent to use BrainBank as persistent memory. Add an `AGENTS.md` (or `.cursor/rules`) to your project root — works with **Antigravity**, **Claude Code**, **Cursor**, and anything that reads project-level instructions.
 
-#### Example `AGENTS.md`
+<details>
+<summary><strong>Option A: CLI commands</strong> (zero setup)</summary>
 
-Add this to your project root so agents know how to use BrainBank:
-
-> **Memory**
+> **Memory — BrainBank**
 >
-> This project uses BrainBank for persistent agent memory.
+> **Store** a conversation summary after each task:
+> `brainbank kv add conversations "Refactored auth to AuthService with DI. JWT + refresh tokens + RBAC."`
 >
-> **After completing a task**, store a conversation summary:
-> `brainbank kv add conversations "Refactored auth from middleware to AuthService class. Used DI with constructor injection for testability. JWT + refresh tokens + RBAC."`
+> **Record** architecture decisions:
+> `brainbank kv add decisions "ADR: Fastify over Express. 2x throughput, schema validation, native TS."`
 >
-> **When making a design decision**, record it:
-> `brainbank kv add decisions "ADR: Use Fastify over Express. Schema validation, 2x throughput, native TS. Migrate one module at a time."`
+> **Search** before starting work:
+> `brainbank hsearch "auth middleware"` · `brainbank kv search decisions "auth"`
+
+</details>
+
+<details>
+<summary><strong>Option B: MCP tools</strong> (richer integration)</summary>
+
+> **Memory — BrainBank (MCP)**
 >
-> **Before starting work**, search for relevant context:
-> `brainbank hsearch "auth middleware"` · `brainbank kv search decisions "auth"` · `brainbank kv search conversations "auth"`
+> Use the BrainBank MCP tools for persistent agent memory:
+>
+> **Store** via `brainbank_kv_add`:
+> `{ collection: "conversations", content: "Refactored auth to AuthService with DI.", tags: ["auth"] }`
+>
+> **Search** via `brainbank_kv_search`:
+> `{ collection: "decisions", query: "authentication approach" }`
+>
+> **Code search** via `brainbank_hybrid_search`:
+> `{ query: "auth middleware", repo: "." }`
 
-The agent reads these instructions and automatically stores/retrieves memories via the CLI — no custom indexer needed.
+</details>
 
-#### Custom Indexer: Auto-Indexing Conversations
+#### Setup
 
-For agents that produce structured conversation logs (like Antigravity's `brain/` directory), write a custom indexer that ingests them automatically:
+| Agent | How to connect |
+|-------|---------------|
+| **Antigravity** | Add `AGENTS.md` to project root |
+| **Claude Code** | Add `AGENTS.md` to project root |
+| **Cursor** | Add rules in `.cursor/rules` |
+| **MCP** (any agent) | See [MCP Server](#mcp-server) config below |
+
+#### Custom Indexer: Auto-Ingest Conversation Logs
+
+For agents that produce structured logs (e.g. Antigravity's `brain/` directory), auto-index them:
 
 ```typescript
 // .brainbank/indexers/conversations.ts
@@ -596,53 +554,36 @@ import * as path from 'node:path';
 
 export default {
   name: 'conversations',
-
   async initialize(ctx: IndexerContext) {
     const conversations = ctx.collection('conversations');
-    const decisions = ctx.collection('decisions');
-
-    // Scan for conversation log files (e.g. from Antigravity's brain/)
     const logsDir = path.join(ctx.repoPath, '.gemini/antigravity/brain');
     if (!fs.existsSync(logsDir)) return;
 
     for (const dir of fs.readdirSync(logsDir)) {
-      const logFile = path.join(logsDir, dir, '.system_generated/logs/overview.txt');
-      if (!fs.existsSync(logFile)) continue;
-
-      const content = fs.readFileSync(logFile, 'utf-8');
-      if (content.length < 100) continue;  // skip trivial conversations
-
+      const file = path.join(logsDir, dir, '.system_generated/logs/overview.txt');
+      if (!fs.existsSync(file)) continue;
+      const content = fs.readFileSync(file, 'utf-8');
+      if (content.length < 100) continue;
       await conversations.add(content, {
         tags: ['auto'],
         metadata: { session: dir, source: 'antigravity' },
       });
     }
   },
-
-  // Auto-reindex when new conversation logs appear
-  watchPatterns() {
-    return ['.gemini/antigravity/brain/**/overview.txt'];
-  },
-
-  async onFileChange(filePath: string) {
-    // re-index triggers on new conversation logs
-    return false;  // let initialize() handle the full re-scan
-  },
 } satisfies Indexer;
 ```
 
-Now `brainbank index` automatically picks up conversation logs alongside code and git:
-
 ```bash
-brainbank index
-# ━━━ BrainBank Index ━━━
-#   code: 500 files, 1200 chunks
-#   git:  200 commits
-#   conversations: 42 sessions indexed
-
+brainbank index   # now auto-indexes conversation logs alongside code + git
 brainbank kv search conversations "what did we decide about auth"
-# → session from 3 days ago with full discussion context
 ```
+
+### Examples
+
+| Example | Description | Run |
+|---------|-------------|-----|
+| [chatbot.ts](examples/chatbot.ts) | CLI chatbot with GPT-4.1-nano that remembers past sessions | `OPENAI_API_KEY=sk-... npx tsx examples/chatbot.ts` |
+| [collections.ts](examples/collections.ts) | Collections, search, tags, metadata linking | `npx tsx examples/collections.ts` |
 
 ---
 
