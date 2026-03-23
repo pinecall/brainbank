@@ -165,7 +165,7 @@ export interface DistilledStrategy {
 
 // ── Search Results ──────────────────────────────────
 
-export type SearchResultType = 'code' | 'commit' | 'pattern' | 'document';
+export type SearchResultType = 'code' | 'commit' | 'pattern' | 'document' | 'collection';
 
 export interface SearchResult {
     type: SearchResultType;

@@ -350,14 +350,15 @@ server.registerTool(
             query: z.string().describe('Search query — works with both keywords and natural language'),
             codeK: z.number().optional().default(8).describe('Max code results to return'),
             gitK: z.number().optional().default(5).describe('Max git commit results to return'),
+            collections: z.array(z.string()).optional().describe('KV collection names to include in search fusion (e.g. ["errors", "decisions"])'),
             repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ query, codeK, gitK, repo }) => {
+    async ({ query, codeK, gitK, collections, repo }) => {
         const t0 = performance.now();
         const brainbank = await getBrainBank(repo);
         const t1 = performance.now();
-        const results = await brainbank.hybridSearch(query, { codeK, gitK });
+        const results = await brainbank.hybridSearch(query, { codeK, gitK, collections });
         const t2 = performance.now();
 
         const timing = `\n\n⏱ getBrainBank: ${(t1 - t0).toFixed(0)}ms | hybridSearch: ${(t2 - t1).toFixed(0)}ms | total: ${(t2 - t0).toFixed(0)}ms`;
@@ -505,6 +506,11 @@ function formatResults(results: any[], mode: string): string {
         } else if (r.type === 'document') {
             const ctx = r.context ? ` — ${r.context}` : '';
             lines.push(`[DOC ${score}%] ${r.filePath} [${r.metadata.collection}]${ctx}`);
+            lines.push(r.content);
+            lines.push('');
+        } else if (r.type === 'collection') {
+            const col = r.metadata?.collection ?? 'unknown';
+            lines.push(`[COLLECTION ${score}%] [${col}]`);
             lines.push(r.content);
             lines.push('');
         }
