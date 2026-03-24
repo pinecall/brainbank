@@ -7,10 +7,10 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { BrainBank } from '../app/brain.ts';
-import { code } from '../indexers/code/plugin.ts';
-import { git } from '../indexers/git/plugin.ts';
-import { docs } from '../indexers/docs/plugin.ts';
+import { BrainBank } from '../app/brainbank.ts';
+import { code } from '../indexers/code/code-plugin.ts';
+import { git } from '../indexers/git/git-plugin.ts';
+import { docs } from '../indexers/docs/docs-plugin.ts';
 import type { Indexer } from '../indexers/base.ts';
 import { c, getFlag } from './utils.ts';
 

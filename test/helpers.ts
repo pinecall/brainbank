@@ -5,14 +5,14 @@
  * Import once at the top of each test file instead of per-spec.
  */
 
-import { BrainBank } from '../src/app/brain.ts';
+import { BrainBank } from '../src/app/brainbank.ts';
 import { Database } from '../src/db/database.ts';
-import { HNSWIndex } from '../src/providers/vector/hnsw.ts';
-import { BM25Search } from '../src/search/keyword/bm25.ts';
-import { NoteStore } from '../src/indexers/notes/engine.ts';
+import { HNSWIndex } from '../src/providers/vector/hnsw-index.ts';
+import { BM25Search } from '../src/search/keyword/bm25-search.ts';
+import { NoteStore } from '../src/indexers/notes/note-store.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai.ts';
 import { Collection } from '../src/app/collection.ts';
-import { CodeChunker } from '../src/indexers/code/chunker.ts';
+import { CodeChunker } from '../src/indexers/code/code-chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';
 import { reciprocalRankFusion } from '../src/search/rrf.ts';
@@ -27,10 +27,10 @@ import {
 } from '../src/indexers/languages.ts';
 
 // Plugins
-import { code } from '../src/indexers/code/plugin.ts';
-import { git } from '../src/indexers/git/plugin.ts';
-import { docs } from '../src/indexers/docs/plugin.ts';
-import { learning } from '../src/memory/plugin.ts';
+import { code } from '../src/indexers/code/code-plugin.ts';
+import { git } from '../src/indexers/git/git-plugin.ts';
+import { docs } from '../src/indexers/docs/docs-plugin.ts';
+import { learning } from '../src/memory/learning-plugin.ts';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 

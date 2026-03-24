@@ -8,7 +8,7 @@
 
 import type { Database } from '../db/database.ts';
 import type { EmbeddingProvider, LearningPattern } from '../types.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw.ts';
+import type { HNSWIndex } from '../providers/vector/hnsw-index.ts';
 
 export interface PatternStoreDeps {
     db: Database;

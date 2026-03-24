@@ -18,12 +18,12 @@
 
 // ── Public API ──────────────────────────────────────
 
-export { BrainBank } from './app/brain.ts';
+export { BrainBank } from './app/brainbank.ts';
 
 // Plugin factories
-export { code } from './indexers/code/plugin.ts';
-export { git } from './indexers/git/plugin.ts';
-export { docs } from './indexers/docs/plugin.ts';
+export { code } from './indexers/code/code-plugin.ts';
+export { git } from './indexers/git/git-plugin.ts';
+export { docs } from './indexers/docs/docs-plugin.ts';
 
 // Plugin types
 export type { Indexer, IndexerContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
@@ -65,25 +65,25 @@ export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 // ── Internals (for custom plugins & power users) ────
 
 // Vector indices
-export { HNSWIndex } from './providers/vector/hnsw.ts';
+export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';
 
 // Indexer implementations
-export { CodeChunker } from './indexers/code/chunker.ts';
-export { CodeIndexer } from './indexers/code/engine.ts';
-export { GitIndexer } from './indexers/git/engine.ts';
-export { DocsIndexer } from './indexers/docs/engine.ts';
+export { CodeChunker } from './indexers/code/code-chunker.ts';
+export { CodeIndexer } from './indexers/code/code-indexer.ts';
+export { GitIndexer } from './indexers/git/git-indexer.ts';
+export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Agent learning stores
 export { PatternStore } from './memory/pattern-store.ts';
 export { Consolidator } from './memory/consolidator.ts';
-export { NoteStore } from './indexers/notes/engine.ts';
-export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/engine.ts';
+export { NoteStore } from './indexers/notes/note-store.ts';
+export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/note-store.ts';
 
 // Search internals
-export { ContextBuilder } from './app/context.ts';
-export { MultiIndexSearch } from './search/vector/multi-index.ts';
-export { CoEditAnalyzer } from './indexers/git/co-edits.ts';
-export { BM25Search } from './search/keyword/bm25.ts';
+export { ContextBuilder } from './app/context-builder.ts';
+export { MultiIndexSearch } from './search/vector/multi-index-search.ts';
+export { CoEditAnalyzer } from './indexers/git/co-edit-analyzer.ts';
+export { BM25Search } from './search/keyword/bm25-search.ts';
 export { reciprocalRankFusion } from './search/rrf.ts';

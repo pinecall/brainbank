@@ -12,7 +12,7 @@
  */
 
 import * as fs from 'node:fs';
-import { BrainBank } from '../../../src/app/brain.ts';
+import { BrainBank } from '../../../src/app/brainbank.ts';
 import { LocalEmbedding } from '../../../src/providers/embeddings/local.ts';
 import type { Reranker } from '../../../src/types.ts';
 

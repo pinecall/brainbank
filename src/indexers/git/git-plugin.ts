@@ -13,9 +13,9 @@
  */
 
 import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
-import { GitIndexer } from './engine.ts';
-import { CoEditAnalyzer } from './co-edits.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import { GitIndexer } from './git-indexer.ts';
+import { CoEditAnalyzer } from './co-edit-analyzer.ts';
 import type { IndexResult, ProgressCallback, CoEditSuggestion } from '../../types.ts';
 
 export interface GitPluginOptions {

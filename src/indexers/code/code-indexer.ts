@@ -8,11 +8,11 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { CodeChunker } from './chunker.ts';
+import { CodeChunker } from './code-chunker.ts';
 import { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isIgnoredDir, isIgnoredFile } from '../languages.ts';
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, ProgressCallback, IndexResult } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
 
 export interface CodeIndexerDeps {
     db: Database;

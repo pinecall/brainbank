@@ -9,9 +9,9 @@
  */
 
 import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
-import { NoteStore } from './engine.ts';
-import type { NoteDigest, StoredNote, RecallOptions } from './engine.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import { NoteStore } from './note-store.ts';
+import type { NoteDigest, StoredNote, RecallOptions } from './note-store.ts';
 
 class NotesPlugin implements Indexer {
     readonly name = 'notes';

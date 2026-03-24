@@ -8,7 +8,7 @@
  * For multi-language benchmarks, run: npx tsx test/benchmark-chunker.ts
  */
 
-import { CodeChunker } from '../../../src/indexers/code/chunker.ts';
+import { CodeChunker } from '../../../src/indexers/code/code-chunker.ts';
 
 export const name = 'Tree-Sitter Chunker Integration';
 

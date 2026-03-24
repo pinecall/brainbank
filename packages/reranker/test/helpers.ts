@@ -2,8 +2,8 @@
  * @brainbank/reranker — Test Helpers
  * Re-exports from brainbank and provides test utilities.
  */
-import { BrainBank } from '../../../src/app/brain.ts';
-import { code } from '../../../src/indexers/code/plugin.ts';
+import { BrainBank } from '../../../src/app/brainbank.ts';
+import { code } from '../../../src/indexers/code/code-plugin.ts';
 
 // Simple hash-based embedding for testing (no real model needed)
 export function hashEmbedding(dims = 384) {
