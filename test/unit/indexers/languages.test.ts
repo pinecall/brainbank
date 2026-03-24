@@ -2,7 +2,7 @@
  * Unit Tests — Language Registry
  */
 
-import { isSupported, getLanguage, isIgnoredDir, isIgnoredFile, SUPPORTED_EXTENSIONS, IGNORE_DIRS } from '../../../src/indexers/support/languages.ts';
+import { isSupported, getLanguage, isIgnoredDir, isIgnoredFile, SUPPORTED_EXTENSIONS, IGNORE_DIRS } from '../../../src/indexers/languages.ts';
 
 export const name = 'Language Registry';
 
@@ -57,8 +57,10 @@ export const tests = {
         assert.ok(!isIgnoredDir('src'));
     },
 
-    'isIgnoredDir ignores dotfiles'(assert: any) {
-        assert.ok(isIgnoredDir('.hidden'));
+    'isIgnoredDir allows unlisted dotfile dirs'(assert: any) {
+        assert.ok(!isIgnoredDir('.hidden'), '.hidden is not in IGNORE_DIRS');
+        assert.ok(!isIgnoredDir('.github'), '.github should be indexable');
+        assert.ok(!isIgnoredDir('.husky'), '.husky should be indexable');
     },
 
     'isIgnoredFile ignores lockfiles'(assert: any) {

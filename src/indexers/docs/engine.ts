@@ -88,6 +88,8 @@ export class DocsIndexer {
             for (const e of entries) {
                 const rel = base ? `${base}/${e.name}` : e.name;
                 if (e.isDirectory()) {
+                    // Skip ignored directories (node_modules, .git, etc.)
+                    if (this._isIgnoredDocDir(e.name)) continue;
                     walkDir(path.join(dir, e.name), rel);
                 } else if (e.isFile()) {
                     const shouldIgnore = options.ignore?.some(ig => {
@@ -119,17 +121,27 @@ export class DocsIndexer {
             const content = fs.readFileSync(absPath, 'utf-8');
             const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
 
-            // Check if already indexed with same hash
-            const existing = this._db.prepare(
-                'SELECT id FROM doc_chunks WHERE collection = ? AND file_path = ? AND content_hash = ? LIMIT 1'
-            ).get(collection, relPath, hash) as any;
+            // Check if already indexed with same hash AND vectors exist
+            const existingChunks = this._db.prepare(
+                `SELECT dc.id, dc.content_hash, dv.chunk_id AS has_vector
+                 FROM doc_chunks dc
+                 LEFT JOIN doc_vectors dv ON dv.chunk_id = dc.id
+                 WHERE dc.collection = ? AND dc.file_path = ?`
+            ).all(collection, relPath) as any[];
 
-            if (existing) {
+            const allMatch = existingChunks.length > 0 &&
+                existingChunks.every((c: any) => c.content_hash === hash && c.has_vector != null);
+
+            if (allMatch) {
                 skipped++;
                 continue;
             }
 
-            // Remove old chunks for this file
+            // Remove old chunks + their HNSW vectors
+            for (const old of existingChunks) {
+                this._hnsw.remove(old.id);
+                this._vecCache.delete(old.id);
+            }
             this._db.prepare(
                 'DELETE FROM doc_chunks WHERE collection = ? AND file_path = ?'
             ).run(collection, relPath);
@@ -185,6 +197,15 @@ export class DocsIndexer {
      * Remove all indexed data for a collection.
      */
     removeCollection(collection: string): void {
+        // Clean HNSW entries before deleting DB rows
+        const chunks = this._db.prepare(
+            'SELECT id FROM doc_chunks WHERE collection = ?'
+        ).all(collection) as any[];
+        for (const chunk of chunks) {
+            this._hnsw.remove(chunk.id);
+            this._vecCache.delete(chunk.id);
+        }
+
         this._db.prepare('DELETE FROM doc_chunks WHERE collection = ?').run(collection);
         this._db.prepare('DELETE FROM collections WHERE name = ?').run(collection);
         this._db.prepare('DELETE FROM path_contexts WHERE collection = ?').run(collection);
@@ -304,5 +325,16 @@ export class DocsIndexer {
         const match = content.match(/^#{1,3}\s+(.+)$/m);
         if (match) return match[1].trim();
         return path.basename(filePath, path.extname(filePath));
+    }
+
+    /** Skip well-known output/vendor directories when walking docs. */
+    private _isIgnoredDocDir(name: string): boolean {
+        const IGNORED = new Set([
+            'node_modules', '.git', '.hg', '.svn',
+            'dist', 'build', 'out', 'coverage', '.next',
+            '__pycache__', '.tox', '.venv', 'venv',
+            'vendor', 'target', '.cache', '.turbo',
+        ]);
+        return IGNORED.has(name);
     }
 }

@@ -19,7 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { isSupported, isIgnoredDir, isIgnoredFile } from '../indexers/support/languages.ts';
+import { isSupported, isIgnoredDir, isIgnoredFile } from '../indexers/languages.ts';
 import type { Indexer } from '../indexers/base.ts';
 
 // ── Types ───────────────────────────────────────────
@@ -184,7 +184,9 @@ export function createWatcher(
     for (const watchPath of paths) {
         const resolved = path.resolve(watchPath);
         try {
-            const watcher = fs.watch(resolved, { recursive: true }, (_event, filename) => {
+            // { recursive: true } only works on macOS + Windows; Linux needs chokidar or per-dir watchers
+            const supportsRecursive = process.platform === 'darwin' || process.platform === 'win32';
+            const watcher = fs.watch(resolved, { recursive: supportsRecursive }, (_event, filename) => {
                 if (!active || !filename) return;
                 if (!shouldWatch(filename)) return;
 

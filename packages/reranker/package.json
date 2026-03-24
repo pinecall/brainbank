@@ -6,9 +6,14 @@
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "exports": {
-        ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
     },
-    "files": ["dist/"],
+    "files": [
+        "dist/"
+    ],
     "scripts": {
         "build": "tsup",
         "test": "node --import tsx test/integration/reranker.test.ts"
@@ -18,7 +23,9 @@
         "node-llama-cpp": "^3.18.1"
     },
     "peerDependenciesMeta": {
-        "node-llama-cpp": { "optional": true }
+        "node-llama-cpp": {
+            "optional": true
+        }
     },
     "repository": {
         "type": "git",

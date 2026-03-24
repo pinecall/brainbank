@@ -132,7 +132,7 @@ tests['search: HNSW finds refactoring commits'] = async () => {
 tests['co-edits: suggest returns related files'] = async () => {
     const assert = (await import('node:assert')).strict;
     const gitMod = brain.indexer('git') as any;
-    const suggestions = gitMod.suggest('src/auth.ts', 5);
+    const suggestions = gitMod.suggestCoEdits('src/auth.ts', 5);
 
     assert.ok(Array.isArray(suggestions), 'returns array');
     // auth.ts should suggest api.ts (co-edited together)
@@ -149,6 +149,82 @@ tests['stats: reports correct HNSW size'] = async () => {
     assert.ok(stats.git, 'git stats present');
     assert.ok(stats.git.commits >= 5, `${stats.git.commits} commits`);
     assert.ok(stats.git.hnswSize >= 5, `HNSW: ${stats.git.hnswSize} vectors`);
+};
+
+tests['index: additions/deletions are real line counts (not visual chars)'] = async () => {
+    const assert = (await import('node:assert')).strict;
+    const db = (brain as any)._db;
+    const commits = db.prepare(
+        'SELECT message, additions, deletions FROM git_commits WHERE is_merge = 0 ORDER BY timestamp ASC'
+    ).all() as any[];
+
+    // At least one commit should have additions > 0
+    const withAdditions = commits.filter((c: any) => c.additions > 0);
+    assert.ok(withAdditions.length > 0, 'some commits should have additions');
+
+    // The initial commit creates two files with real content — additions should be >= 2
+    const initial = commits[0];
+    assert.ok(initial.additions >= 2, `initial commit: additions=${initial.additions} should be >= 2`);
+
+    // No commit should have absurdly high counts from counting visual chars
+    for (const c of commits) {
+        assert.ok(c.additions < 1000, `additions=${c.additions} too high for commit: ${c.message}`);
+        assert.ok(c.deletions < 1000, `deletions=${c.deletions} too high for commit: ${c.message}`);
+    }
+};
+
+tests['index: commit_files correctly populated from --numstat'] = async () => {
+    const assert = (await import('node:assert')).strict;
+    const db = (brain as any)._db;
+    const files = db.prepare('SELECT * FROM commit_files').all() as any[];
+
+    // We have at least 5 commits, each touching at least 1 file
+    assert.ok(files.length >= 5, `commit_files: ${files.length} entries (expected >= 5)`);
+
+    // Check that file paths look reasonable
+    const paths = files.map((f: any) => f.file_path);
+    const hasSrcFiles = paths.some((p: string) => p.includes('src/'));
+    assert.ok(hasSrcFiles, 'should have src/ files tracked');
+};
+
+tests['fileHistory: returns commit history for a file'] = async () => {
+    const assert = (await import('node:assert')).strict;
+    const history = await brain.fileHistory('src/api.ts', 10);
+
+    assert.ok(Array.isArray(history), 'returns array');
+    // api.ts was modified in commits 1, 2, 3, 5 = at least 3 non-merge commits
+    assert.ok(history.length >= 2, `api.ts history: ${history.length} entries (expected >= 2)`);
+    assert.ok(history[0].short_hash, 'has short_hash');
+    assert.ok(history[0].message, 'has message');
+    assert.ok(typeof history[0].additions === 'number', 'has additions');
+    assert.ok(typeof history[0].deletions === 'number', 'has deletions');
+};
+
+tests['coEdits: throws before initialize'] = async () => {
+    const assert = (await import('node:assert')).strict;
+    const uninitBrain = new BrainBank({ repoPath: tmpDir, dbPath: path.join(tmpDir, 'uninit.db'), embeddingProvider: emb })
+        .use(git({ repoPath: tmpDir }));
+
+    let threw = false;
+    try {
+        uninitBrain.coEdits('src/api.ts');
+    } catch (e: any) {
+        threw = true;
+        assert.ok(e.message.includes('Not initialized'), `message: ${e.message}`);
+    }
+    assert.ok(threw, 'should throw before init');
+};
+
+tests['co-edits: auth.ts suggests api.ts'] = async () => {
+    const assert = (await import('node:assert')).strict;
+    const suggestions = brain.coEdits('src/auth.ts', 5);
+
+    assert.ok(Array.isArray(suggestions), 'returns array');
+    // auth.ts and api.ts were co-edited in commits 2 and 3
+    if (suggestions.length > 0) {
+        const files = suggestions.map((s: any) => s.file);
+        assert.ok(files.some((f: string) => f.includes('api.ts')), `co-edits should suggest api.ts, got: ${files}`);
+    }
 };
 
 tests['cleanup'] = async () => {

@@ -13,7 +13,7 @@ import type { Database } from '../db/database.ts';
 import type { EmbeddingProvider, Reranker } from '../types.ts';
 import type { HNSWIndex } from '../providers/vector/hnsw.ts';
 import { reciprocalRankFusion } from '../search/rrf.ts';
-import { sanitizeFTS, normalizeBM25 } from '../search/fts-utils.ts';
+import { sanitizeFTS, normalizeBM25 } from '../search/utils.ts';
 
 export interface CollectionItem {
     id: number;
@@ -61,7 +61,7 @@ export class Collection {
 
     /** Add an item. Returns its ID. */
     async add(content: string, options: CollectionAddOptions | Record<string, any> = {}): Promise<number> {
-        // Support legacy signature: add(content, metadata)
+        // Support both signatures: add(content, { metadata, tags, ttl }) and add(content, metadata)
         const opts = 'tags' in options || 'ttl' in options || 'metadata' in options
             ? options as CollectionAddOptions
             : { metadata: options as Record<string, any> };
@@ -70,13 +70,14 @@ export class Collection {
         const tags = opts.tags ?? [];
         const expiresAt = opts.ttl ? Math.floor(Date.now() / 1000) + parseDuration(opts.ttl) : null;
 
+        // Embed FIRST — if this throws, no orphaned rows are left in kv_data
+        const vec = await this._embedding.embed(content);
+
         const result = this._db.prepare(
             'INSERT INTO kv_data (collection, content, meta_json, tags_json, expires_at) VALUES (?, ?, ?, ?, ?)'
         ).run(this._name, content, JSON.stringify(metadata), JSON.stringify(tags), expiresAt);
 
         const id = Number(result.lastInsertRowid);
-
-        const vec = await this._embedding.embed(content);
         this._db.prepare(
             'INSERT INTO kv_vectors (data_id, embedding) VALUES (?, ?)'
         ).run(id, Buffer.from(vec.buffer));
@@ -89,14 +90,42 @@ export class Collection {
 
     /** Add multiple items. Returns their IDs. */
     async addMany(items: { content: string; metadata?: Record<string, any>; tags?: string[]; ttl?: string }[]): Promise<number[]> {
+        if (items.length === 0) return [];
+
+        // Batch embed all texts at once
+        const texts = items.map(i => i.content);
+        const vecs = await this._embedding.embedBatch(texts);
+
+        // Insert all in a single transaction
         const ids: number[] = [];
-        for (const item of items) {
-            ids.push(await this.add(item.content, {
-                metadata: item.metadata,
-                tags: item.tags,
-                ttl: item.ttl,
-            }));
-        }
+        const insertData = this._db.prepare(
+            'INSERT INTO kv_data (collection, content, meta_json, tags_json, expires_at) VALUES (?, ?, ?, ?, ?)'
+        );
+        const insertVec = this._db.prepare(
+            'INSERT INTO kv_vectors (data_id, embedding) VALUES (?, ?)'
+        );
+
+        this._db.transaction(() => {
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const expiresAt = item.ttl ? Math.floor(Date.now() / 1000) + parseDuration(item.ttl) : null;
+
+                const result = insertData.run(
+                    this._name,
+                    item.content,
+                    JSON.stringify(item.metadata ?? {}),
+                    JSON.stringify(item.tags ?? []),
+                    expiresAt,
+                );
+
+                const id = Number(result.lastInsertRowid);
+                insertVec.run(id, Buffer.from(vecs[i].buffer));
+                this._hnsw.add(vecs[i], id);
+                this._vecs.set(id, vecs[i]);
+                ids.push(id);
+            }
+        });
+
         return ids;
     }
 
@@ -225,8 +254,10 @@ export class Collection {
     // ── Private ──────────────────────────────────────
 
     private _removeById(id: number): void {
-        // Remove from HNSW + cache
+        // Remove from vector cache
         this._vecs.delete(id);
+        // Mark as deleted in HNSW (prevents ghost entries in search)
+        this._hnsw.remove(id);
         // Remove from DB (cascades to kv_vectors, FTS trigger handles fts_kv)
         this._db.prepare('DELETE FROM kv_data WHERE id = ?').run(id);
     }
@@ -235,8 +266,15 @@ export class Collection {
         if (this._hnsw.size === 0) return [];
 
         const queryVec = await this._embedding.embed(query);
-        // Search across all collections in HNSW, then filter
-        const hits = this._hnsw.search(queryVec, k * 3);
+        // Scale search by HNSW-to-collection ratio to ensure enough candidates
+        // when many collections share the same HNSW index
+        const now = Math.floor(Date.now() / 1000);
+        const collectionCount = (this._db.prepare(
+            'SELECT COUNT(*) as c FROM kv_data WHERE collection = ? AND (expires_at IS NULL OR expires_at > ?)'
+        ).get(this._name, now) as any)?.c ?? 0;
+        const ratio = collectionCount > 0 ? Math.max(3, Math.min(50, Math.ceil(this._hnsw.size / collectionCount))) : 3;
+        const searchK = Math.min(k * ratio, this._hnsw.size);
+        const hits = this._hnsw.search(queryVec, searchK);
 
         const ids = hits.map(h => h.id);
         if (ids.length === 0) return [];

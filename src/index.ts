@@ -21,9 +21,9 @@
 export { BrainBank } from './app/brain.ts';
 
 // Plugin factories
-export { code } from './indexers/code-indexer.ts';
-export { git } from './indexers/git-indexer.ts';
-export { docs } from './indexers/docs-indexer.ts';
+export { code } from './indexers/code/plugin.ts';
+export { git } from './indexers/git/plugin.ts';
+export { docs } from './indexers/docs/plugin.ts';
 
 // Plugin types
 export type { Indexer, IndexerContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
@@ -40,7 +40,7 @@ export type {
     VectorIndex, SearchHit,
     CodeChunk,
     GitCommitRecord,
-    LearningPattern, MemoryPattern, DistilledStrategy,
+    LearningPattern, DistilledStrategy,
     SearchResult, SearchResultType,
     CodeResult, CommitResult, PatternResult, DocumentResult, CollectionResult,
     CodeResultMetadata, CommitResultMetadata, PatternResultMetadata, DocumentResultMetadata,
@@ -69,21 +69,21 @@ export { HNSWIndex } from './providers/vector/hnsw.ts';
 export { searchMMR } from './search/mmr.ts';
 
 // Indexer implementations
-export { CodeChunker } from './indexers/support/chunker.ts';
-export { CodeIndexer } from './indexers/support/code-engine.ts';
-export { GitIndexer } from './indexers/support/git-engine.ts';
-export { DocsIndexer } from './indexers/support/docs-engine.ts';
-export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/support/languages.ts';
+export { CodeChunker } from './indexers/code/chunker.ts';
+export { CodeIndexer } from './indexers/code/engine.ts';
+export { GitIndexer } from './indexers/git/engine.ts';
+export { DocsIndexer } from './indexers/docs/engine.ts';
+export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Agent learning stores
-export { PatternStore } from './models/pattern-store.ts';
-export { Consolidator } from './services/consolidator.ts';
-export { NoteStore } from './models/note-store.ts';
-export type { NoteDigest, StoredNote, RecallOptions } from './models/note-store.ts';
+export { PatternStore } from './indexers/learning/engine.ts';
+export { Consolidator } from './indexers/learning/consolidator.ts';
+export { NoteStore } from './indexers/notes/engine.ts';
+export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/engine.ts';
 
 // Search internals
-export { ContextBuilder } from './search/context-builder.ts';
-export { MultiIndexSearch } from './search/multi-index.ts';
-export { CoEditAnalyzer } from './indexers/support/co-edits.ts';
+export { ContextBuilder } from './app/context.ts';
+export { MultiIndexSearch } from './search/engine.ts';
+export { CoEditAnalyzer } from './indexers/git/co-edits.ts';
 export { BM25Search } from './search/bm25.ts';
 export { reciprocalRankFusion } from './search/rrf.ts';

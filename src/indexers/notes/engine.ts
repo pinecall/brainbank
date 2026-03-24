@@ -10,12 +10,12 @@
  *   - "long":  Compressed to patterns + decisions only
  */
 
-import type { Database } from '../db/database.ts';
-import type { EmbeddingProvider, SearchResult } from '../types.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw.ts';
-import { BM25Search } from '../search/bm25.ts';
-import { reciprocalRankFusion } from '../search/rrf.ts';
-import { sanitizeFTS } from '../search/fts-utils.ts';
+import type { Database } from '../../db/database.ts';
+import type { EmbeddingProvider, SearchResult } from '../../types.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import { BM25Search } from '../../search/bm25.ts';
+import { reciprocalRankFusion } from '../../search/rrf.ts';
+import { sanitizeFTS, normalizeBM25 } from '../../search/utils.ts';
 
 export interface NoteDigest {
     title: string;
@@ -242,7 +242,7 @@ export class NoteStore {
 
             return rows.map(r => ({
                 ...this._rowToNote(r),
-                score: 1.0 / (1.0 + Math.exp(-0.3 * (Math.abs(r.score) - 5))),
+                score: normalizeBM25(r.score),
             }));
         } catch {
             return [];

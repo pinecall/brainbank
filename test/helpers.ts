@@ -9,10 +9,10 @@ import { BrainBank } from '../src/app/brain.ts';
 import { Database } from '../src/db/database.ts';
 import { HNSWIndex } from '../src/providers/vector/hnsw.ts';
 import { BM25Search } from '../src/search/bm25.ts';
-import { NoteStore } from '../src/models/note-store.ts';
+import { NoteStore } from '../src/indexers/notes/engine.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai.ts';
 import { Collection } from '../src/app/collection.ts';
-import { CodeChunker } from '../src/indexers/support/chunker.ts';
+import { CodeChunker } from '../src/indexers/code/chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';
 import { reciprocalRankFusion } from '../src/search/rrf.ts';
@@ -24,13 +24,13 @@ import {
 import {
     getLanguage, isSupported, isIgnoredDir, isIgnoredFile,
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,
-} from '../src/indexers/support/languages.ts';
+} from '../src/indexers/languages.ts';
 
 // Plugins
-import { code } from '../src/indexers/code-indexer.ts';
-import { git } from '../src/indexers/git-indexer.ts';
-import { docs } from '../src/indexers/docs-indexer.ts';
-import { learning } from '../src/indexers/learning-indexer.ts';
+import { code } from '../src/indexers/code/plugin.ts';
+import { git } from '../src/indexers/git/plugin.ts';
+import { docs } from '../src/indexers/docs/plugin.ts';
+import { learning } from '../src/indexers/learning/plugin.ts';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 
@@ -117,6 +117,7 @@ export {
     git,
     docs,
     learning,
+    learning as memory,
 };
 
 export type { EmbeddingProvider, Reranker };

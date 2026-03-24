@@ -158,7 +158,7 @@ export function getLanguage(filePath: string): string | undefined {
 
 /** Check if a directory name should be ignored. */
 export function isIgnoredDir(dirName: string): boolean {
-    return IGNORE_DIRS.has(dirName) || dirName.startsWith('.');
+    return IGNORE_DIRS.has(dirName);
 }
 
 /** Check if a filename should be ignored. */

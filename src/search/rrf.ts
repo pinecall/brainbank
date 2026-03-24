@@ -79,7 +79,7 @@ function resultKey(r: SearchResult): string {
         case 'pattern':
             return `pattern:${r.metadata.taskType}:${r.content?.slice(0, 60)}`;
         case 'document':
-            return `document:${r.filePath ?? ''}:${(r.metadata as any).seq ?? r.content?.slice(0, 80)}`;
+            return `document:${r.filePath ?? ''}:${(r.metadata as any).collection ?? ''}:${(r.metadata as any).seq ?? ''}:${r.content?.slice(0, 80)}`;
         case 'collection':
             return `collection:${(r.metadata as any).id ?? r.content?.slice(0, 80)}`;
     }

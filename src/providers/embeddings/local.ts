@@ -20,22 +20,34 @@ export class LocalEmbedding implements EmbeddingProvider {
         this._cacheDir = options.cacheDir ?? '.model-cache';
     }
 
+    private _pipelinePromise: Promise<any> | null = null;
+
     /**
      * Lazy-load the transformer pipeline.
      * Singleton — created once and reused.
+     * Promise-deduped to prevent concurrent downloads.
      */
     private async _getPipeline(): Promise<any> {
         if (this._pipeline) return this._pipeline;
+        if (this._pipelinePromise) return this._pipelinePromise;
 
-        const { pipeline, env } = await import('@xenova/transformers' as any);
-        env.cacheDir = this._cacheDir;
-        env.allowLocalModels = true;
+        this._pipelinePromise = (async () => {
+            const { pipeline, env } = await import('@xenova/transformers' as any);
+            env.cacheDir = this._cacheDir;
+            env.allowLocalModels = true;
 
-        this._pipeline = await pipeline('feature-extraction', this._modelName, {
-            quantized: true,
-        });
+            this._pipeline = await pipeline('feature-extraction', this._modelName, {
+                quantized: true,
+            });
 
-        return this._pipeline;
+            return this._pipeline;
+        })();
+
+        try {
+            return await this._pipelinePromise;
+        } finally {
+            this._pipelinePromise = null;
+        }
     }
 
     /**

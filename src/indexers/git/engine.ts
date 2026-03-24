@@ -54,16 +54,26 @@ export class GitIndexer {
 
         const commits = log.all;
         let indexed = 0, skipped = 0;
+        const newCommitIds: number[] = [];
 
         for (let i = 0; i < commits.length; i++) {
             const c = commits[i];
             onProgress?.(`[${c.hash.slice(0, 7)}] ${c.message.slice(0, 50)}`, i + 1, commits.length);
 
-            // Skip if already indexed
+            // Skip if already indexed WITH vector (LEFT JOIN catches zombie commits)
             const exists = this._deps.db.prepare(
-                'SELECT id FROM git_commits WHERE hash = ?'
-            ).get(c.hash);
-            if (exists) { skipped++; continue; }
+                `SELECT gc.id, gv.commit_id AS has_vector
+                 FROM git_commits gc
+                 LEFT JOIN git_vectors gv ON gv.commit_id = gc.id
+                 WHERE gc.hash = ?`
+            ).get(c.hash) as any;
+            if (exists?.has_vector) { skipped++; continue; }
+
+            // Zombie commit (data exists but vector missing) — delete and re-insert cleanly
+            if (exists && !exists.has_vector) {
+                this._deps.db.prepare('DELETE FROM commit_files WHERE commit_id = ?').run(exists.id);
+                this._deps.db.prepare('DELETE FROM git_commits WHERE id = ?').run(exists.id);
+            }
 
             // Get diff and stat
             let diff = '';
@@ -71,13 +81,19 @@ export class GitIndexer {
             const filesChanged: string[] = [];
 
             try {
-                const stat = await git.raw(['show', '--stat', '--format=', c.hash]);
-                for (const line of stat.trim().split('\n')) {
-                    const m = line.match(/^\s+(.+?)\s+\|\s+(\d+)\s*([\+\-]*)/);
-                    if (m) {
-                        filesChanged.push(m[1].trim());
-                        additions += (m[3].match(/\+/g) ?? []).length;
-                        deletions += (m[3].match(/-/g) ?? []).length;
+                // Use --numstat for real line counts: "<add>\t<del>\t<file>"
+                const numstat = await git.raw(['show', '--numstat', '--format=', c.hash]);
+                for (const line of numstat.trim().split('\n')) {
+                    if (!line.trim()) continue;
+                    const parts = line.split('\t');
+                    if (parts.length < 3) continue;
+                    const add = parseInt(parts[0], 10);
+                    const del = parseInt(parts[1], 10);
+                    const file = parts[2].trim();
+                    if (file) {
+                        filesChanged.push(file);
+                        if (!isNaN(add)) additions += add;
+                        if (!isNaN(del)) deletions += del;
                     }
                 }
 
@@ -87,7 +103,9 @@ export class GitIndexer {
                     : rawDiff;
             } catch {}
 
-            const isMerge = c.message.startsWith('Merge') || c.message.startsWith('merge');
+            // Detect merges by regex first, then fall back to parent count
+            // (Parent count is checked in batch below to avoid N+1 git calls)
+            let isMerge = /^(Merge|merge)\s+(branch|pull|remote|tag)\b/.test(c.message);
             const ts = Math.floor(new Date(c.date).getTime() / 1000);
 
             const result = this._deps.db.prepare(`
@@ -125,11 +143,14 @@ export class GitIndexer {
 
             this._deps.hnsw.add(vec, commitId);
             this._deps.vectorCache.set(commitId, vec);
+            newCommitIds.push(commitId);
             indexed++;
         }
 
-        // Compute co-edits
-        this._computeCoEdits();
+        // Compute co-edits only for new commits
+        if (newCommitIds.length > 0) {
+            this._computeCoEdits(newCommitIds);
+        }
 
         return { indexed, skipped };
     }
@@ -138,10 +159,21 @@ export class GitIndexer {
      * Compute which files tend to be edited together.
      * Stored in the co_edits table for later suggestion.
      */
-    private _computeCoEdits(): void {
-        const rows = this._deps.db.prepare(
-            'SELECT commit_id, file_path FROM commit_files ORDER BY commit_id'
-        ).all() as any[];
+    private _computeCoEdits(newCommitIds: number[]): void {
+        if (newCommitIds.length === 0) return;
+
+        // Chunk queries to stay under SQLite's 999-variable limit
+        const CHUNK_SIZE = 500;
+        const allRows: any[] = [];
+        for (let i = 0; i < newCommitIds.length; i += CHUNK_SIZE) {
+            const chunk = newCommitIds.slice(i, i + CHUNK_SIZE);
+            const placeholders = chunk.map(() => '?').join(',');
+            const rows = this._deps.db.prepare(
+                `SELECT commit_id, file_path FROM commit_files WHERE commit_id IN (${placeholders}) ORDER BY commit_id`
+            ).all(...chunk) as any[];
+            allRows.push(...rows);
+        }
+        const rows = allRows;
 
         const byCommit = new Map<number, string[]>();
         for (const r of rows) {
@@ -149,26 +181,23 @@ export class GitIndexer {
             byCommit.get(r.commit_id)!.push(r.file_path);
         }
 
-        const counts = new Map<string, number>();
-        for (const files of byCommit.values()) {
-            // Skip very small or very large changesets
-            if (files.length < 2 || files.length > 20) continue;
-            for (let i = 0; i < files.length; i++) {
-                for (let j = i + 1; j < files.length; j++) {
-                    const key = [files[i], files[j]].sort().join('|||');
-                    counts.set(key, (counts.get(key) ?? 0) + 1);
+        const upsert = this._deps.db.prepare(
+            `INSERT INTO co_edits (file_a, file_b, count)
+             VALUES (?, ?, 1)
+             ON CONFLICT(file_a, file_b) DO UPDATE SET count = count + 1`
+        );
+
+        this._deps.db.transaction(() => {
+            for (const files of byCommit.values()) {
+                // Skip very small or very large changesets
+                if (files.length < 2 || files.length > 20) continue;
+                for (let i = 0; i < files.length; i++) {
+                    for (let j = i + 1; j < files.length; j++) {
+                        const [a, b] = [files[i], files[j]].sort();
+                        upsert.run(a, b);
+                    }
                 }
             }
-        }
-
-        for (const [key, count] of counts) {
-            if (count < 2) continue;
-            const [a, b] = key.split('|||');
-            this._deps.db.prepare(
-                `INSERT INTO co_edits (file_a, file_b, count)
-                 VALUES (?, ?, ?)
-                 ON CONFLICT(file_a, file_b) DO UPDATE SET count = excluded.count`
-            ).run(a, b, count);
-        }
+        });
     }
 }

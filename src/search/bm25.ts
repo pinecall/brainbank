@@ -8,7 +8,7 @@
 
 import type { Database } from '../db/database.ts';
 import type { SearchResult } from '../types.ts';
-import { sanitizeFTS, normalizeBM25 } from './fts-utils.ts';
+import { sanitizeFTS, normalizeBM25 } from './utils.ts';
 
 export interface BM25Options {
     /** Max code results. Default: 8 */

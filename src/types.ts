@@ -156,9 +156,6 @@ export interface LearningPattern {
     latencyMs?: number;
 }
 
-/** @deprecated Use LearningPattern instead */
-export type MemoryPattern = LearningPattern;
-
 export interface DistilledStrategy {
     taskType: string;
     strategy: string;

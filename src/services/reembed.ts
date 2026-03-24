@@ -50,9 +50,15 @@ const TABLES: ReembedTable[] = [
         vectorTable: 'git_vectors',
         idColumn: 'id',
         fkColumn: 'commit_id',
+        // Must match git-engine.ts:119-125 exactly
         textBuilder: (r) => [
-            r.message,
-            r.diff ?? '',
+            `Commit: ${r.message}`,
+            `Author: ${r.author}`,
+            `Date: ${r.date}`,
+            r.files_json && r.files_json !== '[]'
+                ? `Files: ${JSON.parse(r.files_json).join(', ')}`
+                : '',
+            r.diff ? `Changes:\n${r.diff.slice(0, 2000)}` : '',
         ].filter(Boolean).join('\n'),
     },
     {
@@ -61,12 +67,8 @@ const TABLES: ReembedTable[] = [
         vectorTable: 'memory_vectors',
         idColumn: 'id',
         fkColumn: 'pattern_id',
-        textBuilder: (r) => [
-            r.task_type,
-            r.task,
-            r.approach,
-            r.outcome ?? '',
-        ].filter(Boolean).join('\n'),
+        // Must match learning/engine.ts:49 exactly
+        textBuilder: (r) => `${r.task_type} ${r.task} ${r.approach}`,
     },
     {
         name: 'notes',
@@ -74,12 +76,12 @@ const TABLES: ReembedTable[] = [
         vectorTable: 'note_vectors',
         idColumn: 'id',
         fkColumn: 'note_id',
-        textBuilder: (r) => [
-            r.title,
-            r.summary,
-            r.decisions_json !== '[]' ? `Decisions: ${r.decisions_json}` : '',
-            r.tags_json !== '[]' ? `Tags: ${r.tags_json}` : '',
-        ].filter(Boolean).join('\n'),
+        // Must match notes/engine.ts:90 exactly
+        textBuilder: (r) => {
+            const decisions = (JSON.parse(r.decisions_json || '[]') as string[]).join('. ');
+            const patterns  = (JSON.parse(r.patterns_json  || '[]') as string[]).join('. ');
+            return `${r.title}\n${r.summary}\n${decisions}\n${patterns}`;
+        },
     },
     {
         name: 'docs',
@@ -87,10 +89,8 @@ const TABLES: ReembedTable[] = [
         vectorTable: 'doc_vectors',
         idColumn: 'id',
         fkColumn: 'chunk_id',
-        textBuilder: (r) => [
-            r.title ? `# ${r.title}` : '',
-            r.content,
-        ].filter(Boolean).join('\n'),
+        // Must match docs-engine.ts:160 exactly
+        textBuilder: (r) => `title: ${r.title ?? ''} | text: ${r.content}`,
     },
     {
         name: 'kv',
@@ -181,38 +181,44 @@ async function reembedTable(
     batchSize: number,
     onProgress?: ProgressCallback,
 ): Promise<number> {
-    const rows = db.prepare(
-        `SELECT * FROM ${table.textTable}`
-    ).all() as any[];
+    // Use pagination to avoid OOM on large tables
+    const totalCount = (db.prepare(
+        `SELECT COUNT(*) as c FROM ${table.textTable}`
+    ).get() as any).c;
 
-    if (rows.length === 0) return 0;
+    if (totalCount === 0) return 0;
 
-    // Clear existing vectors
-    db.prepare(`DELETE FROM ${table.vectorTable}`).run();
+    // Generate ALL new vectors first, before touching the database.
+    // This prevents data loss if embedBatch() fails partway through.
+    const allNewVectors: { id: number; vec: Float32Array }[] = [];
 
+    let processed = 0;
+    for (let offset = 0; offset < totalCount; offset += batchSize) {
+        const batch = db.prepare(
+            `SELECT * FROM ${table.textTable} LIMIT ? OFFSET ?`
+        ).all(batchSize, offset) as any[];
+        const texts = batch.map((r: any) => table.textBuilder(r));
+        const vectors = await embedding.embedBatch(texts);
+
+        for (let j = 0; j < batch.length; j++) {
+            allNewVectors.push({ id: batch[j][table.idColumn], vec: vectors[j] });
+        }
+
+        processed += batch.length;
+        onProgress?.(table.name, processed, totalCount);
+    }
+
+    // All embeddings succeeded — now atomically swap old → new
     const insertVec = db.prepare(
         `INSERT INTO ${table.vectorTable} (${table.fkColumn}, embedding) VALUES (?, ?)`
     );
 
-    let processed = 0;
-
-    // Process in batches
-    for (let i = 0; i < rows.length; i += batchSize) {
-        const batch = rows.slice(i, i + batchSize);
-        const texts = batch.map(r => table.textBuilder(r));
-        const vectors = await embedding.embedBatch(texts);
-
-        db.transaction(() => {
-            for (let j = 0; j < batch.length; j++) {
-                const id = batch[j][table.idColumn];
-                const vec = vectors[j];
-                insertVec.run(id, Buffer.from(vec.buffer));
-            }
-        });
-
-        processed += batch.length;
-        onProgress?.(table.name, processed, rows.length);
-    }
+    db.transaction(() => {
+        db.prepare(`DELETE FROM ${table.vectorTable}`).run();
+        for (const { id, vec } of allNewVectors) {
+            insertVec.run(id, Buffer.from(vec.buffer));
+        }
+    });
 
     return processed;
 }
@@ -233,7 +239,8 @@ async function rebuildHnsw(
     ).all() as any[];
 
     for (const row of rows) {
-        const vec = new Float32Array(new Uint8Array(row.embedding).buffer);
+        const buf = Buffer.from(row.embedding);
+        const vec = new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
         hnsw.add(vec, row.id);
         vecs.set(row.id, vec);
     }

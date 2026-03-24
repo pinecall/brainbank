@@ -39,7 +39,6 @@ export class OpenAIEmbedding implements EmbeddingProvider {
     private _model: string;
     private _baseUrl: string;
     private _requestDims: number | undefined;
-    private _retrying = false;
 
     constructor(options: OpenAIEmbeddingOptions = {}) {
         this._apiKey = options.apiKey ?? process.env.OPENAI_API_KEY ?? '';
@@ -85,7 +84,7 @@ export class OpenAIEmbedding implements EmbeddingProvider {
                errText.includes('too many tokens');
     }
 
-    private async _request(input: string[]): Promise<Float32Array[]> {
+    private async _request(input: string[], retryDepth: number = 0): Promise<Float32Array[]> {
         if (!this._apiKey) {
             throw new Error('OpenAI API key required. Set OPENAI_API_KEY env var or pass apiKey option.');
         }
@@ -125,14 +124,9 @@ export class OpenAIEmbedding implements EmbeddingProvider {
                 }
                 return results;
             }
-            // Last resort: if single item still fails, truncate to ~2k tokens
-            if (isTokenLimit && safeInput.length === 1 && !this._retrying) {
-                this._retrying = true;
-                try {
-                    return await this._request([safeInput[0].slice(0, 6_000)]);
-                } finally {
-                    this._retrying = false;
-                }
+            // Last resort: if single item still fails, truncate to ~2k tokens (max 1 retry)
+            if (isTokenLimit && safeInput.length === 1 && retryDepth < 1) {
+                return await this._request([safeInput[0].slice(0, 6_000)], retryDepth + 1);
             }
             throw new Error(`OpenAI embedding API error (${res.status}): ${err}`);
         }

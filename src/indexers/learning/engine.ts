@@ -6,9 +6,9 @@
  * Searchable by semantic similarity via HNSW.
  */
 
-import type { Database } from '../db/database.ts';
-import type { EmbeddingProvider, MemoryPattern } from '../types.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw.ts';
+import type { Database } from '../../db/database.ts';
+import type { EmbeddingProvider, LearningPattern } from '../../types.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
 
 export interface PatternStoreDeps {
     db: Database;
@@ -28,7 +28,7 @@ export class PatternStore {
      * Store a learned pattern.
      * Returns the pattern ID.
      */
-    async learn(pattern: MemoryPattern): Promise<number> {
+    async learn(pattern: LearningPattern): Promise<number> {
         const result = this._deps.db.prepare(`
             INSERT INTO memory_patterns (task_type, task, approach, outcome, success_rate, critique, tokens_used, latency_ms)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -63,7 +63,7 @@ export class PatternStore {
      * Search for similar successful patterns.
      * Filters by minimum success rate.
      */
-    async search(query: string, k: number = 4, minSuccess: number = 0.5): Promise<(MemoryPattern & { score: number })[]> {
+    async search(query: string, k: number = 4, minSuccess: number = 0.5): Promise<(LearningPattern & { score: number })[]> {
         if (this._deps.hnsw.size === 0) return [];
 
         const vec = await this._deps.embedding.embed(query);
@@ -99,7 +99,7 @@ export class PatternStore {
     /**
      * Get all patterns for a specific task type.
      */
-    getByTaskType(taskType: string, limit: number = 20): MemoryPattern[] {
+    getByTaskType(taskType: string, limit: number = 20): LearningPattern[] {
         const rows = this._deps.db.prepare(
             `SELECT * FROM memory_patterns WHERE task_type = ? ORDER BY success_rate DESC LIMIT ?`
         ).all(taskType, limit) as any[];

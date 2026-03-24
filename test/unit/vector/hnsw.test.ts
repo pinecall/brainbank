@@ -118,4 +118,29 @@ export const tests = {
         assert.equal(results[0].id, 1);
         assert.gt(results[0].score, 0.95, 'should match new vector');
     },
+
+    async 'remove marks vector as deleted from search'(assert: any) {
+        const idx = await new HNSWIndex(16, 100).init();
+        idx.add(vec(16, 1), 1);
+        idx.add(vec(16, 2), 2);
+        idx.add(vec(16, 3), 3);
+        assert.equal(idx.size, 3);
+
+        // Remove ID 2
+        idx.remove(2);
+        assert.equal(idx.size, 2, 'size decremented after remove');
+
+        // Search should not return ID 2
+        const hits = idx.search(vec(16, 2), 10);
+        const ids = hits.map((h: any) => h.id);
+        assert(!ids.includes(2), 'removed ID should not appear in results');
+    },
+
+    async 'remove nonexistent ID is safe'(assert: any) {
+        const idx = await new HNSWIndex(16, 100).init();
+        idx.add(vec(16, 1), 1);
+        // Should not throw
+        idx.remove(999);
+        assert.equal(idx.size, 1, 'size unchanged for nonexistent ID');
+    },
 };

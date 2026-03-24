@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs';
 import { BrainBank } from '../../../src/app/brain.ts';
-import { docs } from '../../../src/indexers/docs-indexer.ts';
+import { docs } from '../../../src/indexers/docs/plugin.ts';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 
 export const name = 'BrainBank Orchestrator';
@@ -224,16 +224,17 @@ export const tests = {
         cleanup(db);
     },
 
-    async 'backward compat: .modules and .module() still work'(assert: any) {
+    async 'indexer() resolves aliases (memory → learning)'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
             .use(docs());
         await brain.initialize();
 
-        // .modules is deprecated alias for .indexers
-        assert.deepEqual(brain.modules, brain.indexers);
-        // .module() is deprecated alias for .indexer()
-        assert.equal(brain.module('docs'), brain.indexer('docs'));
+        // .indexers returns registered names
+        assert.deepEqual(brain.indexers, ['docs']);
+        // .has() and .indexer() work
+        assert.ok(brain.has('docs'));
+        assert.ok(brain.indexer('docs'));
 
         brain.close();
         cleanup(db);

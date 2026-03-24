@@ -1,7 +1,7 @@
 /**
  * @brainbank/memory — Test Helpers
- * Re-exports from brainbank and provides test utilities.
+ * Re-exports from brainbank using relative path (no npm link needed).
  */
-import { BrainBank } from 'brainbank';
+import { BrainBank } from '../../../src/app/brain.ts';
 
 export { BrainBank };

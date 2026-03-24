@@ -22,11 +22,12 @@ import { resolveConfig } from '../config/defaults.ts';
 import { Database } from '../db/database.ts';
 import { HNSWIndex } from '../providers/vector/hnsw.ts';
 import { LocalEmbedding } from '../providers/embeddings/local.ts';
-import { MultiIndexSearch } from '../search/multi-index.ts';
+import { MultiIndexSearch } from '../search/engine.ts';
 import { BM25Search } from '../search/bm25.ts';
 import { reciprocalRankFusion } from '../search/rrf.ts';
-import { ContextBuilder } from '../search/context-builder.ts';
+import { ContextBuilder } from './context.ts';
 import { Collection } from './collection.ts';
+import { IndexerRegistry } from './registry.ts';
 import { reembedAll, setEmbeddingMeta, detectProviderMismatch } from '../services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '../services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '../services/reembed.ts';
@@ -42,7 +43,7 @@ export class BrainBank extends EventEmitter {
     private _config: ResolvedConfig;
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
-    private _modules = new Map<string, Indexer>();
+    private _registry = new IndexerRegistry();
 
     // Cross-module search (created if code/git/memory are present)
     private _search?: MultiIndexSearch;
@@ -50,6 +51,7 @@ export class BrainBank extends EventEmitter {
     private _contextBuilder?: ContextBuilder;
 
     private _initialized = false;
+    private _initPromise: Promise<void> | null = null;
     private _watcher?: Watcher;
 
     // Collections
@@ -69,73 +71,43 @@ export class BrainBank extends EventEmitter {
 
     /**
      * Register an indexer. Chainable.
-     * 
+     *
      *   brain.use(code({ repoPath: '.' })).use(docs());
      */
     use(indexer: Indexer): this {
         if (this._initialized) {
             throw new Error(
                 `BrainBank: Cannot add indexer '${indexer.name}' after initialization. ` +
-                `Call .use() before any operations.`
+                `Call .use() before any operations.`,
             );
         }
-        this._modules.set(indexer.name, indexer);
+        this._registry.register(indexer);
         return this;
     }
 
     /** Get the list of registered indexer names. */
     get indexers(): string[] {
-        return [...this._modules.keys()];
-    }
-
-    /** @deprecated Use .indexers instead. */
-    get modules(): string[] {
-        return this.indexers;
+        return this._registry.names;
     }
 
     /** Check if an indexer is loaded. Also matches type prefix (e.g. 'code' matches 'code:frontend'). */
     has(name: string): boolean {
-        if (this._modules.has(name)) return true;
-        // Check if any module starts with this type prefix
-        for (const key of this._modules.keys()) {
-            if (key.startsWith(name + ':')) return true;
-        }
-        return false;
+        return this._registry.has(name);
     }
 
     /** Get an indexer instance. Throws if not loaded. */
     indexer<T extends Indexer = Indexer>(name: string): T {
-        const mod = this._modules.get(name);
-        if (!mod) {
-            // Fall back to finding by type prefix
-            const first = this._findFirstByType(name);
-            if (first) return first as T;
-            throw new Error(
-                `BrainBank: Indexer '${name}' is not loaded. ` +
-                `Add .use(${name}()) to your BrainBank instance.`
-            );
-        }
-        return mod as T;
-    }
-
-    /** @deprecated Use .indexer() instead. */
-    module(name: string): Indexer {
-        return this.indexer(name);
+        return this._registry.get<T>(name);
     }
 
     /** Find all indexers whose name equals or starts with the type prefix. */
     private _findAllByType(type: string): Indexer[] {
-        return [...this._modules.values()].filter(
-            m => m.name === type || m.name.startsWith(type + ':')
-        );
+        return this._registry.allByType(type);
     }
 
     /** Find the first indexer that matches the type. */
     private _findFirstByType(type: string): Indexer | undefined {
-        for (const m of this._modules.values()) {
-            if (m.name === type || m.name.startsWith(type + ':')) return m;
-        }
-        return undefined;
+        return this._registry.firstByType(type);
     }
 
     // ── Initialization ──────────────────────────────
@@ -147,6 +119,28 @@ export class BrainBank extends EventEmitter {
      */
     async initialize(): Promise<void> {
         if (this._initialized) return;
+        if (this._initPromise) return this._initPromise;
+
+        this._initPromise = this._runInitialize()
+            .catch(err => {
+                // Reset shared state so retry starts clean (no duplicate HNSW vectors)
+                for (const { hnsw } of this._sharedHnsw.values()) {
+                    try { hnsw.reinit(); } catch {}
+                }
+                this._kvVecs.clear();
+                if (this._kvHnsw) {
+                    try { this._kvHnsw.reinit(); } catch {}
+                }
+                throw err;
+            })
+            .finally(() => {
+                this._initPromise = null;
+            });
+        return this._initPromise;
+    }
+
+    private async _runInitialize(): Promise<void> {
+        if (this._initialized) return;
 
         const config = this._config;
 
@@ -155,6 +149,22 @@ export class BrainBank extends EventEmitter {
 
         // Embedding provider (needed for modules and collections)
         this._embedding = config.embeddingProvider ?? new LocalEmbedding();
+
+        // Track embedding provider metadata (must come before mismatch check)
+        setEmbeddingMeta(this._db, this._embedding);
+
+        // Check for provider mismatch BEFORE loading vectors
+        // Loading wrong-dimension vectors into HNSW causes undefined behavior
+        const mismatch = detectProviderMismatch(this._db, this._embedding);
+        const skipVectorLoad = !!mismatch?.mismatch;
+        if (skipVectorLoad) {
+            this.emit('warning', {
+                type: 'provider_mismatch',
+                previous: mismatch!.stored,
+                current: mismatch!.current,
+                message: 'Embedding provider changed — vectors not loaded. Run brain.reembed() to regenerate.',
+            });
+        }
 
         // Initialize HNSW for dynamic collections (must come before indexer init)
         this._kvHnsw = new HNSWIndex(
@@ -165,7 +175,9 @@ export class BrainBank extends EventEmitter {
             config.hnswEfSearch,
         );
         await this._kvHnsw.init();
-        this._loadVectors('kv_vectors', 'data_id', this._kvHnsw, this._kvVecs);
+        if (!skipVectorLoad) {
+            this._loadVectors('kv_vectors', 'data_id', this._kvHnsw, this._kvVecs);
+        }
 
         // Create the shared context for indexers
         const ctx: IndexerContext = {
@@ -202,7 +214,7 @@ export class BrainBank extends EventEmitter {
         };
 
         // Initialize all registered indexers
-        for (const mod of this._modules.values()) {
+        for (const mod of this._registry.all) {
             await mod.initialize(ctx);
         }
 
@@ -210,7 +222,7 @@ export class BrainBank extends EventEmitter {
         // For multi-repo: find ANY indexer that starts with 'code' or 'git'
         const codeMod = this._sharedHnsw.get('code');
         const gitMod = this._sharedHnsw.get('git');
-        const memMod = this._modules.get('learning') as any;
+        const memMod = this._registry.firstByType('learning') as any;
 
         if (codeMod || gitMod || memMod) {
             this._search = new MultiIndexSearch({
@@ -234,18 +246,7 @@ export class BrainBank extends EventEmitter {
             this._contextBuilder = new ContextBuilder(this._search, firstGit?.coEdits);
         }
 
-        // Track embedding provider metadata
-        setEmbeddingMeta(this._db, this._embedding);
-
-        // Check for provider mismatch
-        const mismatch = detectProviderMismatch(this._db, this._embedding);
-        if (mismatch?.mismatch) {
-            this.emit('warning', {
-                type: 'provider_mismatch',
-                message: `Embedding provider changed (${mismatch.stored} → ${mismatch.current}). ` +
-                    `Run brain.reembed() to regenerate vectors.`,
-            });
-        }
+        // (Provider mismatch check moved before vector loading — see lines 185-200)
 
         this._initialized = true;
         this.emit('initialized', { indexers: this.indexers });
@@ -265,16 +266,12 @@ export class BrainBank extends EventEmitter {
         let coll = this._collections.get(name);
         if (coll) return coll;
 
-        if (!this._initialized) {
-            throw new Error(
-                'BrainBank: Must call initialize() before using collections. ' +
-                'Or use await brain.collection() after an async operation.'
-            );
-        }
-
-        // Lazy-create shared HNSW for all collections
+        // Guard: KV HNSW must be ready (set up before indexers run,
+        // so indexers CAN call ctx.collection() during initialize())
         if (!this._kvHnsw) {
-            throw new Error('BrainBank: Collections HNSW not initialized. Call initialize() first.');
+            throw new Error(
+                'BrainBank: Collections not ready. Call await brain.initialize() first.'
+            );
         }
 
         coll = new Collection(name, this._db, this._embedding, this._kvHnsw, this._kvVecs, this._config.reranker);
@@ -284,9 +281,7 @@ export class BrainBank extends EventEmitter {
 
     /** List all collection names that have data. */
     listCollectionNames(): string[] {
-        if (!this._initialized) {
-            throw new Error('BrainBank: Not initialized. Call await brain.initialize() before listCollectionNames().');
-        }
+        this._requireInit('listCollectionNames');
         const rows = this._db.prepare(
             'SELECT DISTINCT collection FROM kv_data ORDER BY collection'
         ).all() as any[];
@@ -352,7 +347,7 @@ export class BrainBank extends EventEmitter {
         }
 
         // Index document collections
-        if (want.has('docs') && this._modules.has('docs')) {
+        if (want.has('docs') && this._registry.has('docs')) {
             options.onProgress?.('docs', 'Starting...');
             const docsResults = await this.indexer('docs').indexCollections!({
                 onProgress: (coll: string, file: string, cur: number, total: number) =>
@@ -508,7 +503,7 @@ export class BrainBank extends EventEmitter {
 
     /** Semantic search over code only. */
     async searchCode(query: string, k: number = 8): Promise<SearchResult[]> {
-        this.indexer('code'); // throws if not loaded
+        if (!this._findFirstByType('code')) throw new Error('BrainBank: code indexer not loaded.');
         await this.initialize();
         if (!this._search) throw new Error('BrainBank: MultiIndexSearch not available. Ensure code indexer is loaded.');
         return this._search.search(query, { codeK: k, gitK: 0, patternK: 0 });
@@ -516,7 +511,7 @@ export class BrainBank extends EventEmitter {
 
     /** Semantic search over commits only. */
     async searchCommits(query: string, k: number = 8): Promise<SearchResult[]> {
-        this.indexer('git'); // throws if not loaded
+        if (!this._findFirstByType('git')) throw new Error('BrainBank: git indexer not loaded.');
         await this.initialize();
         if (!this._search) throw new Error('BrainBank: MultiIndexSearch not available. Ensure git indexer is loaded.');
         return this._search.search(query, { codeK: 0, gitK: k, patternK: 0 });
@@ -529,9 +524,9 @@ export class BrainBank extends EventEmitter {
      * Best quality — catches both exact keyword matches and conceptual similarities.
      */
     async hybridSearch(query: string, options?: {
-        /** @deprecated Use collections: { code: N } instead */
+        /** Max code results (overridden by collections.code if set) */
         codeK?: number;
-        /** @deprecated Use collections: { git: N } instead */
+        /** Max git results (overridden by collections.git if set) */
         gitK?: number;
         patternK?: number;
         minScore?: number; useMMR?: boolean;
@@ -546,7 +541,6 @@ export class BrainBank extends EventEmitter {
         await this.initialize();
 
         const cols = options?.collections ?? {};
-        // Backward compat: codeK/gitK fallback when not in collections
         const codeK = cols.code ?? options?.codeK ?? 6;
         const gitK = cols.git ?? options?.gitK ?? 5;
         const docsK = cols.docs ?? 8;
@@ -609,12 +603,14 @@ export class BrainBank extends EventEmitter {
     searchBM25(query: string, options?: {
         codeK?: number; gitK?: number; patternK?: number;
     }): SearchResult[] {
+        this._requireInit('searchBM25');
         if (!this._bm25) return [];
         return this._bm25.search(query, options);
     }
 
     /** Rebuild FTS5 indices. */
     rebuildFTS(): void {
+        this._requireInit('rebuildFTS');
         this._bm25?.rebuild();
     }
 
@@ -624,7 +620,7 @@ export class BrainBank extends EventEmitter {
 
     /** Get git history for a specific file. */
     async fileHistory(filePath: string, limit: number = 20): Promise<any[]> {
-        this.module('git');
+        this.indexer('git');
         await this.initialize();
         return this._db.prepare(`
             SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions
@@ -637,6 +633,7 @@ export class BrainBank extends EventEmitter {
 
     /** Get co-edit suggestions for a file. */
     coEdits(filePath: string, limit: number = 5): CoEditSuggestion[] {
+        this._requireInit('coEdits');
         const gitMod = this.indexer('git');
         return (gitMod as any).suggestCoEdits(filePath, limit);
     }
@@ -645,27 +642,25 @@ export class BrainBank extends EventEmitter {
 
     /** Get statistics for all loaded modules. */
     stats(): IndexStats {
-        if (!this._initialized) {
-            throw new Error('BrainBank: Not initialized. Call await brain.initialize() before stats().');
-        }
+        this._requireInit('stats');
         const result: IndexStats = {};
 
         if (this.has('code')) {
-            const mod = this.indexer('code') as any;
+            const sharedCode = this._sharedHnsw.get('code');
             result.code = {
                 files: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM code_chunks').get() as any).c,
                 chunks: (this._db.prepare('SELECT COUNT(*) as c FROM code_chunks').get() as any).c,
-                hnswSize: mod.hnsw?.size ?? 0,
+                hnswSize: sharedCode?.hnsw.size ?? 0,
             };
         }
 
         if (this.has('git')) {
-            const mod = this.indexer('git') as any;
+            const sharedGit = this._sharedHnsw.get('git');
             result.git = {
                 commits: (this._db.prepare('SELECT COUNT(*) as c FROM git_commits').get() as any).c,
                 filesTracked: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM commit_files').get() as any).c,
                 coEdits: (this._db.prepare('SELECT COUNT(*) as c FROM co_edits').get() as any).c,
-                hnswSize: mod.hnsw?.size ?? 0,
+                hnswSize: sharedGit?.hnsw.size ?? 0,
             };
         }
 
@@ -689,16 +684,14 @@ export class BrainBank extends EventEmitter {
      *   // later: watcher.close();
      */
     watch(options: WatchOptions = {}): Watcher {
-        if (!this._initialized) {
-            throw new Error('BrainBank: Not initialized. Call initialize() before watch().');
-        }
+        this._requireInit('watch');
 
         // Close any existing watcher
         this._watcher?.close();
 
         this._watcher = createWatcher(
             async () => { await this.index(); },
-            this._modules,
+            this._registry.raw,
             this._config.repoPath,
             options,
         );
@@ -720,9 +713,7 @@ export class BrainBank extends EventEmitter {
      *   // → { code: 1200, git: 500, docs: 80, kv: 45, notes: 12, total: 1837 }
      */
     async reembed(options: ReembedOptions = {}): Promise<ReembedResult> {
-        if (!this._initialized) {
-            throw new Error('BrainBank: Not initialized. Call initialize() before reembed().');
-        }
+        this._requireInit('reembed');
 
         // Build HNSW map for rebuild
         const hnswMap = new Map<string, { hnsw: HNSWIndex; vecs: Map<number, Float32Array> }>();
@@ -732,16 +723,17 @@ export class BrainBank extends EventEmitter {
             hnswMap.set('kv', { hnsw: this._kvHnsw, vecs: this._kvVecs });
         }
 
-        // Indexer-managed HNSW indices (supports namespaced multi-repo modules)
-        // Map indexer type → reembed table name (learning uses memory_patterns table)
-        const indexerToTableName: Record<string, string> = { learning: 'memory' };
-        for (const type of ['code', 'git', 'learning', 'notes', 'docs'] as const) {
-            for (const mod of this._findAllByType(type)) {
-                const m = mod as any;
-                if (m.hnsw) {
-                    const key = indexerToTableName[type] ?? mod.name;
-                    hnswMap.set(key, { hnsw: m.hnsw, vecs: m.vecCache });
-                }
+        // code/git use shared HNSW pool (key = type, e.g. 'code', 'git')
+        for (const [type, shared] of this._sharedHnsw) {
+            hnswMap.set(type, { hnsw: shared.hnsw, vecs: shared.vecCache });
+        }
+
+        // Per-indexer HNSW (learning → 'memory', notes, docs)
+        const INDEXER_TABLE: Record<string, string> = { learning: 'memory' };
+        for (const type of ['learning', 'notes', 'docs'] as const) {
+            const mod = this._findFirstByType(type) as any;
+            if (mod?.hnsw) {
+                hnswMap.set(INDEXER_TABLE[type] ?? type, { hnsw: mod.hnsw, vecs: mod.vecCache });
             }
         }
 
@@ -761,12 +753,19 @@ export class BrainBank extends EventEmitter {
     /** Close database and release resources. */
     close(): void {
         this._watcher?.close();
-        for (const indexer of this._modules.values()) {
+        for (const indexer of this._registry.all) {
             indexer.close?.();
         }
         if (this._db) this._db.close();
         this._initialized = false;
         this._collections.clear();
+        this._sharedHnsw.clear();
+        this._kvVecs.clear();
+        this._kvHnsw = undefined as any;
+        this._registry.clear();
+        this._search = undefined;
+        this._bm25 = undefined;
+        this._contextBuilder = undefined;
     }
 
     /** Whether the brainbank has been initialized. */
@@ -780,6 +779,19 @@ export class BrainBank extends EventEmitter {
     }
 
     // ── Internals ───────────────────────────────────
+
+    /**
+     * Assert the instance is initialized.
+     * Consistent guard for all sync public methods.
+     */
+    private _requireInit(method: string): void {
+        if (!this._initialized) {
+            throw new Error(
+                `BrainBank: Not initialized. ` +
+                `Call await brain.initialize() before ${method}().`,
+            );
+        }
+    }
 
     /** Load vectors from SQLite into HNSW index. */
     private _loadVectors(

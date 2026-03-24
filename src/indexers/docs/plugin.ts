@@ -8,11 +8,11 @@
  *   brain.use(docs());
  */
 
-import type { Indexer, IndexerContext } from './base.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw.ts';
-import type { Database } from '../db/database.ts';
-import type { EmbeddingProvider, DocumentCollection, SearchResult } from '../types.ts';
-import { DocsIndexer } from './support/docs-engine.ts';
+import type { Indexer, IndexerContext } from '../base.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import type { Database } from '../../db/database.ts';
+import type { EmbeddingProvider, DocumentCollection, SearchResult } from '../../types.ts';
+import { DocsIndexer } from './engine.ts';
 
 class DocsPlugin implements Indexer {
     readonly name = 'docs';
@@ -21,8 +21,6 @@ class DocsPlugin implements Indexer {
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
-
-
 
     async initialize(ctx: IndexerContext): Promise<void> {
         this._db = ctx.db;
@@ -97,7 +95,24 @@ class DocsPlugin implements Indexer {
     }): Promise<SearchResult[]> {
         const k = options?.k ?? 8;
         const queryVec = await this._embedding.embed(query);
-        const hits = this.hnsw.search(queryVec, k);
+
+        // Over-fetch from shared HNSW when filtering by collection
+        // (same pattern as collection.ts ratio scaling)
+        let searchK = k;
+        if (options?.collection && this.hnsw.size > 0) {
+            const collectionCount = (this._db.prepare(
+                'SELECT COUNT(*) as c FROM doc_chunks WHERE collection = ?'
+            ).get(options.collection) as any)?.c ?? 0;
+            const totalChunks = (this._db.prepare(
+                'SELECT COUNT(*) as c FROM doc_chunks'
+            ).get() as any)?.c ?? 1;
+            const ratio = collectionCount > 0
+                ? Math.max(3, Math.min(50, Math.ceil(totalChunks / collectionCount)))
+                : 3;
+            searchK = Math.min(k * ratio, this.hnsw.size);
+        }
+
+        const hits = this.hnsw.search(queryVec, searchK);
 
         const results: SearchResult[] = [];
         for (const hit of hits) {
@@ -124,6 +139,9 @@ class DocsPlugin implements Indexer {
                     seq: chunk.seq,
                 },
             });
+
+            // Stop once we have enough results
+            if (results.length >= k) break;
         }
 
         return results;

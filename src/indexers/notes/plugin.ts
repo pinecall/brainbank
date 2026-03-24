@@ -8,18 +8,16 @@
  *   brain.use(notes());
  */
 
-import type { Indexer, IndexerContext } from './base.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw.ts';
-import { NoteStore } from '../models/note-store.ts';
-import type { NoteDigest, StoredNote, RecallOptions } from '../models/note-store.ts';
+import type { Indexer, IndexerContext } from '../base.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import { NoteStore } from './engine.ts';
+import type { NoteDigest, StoredNote, RecallOptions } from './engine.ts';
 
 class NotesPlugin implements Indexer {
     readonly name = 'notes';
     hnsw!: HNSWIndex;
     store!: NoteStore;
     vecCache = new Map<number, Float32Array>();
-
-
 
     async initialize(ctx: IndexerContext): Promise<void> {
         this.hnsw = await ctx.createHnsw(100_000);

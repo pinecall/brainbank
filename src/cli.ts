@@ -42,9 +42,9 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { BrainBank } from './app/brain.ts';
-import { code } from './indexers/code-indexer.ts';
-import { git } from './indexers/git-indexer.ts';
-import { docs } from './indexers/docs-indexer.ts';
+import { code } from './indexers/code/plugin.ts';
+import { git } from './indexers/git/plugin.ts';
+import { docs } from './indexers/docs/plugin.ts';
 import type { Indexer } from './indexers/base.ts';
 
 // ── Colors ──────────────────────────────────────────

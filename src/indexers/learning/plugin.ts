@@ -8,13 +8,13 @@
  *   brain.use(learning());
  */
 
-import type { Indexer, IndexerContext } from './base.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw.ts';
-import type { Database } from '../db/database.ts';
-import { PatternStore } from '../models/pattern-store.ts';
-import { Consolidator } from '../services/consolidator.ts';
-import { StrategyDistiller } from '../services/strategy-distiller.ts';
-import type { LearningPattern, DistilledStrategy } from '../types.ts';
+import type { Indexer, IndexerContext } from '../base.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import type { Database } from '../../db/database.ts';
+import { PatternStore } from './engine.ts';
+import { Consolidator } from './consolidator.ts';
+import { StrategyDistiller } from './distiller.ts';
+import type { LearningPattern, DistilledStrategy } from '../../types.ts';
 
 class LearningPlugin implements Indexer {
     readonly name = 'learning';
@@ -24,8 +24,6 @@ class LearningPlugin implements Indexer {
     distiller!: StrategyDistiller;
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
-
-
 
     async initialize(ctx: IndexerContext): Promise<void> {
         this._db = ctx.db;

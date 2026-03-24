@@ -67,12 +67,12 @@ export const tests = {
         brain.close();
     },
 
-    async 'backward compat: add(content, metadata) still works'(assert: any) {
+    async 'add(content, metadata) shorthand works without options wrapper'(assert: any) {
         const brain = new BrainBank({ dbPath: tmpDb('tags-compat'), embeddingProvider: mockEmbedding() });
         await brain.initialize();
         const col = brain.collection('test');
 
-        // Old-style call: add(content, { key: value })
+        // Shorthand call: add(content, { key: value }) without wrapping in { metadata: ... }
         const id = await col.add('test item', { type: 'error' });
         const items = col.list();
         const item = items.find(i => i.id === id);

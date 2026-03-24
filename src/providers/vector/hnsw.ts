@@ -11,7 +11,7 @@ import type { VectorIndex, SearchHit } from '../../types.ts';
 export class HNSWIndex implements VectorIndex {
     private _index: any = null;
     private _lib: any = null;
-    private _count = 0;
+    private _ids = new Set<number>();
 
     constructor(
         private _dims: number,
@@ -46,8 +46,11 @@ export class HNSWIndex implements VectorIndex {
         this._index = new HNSW('cosine', this._dims);
         this._index.initIndex(this._maxElements, this._M, this._efConstruction);
         this._index.setEf(this._efSearch);
-        this._count = 0;
+        this._ids = new Set();
     }
+
+    /** Maximum capacity of this index. */
+    get maxElements(): number { return this._maxElements; }
 
     /**
      * Add a vector with an integer ID.
@@ -55,8 +58,30 @@ export class HNSWIndex implements VectorIndex {
      */
     add(vector: Float32Array, id: number): void {
         if (!this._index) throw new Error('HNSW index not initialized — call init() first');
+        if (this._ids.size >= this._maxElements) {
+            throw new Error(
+                `HNSW index full (${this._maxElements} elements). ` +
+                `Increase maxElements in config or prune old data.`
+            );
+        }
         this._index.addPoint(Array.from(vector), id);
-        this._count++;
+        this._ids.add(id);
+    }
+
+    /**
+     * Mark a vector as deleted so it no longer appears in searches.
+     * Uses hnswlib-node markDelete under the hood.
+     * Safe to call with an ID that doesn't exist.
+     */
+    remove(id: number): void {
+        if (!this._index || this._ids.size === 0) return;
+        if (!this._ids.has(id)) return;
+        try {
+            this._index.markDelete(id);
+            this._ids.delete(id);
+        } catch {
+            // ID not found — ignore silently
+        }
     }
 
     /**
@@ -65,9 +90,9 @@ export class HNSWIndex implements VectorIndex {
      * Score is 1 - cosine_distance (1.0 = identical).
      */
     search(query: Float32Array, k: number): SearchHit[] {
-        if (!this._index || this._count === 0) return [];
+        if (!this._index || this._ids.size === 0) return [];
 
-        const actualK = Math.min(k, this._count);
+        const actualK = Math.min(k, this._ids.size);
         const result = this._index.searchKnn(Array.from(query), actualK);
 
         return result.neighbors.map((id: number, i: number) => ({
@@ -78,6 +103,6 @@ export class HNSWIndex implements VectorIndex {
 
     /** Number of vectors in the index. */
     get size(): number {
-        return this._count;
+        return this._ids.size;
     }
 }
