@@ -3,12 +3,12 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
     entry: {
         'index': 'src/index.ts',
-        'code': 'src/indexers/code-indexer.ts',
-        'git': 'src/indexers/git-indexer.ts',
-        'docs': 'src/indexers/docs-indexer.ts',
-        'notes': 'src/indexers/notes-indexer.ts',
-        'memory': 'src/indexers/learning-indexer.ts',
-        'cli': 'src/cli.ts',
+        'code': 'src/indexers/code/plugin.ts',
+        'git': 'src/indexers/git/plugin.ts',
+        'docs': 'src/indexers/docs/plugin.ts',
+        'notes': 'src/indexers/notes/plugin.ts',
+        'memory': 'src/indexers/learning/plugin.ts',
+        'cli': 'src/cli/index.ts',
     },
     tsconfig: 'tsconfig.build.json',
     format: ['esm'],

@@ -6,7 +6,7 @@
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "bin": {
-        "brainbank": "./dist/cli.js"
+        "brainbank": "./dist/cli/index.js"
     },
     "exports": {
         ".": {
@@ -48,7 +48,7 @@
         "test": "node --import tsx test/run.ts",
         "test:integration": "node --import tsx test/run.ts --integration",
         "test:verbose": "node --import tsx test/run.ts --verbose",
-        "dev": "tsx src/cli.ts"
+        "dev": "tsx src/cli/index.ts"
     },
     "engines": {
         "node": ">=18"

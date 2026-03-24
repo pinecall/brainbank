@@ -1,0 +1,71 @@
+/**
+ * BrainBank CLI — Shared Utilities
+ *
+ * Colors, argument parsing, and result formatting.
+ * No BrainBank imports — pure Node.js / terminal helpers.
+ */
+
+// ── Colors ──────────────────────────────────────────
+
+export const c = {
+    green:   (s: string) => `\x1b[32m${s}\x1b[0m`,
+    red:     (s: string) => `\x1b[31m${s}\x1b[0m`,
+    yellow:  (s: string) => `\x1b[33m${s}\x1b[0m`,
+    cyan:    (s: string) => `\x1b[36m${s}\x1b[0m`,
+    dim:     (s: string) => `\x1b[2m${s}\x1b[0m`,
+    bold:    (s: string) => `\x1b[1m${s}\x1b[0m`,
+    magenta: (s: string) => `\x1b[35m${s}\x1b[0m`,
+};
+
+// ── Argument Parsing ────────────────────────────────
+
+/** Raw argv, sliced past the Node binary and script path. */
+export const args = process.argv.slice(2);
+
+export function getFlag(name: string): string | undefined {
+    const idx = args.indexOf(`--${name}`);
+    return idx >= 0 ? args[idx + 1] : undefined;
+}
+
+export function hasFlag(name: string): boolean {
+    return args.includes(`--${name}`);
+}
+
+// ── Result Printer ──────────────────────────────────
+
+export function printResults(results: any[]): void {
+    if (results.length === 0) {
+        console.log(c.yellow('  No results found.'));
+        return;
+    }
+
+    for (const r of results) {
+        const score = Math.round(r.score * 100);
+
+        if (r.type === 'code') {
+            const m = r.metadata;
+            console.log(
+                `${c.green(`[CODE ${score}%]`)} ${c.bold(r.filePath!)} — ` +
+                `${m.name || m.chunkType} ${c.dim(`L${m.startLine}-${m.endLine}`)}`,
+            );
+            console.log(c.dim(r.content.split('\n').slice(0, 5).join('\n')));
+            console.log('');
+        } else if (r.type === 'commit') {
+            const m = r.metadata;
+            console.log(
+                `${c.cyan(`[COMMIT ${score}%]`)} ${c.bold(m.shortHash)} ` +
+                `${r.content} ${c.dim(`(${m.author})`)}`,
+            );
+            if (m.files?.length) console.log(c.dim(`  Files: ${m.files.slice(0, 4).join(', ')}`));
+            console.log('');
+        } else if (r.type === 'document') {
+            const ctx = r.context ? ` — ${c.dim(r.context)}` : '';
+            console.log(
+                `${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} ` +
+                `[${r.metadata.collection}]${ctx}`,
+            );
+            console.log(c.dim(r.content.split('\n').slice(0, 4).join('\n')));
+            console.log('');
+        }
+    }
+}
