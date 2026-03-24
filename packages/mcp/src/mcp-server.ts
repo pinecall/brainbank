@@ -108,7 +108,28 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
     }
     const resolved = rp.replace(/\/+$/, ''); // normalize
 
-    if (_pool.has(resolved)) return _pool.get(resolved)!;
+    if (_pool.has(resolved)) {
+        const cached = _pool.get(resolved)!;
+        // Evict stale instances: if cached brain has 0 code vectors
+        // but the DB file has since been repopulated (e.g. after re-index)
+        try {
+            const codeStats = cached.indexer('code')?.stats?.();
+            if (codeStats && codeStats.hnswSize === 0) {
+                const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
+                const dbSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
+                if (dbSize > 100_000) { // DB has real data now
+                    evictPool(resolved);
+                    // fall through to re-create below
+                } else {
+                    return cached;
+                }
+            } else {
+                return cached;
+            }
+        } catch {
+            return cached;
+        }
+    }
 
     await ensureShared();
 
