@@ -7,7 +7,7 @@ export default defineConfig({
         'git': 'src/indexers/git/git-plugin.ts',
         'docs': 'src/indexers/docs/docs-plugin.ts',
         'notes': 'src/indexers/notes/notes-plugin.ts',
-        'memory': 'src/indexers/learning/learning-plugin.ts',
+        'memory': 'src/indexers/memory/memory-plugin.ts',
         'cli': 'src/cli/index.ts',
     },
     tsconfig: 'tsconfig.build.json',

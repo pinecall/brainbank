@@ -1,7 +1,7 @@
 /**
  * BrainBank Integration Test — Unified Search + Context
  *
- * Tests brain.search() across all modules (code + git + learning),
+ * Tests brain.search() across all modules (code + git + memory),
  * brain.getContext() for system prompts, and minScore filtering.
  * Uses all 4 modules wired together.
  */
@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
-import { BrainBank, code, git, docs, learning, hashEmbedding } from '../../helpers.ts';
+import { BrainBank, code, git, docs, memory, hashEmbedding } from '../../helpers.ts';
 
 export const name = 'Unified Search + Context';
 
@@ -50,14 +50,14 @@ tests['setup: brain with code + git + docs + memory'] = async () => {
         .use(code({ repoPath: repoDir }))
         .use(git({ repoPath: repoDir }))
         .use(docs())
-        .use(learning());
+        .use(memory());
     await brain.initialize();
 
     await brain.index({ forceReindex: true });
     await brain.addCollection({ name: 'guide', path: docsDir, pattern: '**/*.md' });
     await brain.indexDocs();
 
-    const mem = brain.indexer('learning') as any;
+    const mem = brain.indexer('memory') as any;
     await mem.learn({ task: 'Fix auth bug', taskType: 'debug', approach: 'Check token flow', outcome: 'Fixed', successRate: 0.9 });
 
     assert.ok(brain);
@@ -71,8 +71,8 @@ tests['brain.search(): returns code + commit + pattern'] = async () => {
     assert.ok((stats.code?.chunks ?? 0) > 0, `code chunks indexed: ${stats.code?.chunks}`);
     assert.ok((stats.git?.commits ?? 0) > 0, `git commits indexed: ${stats.git?.commits}`);
 
-    // Verify learning patterns via direct search
-    const mem = brain.indexer('learning') as any;
+    // Verify memory patterns via direct search
+    const mem = brain.indexer('memory') as any;
     const patternResults = await mem.search('auth bug');
     assert.ok(patternResults.length > 0, `patterns found: ${patternResults.length}`);
 
@@ -122,9 +122,9 @@ tests['brain.search(): commit results have hash + author'] = async () => {
     assert.ok(commits[0].metadata?.author, 'has author');
 };
 
-tests['brain.search(): learning patterns have approach'] = async () => {
+tests['brain.search(): memory patterns have approach'] = async () => {
     const assert = (await import('node:assert')).strict;
-    const mem = brain.indexer('learning') as any;
+    const mem = brain.indexer('memory') as any;
     const results = await mem.search('auth bug fix');
 
     assert.ok(results.length > 0, 'has patterns');

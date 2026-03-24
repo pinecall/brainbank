@@ -224,7 +224,7 @@ export const tests = {
         cleanup(db);
     },
 
-    async 'indexer() resolves aliases (memory → learning)'(assert: any) {
+    async 'indexer() resolves by name'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
             .use(docs());

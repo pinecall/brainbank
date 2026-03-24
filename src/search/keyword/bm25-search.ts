@@ -2,7 +2,7 @@
  * BrainBank — BM25 Full-Text Search
  * 
  * Keyword search via SQLite FTS5 with BM25 ranking.
- * Searches across code chunks, git commits, and learning patterns.
+ * Searches across code chunks, git commits, and memory patterns.
  * Uses Porter stemming + unicode61 tokenizer.
  */
 

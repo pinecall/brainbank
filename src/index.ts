@@ -52,9 +52,9 @@ export type {
 } from './types.ts';
 
 // Embeddings
-export { LocalEmbedding } from './providers/embeddings/local-embedding.ts';
-export { OpenAIEmbedding } from './providers/embeddings/openai-embedding.ts';
-export type { OpenAIEmbeddingOptions } from './providers/embeddings/openai-embedding.ts';
+export { LocalEmbedding } from './providers/embeddings/local.ts';
+export { OpenAIEmbedding } from './providers/embeddings/openai.ts';
+export type { OpenAIEmbeddingOptions } from './providers/embeddings/openai.ts';
 export type { ReembedResult, ReembedOptions } from './services/reembed.ts';
 export type { WatchOptions, Watcher } from './services/watch.ts';
 export { cosineSimilarity, normalize } from './lib/math.ts';
@@ -66,7 +66,7 @@ export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 
 // Vector indices
 export { HNSWIndex } from './providers/vector/hnsw-index.ts';
-export { searchMMR } from './search/vector/mmr-search.ts';
+export { searchMMR } from './search/vector/mmr.ts';
 
 // Indexer implementations
 export { CodeChunker } from './indexers/code/code-chunker.ts';
@@ -75,7 +75,7 @@ export { GitIndexer } from './indexers/git/git-indexer.ts';
 export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
-// Agent learning stores
+// Agent memory stores
 export { PatternStore } from './memory/pattern-store.ts';
 export { Consolidator } from './memory/consolidator.ts';
 export { NoteStore } from './indexers/notes/note-store.ts';
@@ -86,4 +86,4 @@ export { ContextBuilder } from './app/context-builder.ts';
 export { MultiIndexSearch } from './search/vector/multi-index-search.ts';
 export { CoEditAnalyzer } from './indexers/git/co-edit-analyzer.ts';
 export { BM25Search } from './search/keyword/bm25-search.ts';
-export { reciprocalRankFusion } from './search/reciprocal-rank-fusion.ts';
+export { reciprocalRankFusion } from './search/rrf.ts';

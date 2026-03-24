@@ -21,10 +21,10 @@ import { EventEmitter } from 'node:events';
 import { resolveConfig } from '../config/defaults.ts';
 import { Database } from '../db/database.ts';
 import { HNSWIndex } from '../providers/vector/hnsw-index.ts';
-import { LocalEmbedding } from '../providers/embeddings/local-embedding.ts';
+import { LocalEmbedding } from '../providers/embeddings/local.ts';
 import { MultiIndexSearch } from '../search/vector/multi-index-search.ts';
 import { BM25Search } from '../search/keyword/bm25-search.ts';
-import { reciprocalRankFusion } from '../search/reciprocal-rank-fusion.ts';
+import { reciprocalRankFusion } from '../search/rrf.ts';
 import { ContextBuilder } from './context-builder.ts';
 import { Collection } from './collection.ts';
 import { IndexerRegistry } from './indexer-registry.ts';
@@ -228,7 +228,7 @@ export class BrainBank extends EventEmitter {
         // For multi-repo: find ANY indexer that starts with 'code' or 'git'
         const codeMod = this._sharedHnsw.get('code');
         const gitMod = this._sharedHnsw.get('git');
-        const memMod = this._registry.firstByType('learning') as any;
+        const memMod = this._registry.firstByType('memory') as any;
 
         if (codeMod || gitMod || memMod) {
             this._search = new MultiIndexSearch({
@@ -740,12 +740,11 @@ export class BrainBank extends EventEmitter {
             hnswMap.set(type, { hnsw: shared.hnsw, vecs: shared.vecCache });
         }
 
-        // Per-indexer HNSW (learning → 'memory', notes, docs)
-        const INDEXER_TABLE: Record<string, string> = { learning: 'memory' };
-        for (const type of ['learning', 'notes', 'docs'] as const) {
+        // Per-indexer HNSW (memory, notes, docs)
+        for (const type of ['memory', 'notes', 'docs'] as const) {
             const mod = this._findFirstByType(type) as any;
             if (mod?.hnsw) {
-                hnswMap.set(INDEXER_TABLE[type] ?? type, { hnsw: mod.hnsw, vecs: mod.vecCache });
+                hnswMap.set(type, { hnsw: mod.hnsw, vecs: mod.vecCache });
             }
         }
 

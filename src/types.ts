@@ -267,7 +267,7 @@ export interface ContextOptions {
     codeResults?: number;
     /** Max git commits to include. Default: 5 */
     gitResults?: number;
-    /** Max learning patterns to include. Default: 4 */
+    /** Max memory patterns to include. Default: 4 */
     patternResults?: number;
     /** Files the agent is about to modify (improves co-edit suggestions) */
     affectedFiles?: string[];

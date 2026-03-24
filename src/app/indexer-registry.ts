@@ -7,7 +7,7 @@
  * Responsibilities:
  *   - Store indexers by name
  *   - Type-prefix matching  ('code' finds 'code:frontend', 'code:backend')
- *   - Alias resolution      ('memory' → 'learning')
+ *   - Alias resolution      (currently none; add here if needed)
  *   - Consistent error messages on missing indexers
  */
 
@@ -15,7 +15,6 @@ import type { Indexer } from '../indexers/base.ts';
 
 /** Shorthand aliases that map public names to canonical indexer names. */
 const ALIASES: Readonly<Record<string, string>> = {
-    memory: 'learning',
 };
 
 export class IndexerRegistry {
@@ -47,7 +46,7 @@ export class IndexerRegistry {
      * Get an indexer by name.  Throws a descriptive error if not found.
      *
      * Resolution order:
-     *   1. Alias map   ('memory' → 'learning')
+     *   1. Alias map   (currently empty)
      *   2. Exact match
      *   3. First type-prefix match  ('code' → 'code:frontend')
      */

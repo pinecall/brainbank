@@ -1,14 +1,14 @@
 /**
  * BrainBank — Multi-Index Search
  * 
- * Searches across all three indices (code, git, learning patterns)
+ * Searches across all three indices (code, git, memory patterns)
  * and returns typed results sorted by relevance.
  */
 
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '../../types.ts';
 import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
-import { searchMMR } from './mmr-search.ts';
+import { searchMMR } from './mmr.ts';
 
 export interface SearchConfig {
     db: Database;

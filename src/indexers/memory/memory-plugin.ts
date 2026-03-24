@@ -1,11 +1,11 @@
 /**
- * BrainBank — Learning Plugin
+ * BrainBank — Memory Plugin
  * 
  * Agent learns from completed tasks — stores patterns,
  * consolidates failures, distills strategies.
  * 
- *   import { learning } from 'brainbank/learning';
- *   brain.use(learning());
+ *   import { memory } from 'brainbank/memory';
+ *   brain.use(memory());
  */
 
 import type { Indexer, IndexerContext } from '../base.ts';
@@ -16,8 +16,8 @@ import { Consolidator } from '../../memory/consolidator.ts';
 import { StrategyDistiller } from '../../memory/strategy-distiller.ts';
 import type { LearningPattern, DistilledStrategy } from '../../types.ts';
 
-class LearningPlugin implements Indexer {
-    readonly name = 'learning';
+class MemoryPlugin implements Indexer {
+    readonly name = 'memory';
     hnsw!: HNSWIndex;
     patternStore!: PatternStore;
     consolidator!: Consolidator;
@@ -77,7 +77,7 @@ class LearningPlugin implements Indexer {
     }
 }
 
-/** Create an agent learning plugin. */
-export function learning(): Indexer {
-    return new LearningPlugin();
+/** Create an agent memory plugin. */
+export function memory(): Indexer {
+    return new MemoryPlugin();
 }
