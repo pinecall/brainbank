@@ -66,7 +66,7 @@ export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 
 // Vector indices
 export { HNSWIndex } from './providers/vector/hnsw.ts';
-export { searchMMR } from './search/mmr.ts';
+export { searchMMR } from './search/vector/mmr.ts';
 
 // Indexer implementations
 export { CodeChunker } from './indexers/code/chunker.ts';
@@ -83,7 +83,7 @@ export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/eng
 
 // Search internals
 export { ContextBuilder } from './app/context.ts';
-export { MultiIndexSearch } from './search/engine.ts';
+export { MultiIndexSearch } from './search/vector/multi-index.ts';
 export { CoEditAnalyzer } from './indexers/git/co-edits.ts';
-export { BM25Search } from './search/bm25.ts';
+export { BM25Search } from './search/keyword/bm25.ts';
 export { reciprocalRankFusion } from './search/rrf.ts';

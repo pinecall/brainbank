@@ -5,9 +5,9 @@
  * and returns typed results sorted by relevance.
  */
 
-import type { Database } from '../db/database.ts';
-import type { EmbeddingProvider, Reranker, SearchResult } from '../types.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw.ts';
+import type { Database } from '../../db/database.ts';
+import type { EmbeddingProvider, Reranker, SearchResult } from '../../types.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
 import { searchMMR } from './mmr.ts';
 
 export interface SearchConfig {

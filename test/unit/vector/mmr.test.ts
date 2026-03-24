@@ -2,7 +2,7 @@
  * Unit Tests — MMR (Maximum Marginal Relevance)
  */
 
-import { searchMMR } from '../../../src/search/mmr.ts';
+import { searchMMR } from '../../../src/search/vector/mmr.ts';
 import { HNSWIndex } from '../../../src/providers/vector/hnsw.ts';
 import { normalize } from '../../../src/lib/math.ts';
 

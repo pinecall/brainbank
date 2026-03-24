@@ -8,7 +8,7 @@
 import { BrainBank } from '../src/app/brain.ts';
 import { Database } from '../src/db/database.ts';
 import { HNSWIndex } from '../src/providers/vector/hnsw.ts';
-import { BM25Search } from '../src/search/bm25.ts';
+import { BM25Search } from '../src/search/keyword/bm25.ts';
 import { NoteStore } from '../src/indexers/notes/engine.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai.ts';
 import { Collection } from '../src/app/collection.ts';
@@ -16,7 +16,7 @@ import { CodeChunker } from '../src/indexers/code/chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';
 import { reciprocalRankFusion } from '../src/search/rrf.ts';
-import { searchMMR } from '../src/search/mmr.ts';
+import { searchMMR } from '../src/search/vector/mmr.ts';
 import {
     cosineSimilarity, cosineSimilarityFull,
     normalize, euclideanDistance,

@@ -13,7 +13,7 @@ import type { Database } from '../db/database.ts';
 import type { EmbeddingProvider, Reranker } from '../types.ts';
 import type { HNSWIndex } from '../providers/vector/hnsw.ts';
 import { reciprocalRankFusion } from '../search/rrf.ts';
-import { sanitizeFTS, normalizeBM25 } from '../search/utils.ts';
+import { sanitizeFTS, normalizeBM25 } from '../search/keyword/utils.ts';
 
 export interface CollectionItem {
     id: number;

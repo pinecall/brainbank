@@ -6,8 +6,8 @@
  * Uses Porter stemming + unicode61 tokenizer.
  */
 
-import type { Database } from '../db/database.ts';
-import type { SearchResult } from '../types.ts';
+import type { Database } from '../../db/database.ts';
+import type { SearchResult } from '../../types.ts';
 import { sanitizeFTS, normalizeBM25 } from './utils.ts';
 
 export interface BM25Options {
