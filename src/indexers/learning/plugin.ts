@@ -11,7 +11,7 @@
 import type { Indexer, IndexerContext } from '../base.ts';
 import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
 import type { Database } from '../../db/database.ts';
-import { PatternStore } from './engine.ts';
+import { PatternStore } from './pattern-store.ts';
 import { Consolidator } from './consolidator.ts';
 import { StrategyDistiller } from './distiller.ts';
 import type { LearningPattern, DistilledStrategy } from '../../types.ts';

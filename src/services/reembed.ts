@@ -67,7 +67,7 @@ const TABLES: ReembedTable[] = [
         vectorTable: 'memory_vectors',
         idColumn: 'id',
         fkColumn: 'pattern_id',
-        // Must match learning/engine.ts:49 exactly
+        // Must match learning/pattern-store.ts:49 exactly
         textBuilder: (r) => `${r.task_type} ${r.task} ${r.approach}`,
     },
     {
