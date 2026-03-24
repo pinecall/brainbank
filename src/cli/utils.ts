@@ -31,6 +31,32 @@ export function hasFlag(name: string): boolean {
     return args.includes(`--${name}`);
 }
 
+/** Known flags that take a value (--flag <value>). */
+const VALUE_FLAGS = new Set([
+    'repo', 'depth', 'collection', 'pattern', 'context', 'name',
+    'keep', 'reranker',
+]);
+
+/**
+ * Strip all --flags AND their values from an argv slice.
+ * Returns only positional arguments.
+ *
+ *   stripFlags(['ksearch', 'auth', '--repo', '/path'])
+ *   → ['ksearch', 'auth']
+ */
+export function stripFlags(argv: string[]): string[] {
+    const result: string[] = [];
+    for (let i = 0; i < argv.length; i++) {
+        if (argv[i].startsWith('--')) {
+            const name = argv[i].slice(2);
+            if (VALUE_FLAGS.has(name)) i++; // skip next (the value)
+            continue;
+        }
+        result.push(argv[i]);
+    }
+    return result;
+}
+
 // ── Result Printer ──────────────────────────────────
 
 export function printResults(results: any[]): void {

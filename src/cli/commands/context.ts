@@ -4,7 +4,7 @@
  * brainbank context list
  */
 
-import { c, args } from '../utils.ts';
+import { c, args, stripFlags } from '../utils.ts';
 import { createBrain } from '../factory.ts';
 
 export async function cmdContext(): Promise<void> {
@@ -47,7 +47,7 @@ export async function cmdContext(): Promise<void> {
     }
 
     // brainbank context <task> — get formatted context
-    const task = args.slice(1).join(' ');
+    const task = stripFlags(args).slice(1).join(' ');
     if (!task) {
         console.log(c.red('Usage: brainbank context <task description>'));
         console.log(c.dim('       brainbank context add <collection> <path> <description>'));

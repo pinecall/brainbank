@@ -4,11 +4,11 @@
  * brainbank ksearch — Keyword search (BM25)
  */
 
-import { c, args, printResults } from '../utils.ts';
+import { c, args, stripFlags, printResults } from '../utils.ts';
 import { createBrain } from '../factory.ts';
 
 export async function cmdSearch(): Promise<void> {
-    const query = args.slice(1).join(' ');
+    const query = stripFlags(args).slice(1).join(' ');
     if (!query) {
         console.log(c.red('Usage: brainbank search <query>'));
         process.exit(1);
@@ -23,7 +23,7 @@ export async function cmdSearch(): Promise<void> {
 }
 
 export async function cmdHybridSearch(): Promise<void> {
-    const query = args.slice(1).filter(a => !a.startsWith('--')).join(' ');
+    const query = stripFlags(args).slice(1).join(' ');
     if (!query) {
         console.log(c.red('Usage: brainbank hsearch <query>'));
         process.exit(1);
@@ -39,7 +39,7 @@ export async function cmdHybridSearch(): Promise<void> {
 }
 
 export async function cmdKeywordSearch(): Promise<void> {
-    const query = args.slice(1).filter(a => !a.startsWith('--')).join(' ');
+    const query = stripFlags(args).slice(1).join(' ');
     if (!query) {
         console.log(c.red('Usage: brainbank ksearch <query>'));
         process.exit(1);

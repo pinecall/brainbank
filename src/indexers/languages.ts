@@ -91,6 +91,11 @@ export const IGNORE_DIRS = new Set([
     '.output',
     '.svelte-kit',
 
+    // Auto-generated code
+    'generated',
+    'sdk',
+    'openapi',
+
     // Version control
     '.git',
     '.hg',

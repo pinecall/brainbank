@@ -3,7 +3,7 @@
  * brainbank dsearch — Search documents only
  */
 
-import { c, args, getFlag } from '../utils.ts';
+import { c, args, getFlag, stripFlags } from '../utils.ts';
 import { createBrain } from '../factory.ts';
 
 export async function cmdDocs(): Promise<void> {
@@ -29,7 +29,7 @@ export async function cmdDocs(): Promise<void> {
 }
 
 export async function cmdDocSearch(): Promise<void> {
-    const query = args.slice(1).filter(a => !a.startsWith('--')).join(' ');
+    const query = stripFlags(args).slice(1).join(' ');
     if (!query) {
         console.log(c.red('Usage: brainbank dsearch <query>'));
         process.exit(1);
