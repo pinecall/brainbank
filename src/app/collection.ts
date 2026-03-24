@@ -96,7 +96,8 @@ export class Collection {
         const texts = items.map(i => i.content);
         const vecs = await this._embedding.embedBatch(texts);
 
-        // Insert all in a single transaction
+        // Commit DB rows atomically. HNSW is updated ONLY after this succeeds.
+        // If the transaction throws, execution never reaches the HNSW loop below.
         const ids: number[] = [];
         const insertData = this._db.prepare(
             'INSERT INTO kv_data (collection, content, meta_json, tags_json, expires_at) VALUES (?, ?, ?, ?, ?)'
@@ -120,11 +121,15 @@ export class Collection {
 
                 const id = Number(result.lastInsertRowid);
                 insertVec.run(id, Buffer.from(vecs[i].buffer));
-                this._hnsw.add(vecs[i], id);
-                this._vecs.set(id, vecs[i]);
                 ids.push(id);
             }
         });
+
+        // HNSW + cache updated after successful commit — no orphan risk on rollback.
+        for (let i = 0; i < ids.length; i++) {
+            this._hnsw.add(vecs[i], ids[i]);
+            this._vecs.set(ids[i], vecs[i]);
+        }
 
         return ids;
     }

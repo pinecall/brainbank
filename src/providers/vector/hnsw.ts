@@ -58,6 +58,7 @@ export class HNSWIndex implements VectorIndex {
      */
     add(vector: Float32Array, id: number): void {
         if (!this._index) throw new Error('HNSW index not initialized — call init() first');
+        if (this._ids.has(id)) return; // idempotent: skip duplicates
         if (this._ids.size >= this._maxElements) {
             throw new Error(
                 `HNSW index full (${this._maxElements} elements). ` +

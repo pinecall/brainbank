@@ -172,7 +172,7 @@ export class DocsIndexer {
             const texts = chunks.map(c => `title: ${title} | text: ${c.text}`);
             const embeddings = await this._embedding.embedBatch(texts);
 
-            // Store vectors
+            // Store vectors — DB transaction commits first, then HNSW is updated.
             const insertVec = this._db.prepare(
                 'INSERT OR REPLACE INTO doc_vectors (chunk_id, embedding) VALUES (?, ?)'
             );
@@ -181,10 +181,14 @@ export class DocsIndexer {
                 for (let j = 0; j < chunkIds.length; j++) {
                     const buf = Buffer.from(embeddings[j].buffer);
                     insertVec.run(chunkIds[j], buf);
-                    this._hnsw.add(embeddings[j], chunkIds[j]);
-                    this._vecCache.set(chunkIds[j], embeddings[j]);
                 }
             });
+
+            // Reached only if the transaction committed successfully — no orphan risk.
+            for (let j = 0; j < chunkIds.length; j++) {
+                this._hnsw.add(embeddings[j], chunkIds[j]);
+                this._vecCache.set(chunkIds[j], embeddings[j]);
+            }
 
             indexed++;
             totalChunks += chunks.length;

@@ -150,11 +150,9 @@ export class BrainBank extends EventEmitter {
         // Embedding provider (needed for modules and collections)
         this._embedding = config.embeddingProvider ?? new LocalEmbedding();
 
-        // Track embedding provider metadata (must come before mismatch check)
-        setEmbeddingMeta(this._db, this._embedding);
-
-        // Check for provider mismatch BEFORE loading vectors
-        // Loading wrong-dimension vectors into HNSW causes undefined behavior
+        // Detect provider change BEFORE overwriting stored metadata.
+        // If setEmbeddingMeta ran first, it would stamp the current provider,
+        // making detectProviderMismatch always see current == stored → false.
         const mismatch = detectProviderMismatch(this._db, this._embedding);
         const skipVectorLoad = !!mismatch?.mismatch;
         if (skipVectorLoad) {
@@ -165,6 +163,9 @@ export class BrainBank extends EventEmitter {
                 message: 'Embedding provider changed — vectors not loaded. Run brain.reembed() to regenerate.',
             });
         }
+
+        // Update stored metadata AFTER the check so old values were readable above.
+        setEmbeddingMeta(this._db, this._embedding);
 
         // Initialize HNSW for dynamic collections (must come before indexer init)
         this._kvHnsw = new HNSWIndex(
@@ -246,7 +247,7 @@ export class BrainBank extends EventEmitter {
             this._contextBuilder = new ContextBuilder(this._search, firstGit?.coEdits);
         }
 
-        // (Provider mismatch check moved before vector loading — see lines 185-200)
+
 
         this._initialized = true;
         this.emit('initialized', { indexers: this.indexers });
@@ -368,12 +369,15 @@ export class BrainBank extends EventEmitter {
         await this.initialize();
         const mods = this._findAllByType('code');
         if (mods.length === 0) throw new Error("BrainBank: Indexer 'code' is not loaded. Add .use(code()) to your BrainBank instance.");
-        const results = await Promise.all(mods.map(m => m.index!(options)));
-        return results.reduce((acc, r) => ({
-            indexed: acc.indexed + r.indexed,
-            skipped: acc.skipped + r.skipped,
-            chunks: (acc.chunks ?? 0) + (r.chunks ?? 0),
-        }));
+        // Sequential: all code indexers share one HNSW index; Promise.all would interleave writes.
+        const acc: IndexResult = { indexed: 0, skipped: 0, chunks: 0 };
+        for (const mod of mods) {
+            const r = await mod.index!(options);
+            acc.indexed += r.indexed;
+            acc.skipped += r.skipped;
+            acc.chunks = (acc.chunks ?? 0) + (r.chunks ?? 0);
+        }
+        return acc;
     }
 
     /** Index only git history (all repos in multi-repo mode). */
@@ -384,11 +388,14 @@ export class BrainBank extends EventEmitter {
         await this.initialize();
         const mods = this._findAllByType('git');
         if (mods.length === 0) throw new Error("BrainBank: Indexer 'git' is not loaded. Add .use(git()) to your BrainBank instance.");
-        const results = await Promise.all(mods.map(m => m.index!(options)));
-        return results.reduce((acc, r) => ({
-            indexed: acc.indexed + r.indexed,
-            skipped: acc.skipped + r.skipped,
-        }));
+        // Sequential: all git indexers share one HNSW index.
+        const acc: IndexResult = { indexed: 0, skipped: 0 };
+        for (const mod of mods) {
+            const r = await mod.index!(options);
+            acc.indexed += r.indexed;
+            acc.skipped += r.skipped;
+        }
+        return acc;
     }
 
     // ── Document Collections ────────────────────────
