@@ -733,10 +733,15 @@ export class BrainBank extends EventEmitter {
         }
 
         // Indexer-managed HNSW indices (supports namespaced multi-repo modules)
+        // Map indexer type → reembed table name (learning uses memory_patterns table)
+        const indexerToTableName: Record<string, string> = { learning: 'memory' };
         for (const type of ['code', 'git', 'learning', 'notes', 'docs'] as const) {
             for (const mod of this._findAllByType(type)) {
                 const m = mod as any;
-                if (m.hnsw) hnswMap.set(mod.name, { hnsw: m.hnsw, vecs: m.vecCache });
+                if (m.hnsw) {
+                    const key = indexerToTableName[type] ?? mod.name;
+                    hnswMap.set(key, { hnsw: m.hnsw, vecs: m.vecCache });
+                }
             }
         }
 

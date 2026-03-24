@@ -224,8 +224,9 @@ async function rebuildHnsw(
     hnsw: HNSWIndex,
     vecs: Map<number, Float32Array>,
 ): Promise<void> {
-    // Clear existing HNSW
+    // Wipe stale vectors before repopulating
     vecs.clear();
+    hnsw.reinit();
 
     const rows = db.prepare(
         `SELECT ${table.fkColumn} as id, embedding FROM ${table.vectorTable}`

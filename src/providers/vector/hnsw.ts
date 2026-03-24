@@ -10,6 +10,7 @@ import type { VectorIndex, SearchHit } from '../../types.ts';
 
 export class HNSWIndex implements VectorIndex {
     private _index: any = null;
+    private _lib: any = null;
     private _count = 0;
 
     constructor(
@@ -25,12 +26,27 @@ export class HNSWIndex implements VectorIndex {
      * Must be called before add/search.
      */
     async init(): Promise<this> {
-        const HNSWLib = await import('hnswlib-node');
-        const HNSW = HNSWLib.default?.HierarchicalNSW ?? HNSWLib.HierarchicalNSW;
+        this._lib = await import('hnswlib-node');
+        this._createIndex();
+        return this;
+    }
+
+    /**
+     * Reinitialize the index in-place, clearing all vectors.
+     * Required after reembed or full re-index to avoid duplicate IDs.
+     * init() must have been called first.
+     */
+    reinit(): void {
+        if (!this._lib) throw new Error('HNSW not initialized — call init() first');
+        this._createIndex();
+    }
+
+    private _createIndex(): void {
+        const HNSW = this._lib.default?.HierarchicalNSW ?? this._lib.HierarchicalNSW;
         this._index = new HNSW('cosine', this._dims);
         this._index.initIndex(this._maxElements, this._M, this._efConstruction);
         this._index.setEf(this._efSearch);
-        return this;
+        this._count = 0;
     }
 
     /**

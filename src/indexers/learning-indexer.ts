@@ -47,8 +47,8 @@ class LearningPlugin implements Indexer {
     async learn(pattern: LearningPattern): Promise<number> {
         const id = await this.patternStore.learn(pattern);
 
-        // Auto-consolidate every 50 patterns
-        if (this.patternStore.count % 50 === 0) {
+        // Auto-consolidate every 50 patterns (guard against count=0)
+        if (this.patternStore.count > 0 && this.patternStore.count % 50 === 0) {
             this.consolidator.consolidate();
         }
 

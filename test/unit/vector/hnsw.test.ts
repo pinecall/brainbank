@@ -83,4 +83,39 @@ export const tests = {
         const idx = new HNSWIndex(16, 100);
         assert.throws(() => idx.add(vec(16, 1), 1), 'should throw before init');
     },
+
+    async 'reinit clears all vectors and resets size'(assert: any) {
+        const idx = await new HNSWIndex(16, 100).init();
+        idx.add(vec(16, 1), 1);
+        idx.add(vec(16, 2), 2);
+        idx.add(vec(16, 3), 3);
+        assert.equal(idx.size, 3);
+
+        idx.reinit();
+        assert.equal(idx.size, 0, 'size should be 0 after reinit');
+        assert.equal(idx.search(vec(16, 1), 5).length, 0, 'search should return empty');
+    },
+
+    'reinit throws before init'(assert: any) {
+        const idx = new HNSWIndex(16, 100);
+        assert.throws(() => idx.reinit(), 'should throw if init() not called');
+    },
+
+    async 'reinit allows re-adding same IDs'(assert: any) {
+        const idx = await new HNSWIndex(16, 100).init();
+        const v1 = vec(16, 1);
+        idx.add(v1, 1);
+        assert.equal(idx.size, 1);
+
+        // Reinit + re-add same ID with different vector
+        idx.reinit();
+        const v2 = vec(16, 99);
+        idx.add(v2, 1);
+        assert.equal(idx.size, 1, 'size should be 1 after re-adding');
+
+        // Should find the new vector, not the old one
+        const results = idx.search(v2, 1);
+        assert.equal(results[0].id, 1);
+        assert.gt(results[0].score, 0.95, 'should match new vector');
+    },
 };

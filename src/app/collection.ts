@@ -166,8 +166,8 @@ export class Collection {
     /** Count items in this collection. */
     count(): number {
         return (this._db.prepare(
-            'SELECT COUNT(*) as c FROM kv_data WHERE collection = ?'
-        ).get(this._name) as any).c;
+            'SELECT COUNT(*) as c FROM kv_data WHERE collection = ? AND (expires_at IS NULL OR expires_at > ?)'
+        ).get(this._name, Math.floor(Date.now() / 1000)) as any).c;
     }
 
     /** Keep only the N most recent items, remove the rest. */

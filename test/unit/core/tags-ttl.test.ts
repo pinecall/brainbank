@@ -140,4 +140,29 @@ export const tests = {
 
         db.close();
     },
+
+    async 'count excludes expired items'(assert: any) {
+        const brain = new BrainBank({ dbPath: tmpDb('count-expired'), embeddingProvider: mockEmbedding() });
+        await brain.initialize();
+        const col = brain.collection('test');
+
+        // Add a normal item
+        await col.add('active item');
+
+        // Insert already-expired item directly in DB
+        const db = new Database(brain.config.dbPath);
+        const pastExpiry = Math.floor(Date.now() / 1000) - 10;
+        db.prepare(
+            "INSERT INTO kv_data (collection, content, meta_json, tags_json, expires_at) VALUES (?, ?, ?, ?, ?)"
+        ).run('test', 'expired item', '{}', '[]', pastExpiry);
+        db.close();
+
+        // count() should only report the active item
+        assert.equal(col.count(), 1, 'count() should exclude expired items');
+
+        // list() should also only return the active item
+        assert.equal(col.list().length, 1, 'list() should exclude expired items');
+
+        brain.close();
+    },
 };

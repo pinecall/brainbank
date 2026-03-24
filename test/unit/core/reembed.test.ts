@@ -107,4 +107,68 @@ export const tests = {
         }
         assert(threw, 'should throw if not initialized');
     },
+
+    async 'reembed produces clean HNSW without duplicates'(assert: any) {
+        const dbPath = tmpDb('reembed-clean-hnsw');
+
+        // Phase 1: add items with provider A
+        const brain1 = new BrainBank({ dbPath, embeddingProvider: mockEmbedding(384), embeddingDims: 384 });
+        await brain1.initialize();
+        const col1 = brain1.collection('test');
+        await col1.add('item one');
+        await col1.add('item two');
+        await col1.add('item three');
+        assert.equal(col1.count(), 3);
+        brain1.close();
+
+        // Phase 2: reembed with provider B
+        const providerB: EmbeddingProvider = {
+            dims: 384,
+            async embed(_: string) { return new Float32Array(384).fill(0.7); },
+            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.7)); },
+            async close() {},
+        };
+        const brain2 = new BrainBank({ dbPath, embeddingProvider: providerB, embeddingDims: 384 });
+        await brain2.initialize();
+        const result = await brain2.reembed();
+
+        // HNSW should have exactly 3 items, not 6 (duplicates from stale index)
+        assert.equal(result.kv, 3, 'should reembed exactly 3 kv items');
+
+        // Search should still work
+        const col2 = brain2.collection('test');
+        const hits = await col2.search('item', { k: 10, mode: 'vector', minScore: 0 });
+        assert(hits.length <= 3, `should return at most 3 results, got ${hits.length}`);
+
+        brain2.close();
+    },
+
+    async 'reembed search uses new embeddings'(assert: any) {
+        const dbPath = tmpDb('reembed-search');
+
+        // Phase 1: provider A (fills 0.1)
+        const brain1 = new BrainBank({ dbPath, embeddingProvider: mockEmbedding(384), embeddingDims: 384 });
+        await brain1.initialize();
+        const col1 = brain1.collection('data');
+        await col1.add('hello world');
+        brain1.close();
+
+        // Phase 2: provider B (fills 0.9 — very different from A)
+        const providerB: EmbeddingProvider = {
+            dims: 384,
+            async embed(_: string) { return new Float32Array(384).fill(0.9); },
+            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(384).fill(0.9)); },
+            async close() {},
+        };
+        const brain2 = new BrainBank({ dbPath, embeddingProvider: providerB, embeddingDims: 384 });
+        await brain2.initialize();
+        await brain2.reembed();
+
+        // After reembed, vector search with B-style query should find the item
+        const col2 = brain2.collection('data');
+        const hits = await col2.search('hello', { k: 1, mode: 'vector', minScore: 0 });
+        assert.equal(hits.length, 1, 'should find item with new embeddings');
+
+        brain2.close();
+    },
 };
