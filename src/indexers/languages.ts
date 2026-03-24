@@ -123,6 +123,11 @@ export const IGNORE_DIRS = new Set([
     '.cargo',
     'vendor',     // Go, PHP
 
+    // Database (auto-generated migrations, dumps, seeds)
+    'migrations',
+    'db_dumps',
+    'seeds',
+
     // AI / Model cache
     '.model-cache',
     '.brainbank',
