@@ -35,6 +35,7 @@ export class BM25Search {
         if (!ftsQuery) return [];
 
         // ── Code search ────────────────────────────
+        const seenIds = new Set<number>();
         if (codeK > 0) {
             try {
                 const rows = this._db.prepare(`
@@ -48,6 +49,7 @@ export class BM25Search {
                 `).all(ftsQuery, codeK) as any[];
 
                 for (const r of rows) {
+                    seenIds.add(r.id);
                     results.push({
                         type: 'code',
                         score: normalizeBM25(r.score),
@@ -62,6 +64,38 @@ export class BM25Search {
                             searchType: 'bm25',
                         },
                     });
+                }
+            } catch {}
+
+            // ── File-path fallback: match filenames via LIKE ──
+            try {
+                const words = query.replace(/[^a-zA-Z0-9]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+                for (const word of words.slice(0, 3)) {
+                    const pathRows = this._db.prepare(`
+                        SELECT id, file_path, chunk_type, name, start_line, end_line, content, language
+                        FROM code_chunks
+                        WHERE file_path LIKE ? AND chunk_type = 'file'
+                        LIMIT 3
+                    `).all(`%${word}%`) as any[];
+
+                    for (const r of pathRows) {
+                        if (seenIds.has(r.id)) continue;
+                        seenIds.add(r.id);
+                        results.push({
+                            type: 'code',
+                            score: 0.6,
+                            filePath: r.file_path,
+                            content: r.content,
+                            metadata: {
+                                chunkType: r.chunk_type,
+                                name: r.name,
+                                startLine: r.start_line,
+                                endLine: r.end_line,
+                                language: r.language,
+                                searchType: 'bm25-path',
+                            },
+                        });
+                    }
                 }
             } catch {}
         }
