@@ -88,10 +88,14 @@ export interface SearchHit {
 export interface VectorIndex {
     /** Initialize the index. Must be called before add/search. */
     init(): Promise<this>;
-    /** Add a vector with an integer ID. */
+    /** Add a vector with an integer ID. Idempotent: duplicate IDs are skipped. */
     add(vector: Float32Array, id: number): void;
+    /** Mark a vector as deleted so it no longer appears in searches. */
+    remove(id: number): void;
     /** Search for k nearest neighbors. */
     search(query: Float32Array, k: number): SearchHit[];
+    /** Clear all vectors and reset to empty state. */
+    reinit(): void;
     /** Number of vectors in the index. */
     readonly size: number;
 }

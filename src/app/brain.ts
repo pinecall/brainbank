@@ -131,6 +131,9 @@ export class BrainBank extends EventEmitter {
                 if (this._kvHnsw) {
                     try { this._kvHnsw.reinit(); } catch {}
                 }
+                // Close leaked DB connection so retry opens a fresh one (BUG-02 fix)
+                try { this._db?.close(); } catch {}
+                this._db = undefined as any;
                 throw err;
             })
             .finally(() => {
@@ -195,6 +198,8 @@ export class BrainBank extends EventEmitter {
                 ).init();
             },
             loadVectors: (table, idCol, hnsw, cache) => {
+                // Skip loading stale vectors when embedding provider changed (BUG-01 fix)
+                if (skipVectorLoad) return;
                 this._loadVectors(table, idCol, hnsw, cache);
             },
             getOrCreateSharedHnsw: async (type: string, maxElements?: number) => {
