@@ -30,7 +30,7 @@ import {
 import { code } from '../src/indexers/code/plugin.ts';
 import { git } from '../src/indexers/git/plugin.ts';
 import { docs } from '../src/indexers/docs/plugin.ts';
-import { learning } from '../src/indexers/learning/plugin.ts';
+import { learning } from '../src/memory/plugin.ts';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 

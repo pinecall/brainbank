@@ -76,8 +76,8 @@ export { DocsIndexer } from './indexers/docs/engine.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Agent learning stores
-export { PatternStore } from './indexers/learning/pattern-store.ts';
-export { Consolidator } from './indexers/learning/consolidator.ts';
+export { PatternStore } from './memory/pattern-store.ts';
+export { Consolidator } from './memory/consolidator.ts';
 export { NoteStore } from './indexers/notes/engine.ts';
 export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/engine.ts';
 
