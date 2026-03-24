@@ -571,7 +571,7 @@ async function cmdDocSearch() {
     for (const r of results) {
         const score = Math.round(r.score * 100);
         const ctx = r.context ? ` — ${c.dim(r.context)}` : '';
-        console.log(`${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} [${r.metadata.collection}]${ctx}`);
+        console.log(`${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} [${(r.metadata as any).collection}]${ctx}`);
         const preview = r.content.split('\n').slice(0, 4).join('\n');
         console.log(c.dim(preview));
         console.log('');
