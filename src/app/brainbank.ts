@@ -27,7 +27,7 @@ import { BM25Search } from '../search/keyword/bm25.ts';
 import { reciprocalRankFusion } from '../search/rrf.ts';
 import { ContextBuilder } from './context-builder.ts';
 import { Collection } from './collection.ts';
-import { IndexerRegistry } from './indexer-registry.ts';
+import { IndexerRegistry } from './registry.ts';
 import { reembedAll, setEmbeddingMeta, detectProviderMismatch } from '../services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '../services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '../services/reembed.ts';
