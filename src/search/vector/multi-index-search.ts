@@ -8,7 +8,7 @@
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '../../types.ts';
 import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
-import { searchMMR } from './mmr.ts';
+import { searchMMR } from './mmr-search.ts';
 
 export interface SearchConfig {
     db: Database;
