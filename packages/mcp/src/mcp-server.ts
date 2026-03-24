@@ -112,6 +112,12 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
 
     await ensureShared();
 
+    const brain = await _createBrain(resolved);
+    _pool.set(resolved, brain);
+    return brain;
+}
+
+async function _createBrain(resolved: string): Promise<BrainBank> {
     const opts: Record<string, any> = { repoPath: resolved, reranker: _sharedReranker };
     if (_sharedEmbedding) {
         opts.embeddingProvider = _sharedEmbedding;
@@ -121,10 +127,40 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
         .use(code({ repoPath: resolved }))
         .use(git({ repoPath: resolved }))
         .use(docs());
-    await brain.initialize();
 
-    _pool.set(resolved, brain);
+    try {
+        await brain.initialize();
+    } catch (err: any) {
+        // ── Auto-recover from dimension mismatch ──
+        // When DB was re-indexed with different embedding dims,
+        // the HNSW index has stale dimensions. Delete DB and re-init.
+        if (err?.message?.includes('Invalid the given array length')) {
+            const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
+            try { fs.unlinkSync(dbPath); } catch {}
+            try { fs.unlinkSync(dbPath + '-wal'); } catch {}
+            try { fs.unlinkSync(dbPath + '-shm'); } catch {}
+
+            // Create fresh instance
+            const fresh = new BrainBank(opts)
+                .use(code({ repoPath: resolved }))
+                .use(git({ repoPath: resolved }))
+                .use(docs());
+            await fresh.initialize();
+            return fresh;
+        }
+        throw err;
+    }
+
     return brain;
+}
+
+/** Evict a repo from the pool (used after re-indexing). */
+function evictPool(resolved: string) {
+    const brain = _pool.get(resolved);
+    if (brain) {
+        try { brain.close(); } catch {}
+        _pool.delete(resolved);
+    }
 }
 
 // ── MCP Server Setup ────────────────────────────────
