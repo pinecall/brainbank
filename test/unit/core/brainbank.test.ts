@@ -6,8 +6,8 @@
  */
 
 import * as fs from 'node:fs';
-import { BrainBank } from '../../../src/core/brainbank.ts';
-import { docs } from '../../../src/plugins/docs.ts';
+import { BrainBank } from '../../../src/app/brain.ts';
+import { docs } from '../../../src/indexers/docs-indexer.ts';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 
 export const name = 'BrainBank Orchestrator';
@@ -312,5 +312,51 @@ export const tests = {
         brain.close();
         cleanup(db);
         fs.rmSync(docsDir, { recursive: true });
+    },
+
+    async 'listCollectionNames() before init throws'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
+
+        let threw = false;
+        try { brain.listCollectionNames(); } catch (e: any) {
+            threw = true;
+            assert.includes(e.message, 'Not initialized');
+        }
+        assert.ok(threw, 'should throw before initialization');
+
+        brain.close();
+        cleanup(db);
+    },
+
+    async 'stats() before init throws'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 });
+
+        let threw = false;
+        try { brain.stats(); } catch (e: any) {
+            threw = true;
+            assert.includes(e.message, 'Not initialized');
+        }
+        assert.ok(threw, 'should throw before initialization');
+
+        brain.close();
+        cleanup(db);
+    },
+
+    async 'listCollections() before init throws'(assert: any) {
+        const db = makeDB();
+        const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
+            .use(docs());
+
+        let threw = false;
+        try { brain.listCollections(); } catch (e: any) {
+            threw = true;
+            assert.includes(e.message, 'Not initialized');
+        }
+        assert.ok(threw, 'should throw before initialization');
+
+        brain.close();
+        cleanup(db);
     },
 };

@@ -41,11 +41,11 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { BrainBank } from '../core/brainbank.ts';
-import { code } from '../plugins/code.ts';
-import { git } from '../plugins/git.ts';
-import { docs } from '../plugins/docs.ts';
-import type { Indexer } from '../plugins/types.ts';
+import { BrainBank } from './app/brain.ts';
+import { code } from './indexers/code-indexer.ts';
+import { git } from './indexers/git-indexer.ts';
+import { docs } from './indexers/docs-indexer.ts';
+import type { Indexer } from './indexers/base.ts';
 
 // ── Colors ──────────────────────────────────────────
 
@@ -177,7 +177,7 @@ async function createBrain(repoPath?: string): Promise<BrainBank> {
     // Embedding provider via BRAINBANK_EMBEDDING env (default: local WASM)
     const embeddingEnv = process.env.BRAINBANK_EMBEDDING;
     if (embeddingEnv === 'openai') {
-        const { OpenAIEmbedding } = await import('../embeddings/openai.ts');
+        const { OpenAIEmbedding } = await import('./providers/embeddings/openai.ts');
         const provider = new OpenAIEmbedding();
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;

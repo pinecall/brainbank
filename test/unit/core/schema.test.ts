@@ -3,8 +3,8 @@
  */
 
 import * as fs from 'node:fs';
-import { Database } from '../../../src/core/database.ts';
-import { getSchemaVersion, SCHEMA_VERSION } from '../../../src/core/schema.ts';
+import { Database } from '../../../src/db/database.ts';
+import { getSchemaVersion, SCHEMA_VERSION } from '../../../src/db/schema.ts';
 
 export const name = 'Schema & Database';
 

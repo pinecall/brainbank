@@ -5,32 +5,32 @@
  * Import once at the top of each test file instead of per-spec.
  */
 
-import { BrainBank } from '../src/core/brainbank.ts';
-import { Database } from '../src/core/database.ts';
-import { HNSWIndex } from '../src/vector/hnsw.ts';
-import { BM25Search } from '../src/query/bm25.ts';
-import { NoteStore } from '../src/learning/note-store.ts';
-import { OpenAIEmbedding } from '../src/embeddings/openai.ts';
-import { Collection } from '../src/core/collection.ts';
-import { CodeChunker } from '../src/indexers/chunker.ts';
-import { resolveConfig, DEFAULTS } from '../src/core/config.ts';
-import { SCHEMA_VERSION } from '../src/core/schema.ts';
-import { reciprocalRankFusion } from '../src/query/rrf.ts';
-import { searchMMR } from '../src/vector/mmr.ts';
+import { BrainBank } from '../src/app/brain.ts';
+import { Database } from '../src/db/database.ts';
+import { HNSWIndex } from '../src/providers/vector/hnsw.ts';
+import { BM25Search } from '../src/search/bm25.ts';
+import { NoteStore } from '../src/models/note-store.ts';
+import { OpenAIEmbedding } from '../src/providers/embeddings/openai.ts';
+import { Collection } from '../src/app/collection.ts';
+import { CodeChunker } from '../src/indexers/support/chunker.ts';
+import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
+import { SCHEMA_VERSION } from '../src/db/schema.ts';
+import { reciprocalRankFusion } from '../src/search/rrf.ts';
+import { searchMMR } from '../src/search/mmr.ts';
 import {
     cosineSimilarity, cosineSimilarityFull,
     normalize, euclideanDistance,
-} from '../src/embeddings/math.ts';
+} from '../src/lib/math.ts';
 import {
     getLanguage, isSupported, isIgnoredDir, isIgnoredFile,
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,
-} from '../src/indexers/languages.ts';
+} from '../src/indexers/support/languages.ts';
 
 // Plugins
-import { code } from '../src/plugins/code.ts';
-import { git } from '../src/plugins/git.ts';
-import { docs } from '../src/plugins/docs.ts';
-import { learning } from '../src/plugins/memory.ts';
+import { code } from '../src/indexers/code-indexer.ts';
+import { git } from '../src/indexers/git-indexer.ts';
+import { docs } from '../src/indexers/docs-indexer.ts';
+import { learning } from '../src/indexers/learning-indexer.ts';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 

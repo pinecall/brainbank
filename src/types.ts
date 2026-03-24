@@ -204,6 +204,8 @@ export interface PatternResultMetadata {
 
 export interface DocumentResultMetadata {
     collection?: string;
+    title?: string;
+    seq?: number;
     path?: string;
     searchType?: string;
 }

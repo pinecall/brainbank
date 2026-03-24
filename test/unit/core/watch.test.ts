@@ -10,8 +10,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createWatcher } from '../../../src/core/watch.ts';
-import type { Indexer } from '../../../src/plugins/types.ts';
+import { createWatcher } from '../../../src/services/watch.ts';
+import type { Indexer } from '../../../src/indexers/base.ts';
 
 export const name = 'Watch Mode';
 

@@ -3,7 +3,7 @@
  */
 
 import * as path from 'node:path';
-import { resolveConfig, DEFAULTS } from '../../../src/core/config.ts';
+import { resolveConfig, DEFAULTS } from '../../../src/config/defaults.ts';
 
 export const name = 'Configuration';
 
