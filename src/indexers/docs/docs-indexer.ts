@@ -93,10 +93,14 @@ export class DocsIndexer {
                     walkDir(path.join(dir, e.name), rel);
                 } else if (e.isFile()) {
                     const shouldIgnore = options.ignore?.some(ig => {
-                        const escaped = escapeRegex(ig)
-                            .replace(/\\\*\\\*/g, '.*')
-                            .replace(/\\\*/g, '[^/]*');
-                        return new RegExp(escaped).test(rel);
+                        // Convert glob to regex: ** → .*, * → [^/]*, escape the rest
+                        const regex = ig
+                            .replace(/\*\*/g, '{{GLOBSTAR}}')
+                            .replace(/\*/g, '{{STAR}}')
+                            .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+                            .replace(/\{\{GLOBSTAR\}\}/g, '.*')
+                            .replace(/\{\{STAR\}\}/g, '[^/]*');
+                        return new RegExp(regex).test(rel);
                     });
                     const ext = path.extname(e.name).slice(1);
                     if (!shouldIgnore && (!patternExt || ext === patternExt)) {
