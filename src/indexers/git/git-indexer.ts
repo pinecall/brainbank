@@ -8,7 +8,7 @@
 
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, ProgressCallback, IndexResult } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
 
 export interface GitIndexerDeps {
     db: Database;

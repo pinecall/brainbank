@@ -2,7 +2,7 @@
  * Unit Tests — HNSW Vector Index
  */
 
-import { HNSWIndex } from '../../../src/providers/vector/hnsw-index.ts';
+import { HNSWIndex } from '../../../src/providers/vector/hnsw.ts';
 import { normalize } from '../../../src/lib/math.ts';
 
 export const name = 'HNSW Vector Index';

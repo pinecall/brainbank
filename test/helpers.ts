@@ -7,8 +7,8 @@
 
 import { BrainBank } from '../src/app/brainbank.ts';
 import { Database } from '../src/db/database.ts';
-import { HNSWIndex } from '../src/providers/vector/hnsw-index.ts';
-import { BM25Search } from '../src/search/keyword/bm25-search.ts';
+import { HNSWIndex } from '../src/providers/vector/hnsw.ts';
+import { BM25Search } from '../src/search/keyword/bm25.ts';
 import { NoteStore } from '../src/indexers/notes/note-store.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai.ts';
 import { Collection } from '../src/app/collection.ts';

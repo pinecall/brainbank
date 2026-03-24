@@ -65,7 +65,7 @@ export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 // ── Internals (for custom plugins & power users) ────
 
 // Vector indices
-export { HNSWIndex } from './providers/vector/hnsw-index.ts';
+export { HNSWIndex } from './providers/vector/hnsw.ts';
 export { searchMMR } from './search/vector/mmr.ts';
 
 // Indexer implementations
@@ -76,14 +76,14 @@ export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Agent memory stores
-export { PatternStore } from './memory/pattern-store.ts';
+export { PatternStore } from './memory/store.ts';
 export { Consolidator } from './memory/consolidator.ts';
 export { NoteStore } from './indexers/notes/note-store.ts';
 export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/note-store.ts';
 
 // Search internals
 export { ContextBuilder } from './app/context-builder.ts';
-export { MultiIndexSearch } from './search/vector/multi-index-search.ts';
+export { MultiIndexSearch } from './search/vector/multi-index.ts';
 export { CoEditAnalyzer } from './indexers/git/co-edit-analyzer.ts';
-export { BM25Search } from './search/keyword/bm25-search.ts';
+export { BM25Search } from './search/keyword/bm25.ts';
 export { reciprocalRankFusion } from './search/rrf.ts';

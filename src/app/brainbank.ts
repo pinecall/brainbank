@@ -20,10 +20,10 @@
 import { EventEmitter } from 'node:events';
 import { resolveConfig } from '../config/defaults.ts';
 import { Database } from '../db/database.ts';
-import { HNSWIndex } from '../providers/vector/hnsw-index.ts';
+import { HNSWIndex } from '../providers/vector/hnsw.ts';
 import { LocalEmbedding } from '../providers/embeddings/local.ts';
-import { MultiIndexSearch } from '../search/vector/multi-index-search.ts';
-import { BM25Search } from '../search/keyword/bm25-search.ts';
+import { MultiIndexSearch } from '../search/vector/multi-index.ts';
+import { BM25Search } from '../search/keyword/bm25.ts';
 import { reciprocalRankFusion } from '../search/rrf.ts';
 import { ContextBuilder } from './context-builder.ts';
 import { Collection } from './collection.ts';

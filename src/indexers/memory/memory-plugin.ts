@@ -9,11 +9,11 @@
  */
 
 import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
 import type { Database } from '../../db/database.ts';
-import { PatternStore } from '../../memory/pattern-store.ts';
+import { PatternStore } from '../../memory/store.ts';
 import { Consolidator } from '../../memory/consolidator.ts';
-import { StrategyDistiller } from '../../memory/strategy-distiller.ts';
+import { StrategyDistiller } from '../../memory/distiller.ts';
 import type { LearningPattern, DistilledStrategy } from '../../types.ts';
 
 class MemoryPlugin implements Indexer {

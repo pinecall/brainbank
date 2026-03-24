@@ -3,7 +3,7 @@
  */
 
 import { searchMMR } from '../../../src/search/vector/mmr.ts';
-import { HNSWIndex } from '../../../src/providers/vector/hnsw-index.ts';
+import { HNSWIndex } from '../../../src/providers/vector/hnsw.ts';
 import { normalize } from '../../../src/lib/math.ts';
 
 export const name = 'MMR Diversity';

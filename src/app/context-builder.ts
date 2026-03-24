@@ -7,7 +7,7 @@
  */
 
 import type { SearchResult, CoEditSuggestion, ContextOptions } from '../types.ts';
-import type { MultiIndexSearch } from '../search/vector/multi-index-search.ts';
+import type { MultiIndexSearch } from '../search/vector/multi-index.ts';
 import type { CoEditAnalyzer } from '../indexers/git/co-edit-analyzer.ts';
 
 export class ContextBuilder {
