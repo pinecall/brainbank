@@ -1,5 +1,5 @@
 /**
- * BrainBank — BM25 Full-Text Search
+ * BrainBank — Keyword Search Strategy
  * 
  * Keyword search via SQLite FTS5 with BM25 ranking.
  * Searches across code chunks, git commits, and memory patterns.
@@ -8,18 +8,10 @@
 
 import type { Database } from '../../db/database.ts';
 import type { SearchResult } from '../../types.ts';
-import { sanitizeFTS, normalizeBM25 } from './utils.ts';
+import type { SearchStrategy, SearchOptions } from '../types.ts';
+import { sanitizeFTS, normalizeBM25 } from '../../lib/fts.ts';
 
-export interface BM25Options {
-    /** Max code results. Default: 8 */
-    codeK?: number;
-    /** Max git results. Default: 5 */
-    gitK?: number;
-    /** Max pattern results. Default: 4 */
-    patternK?: number;
-}
-
-export class BM25Search {
+export class KeywordSearch implements SearchStrategy {
     constructor(private _db: Database) {}
 
     /**
@@ -27,7 +19,7 @@ export class BM25Search {
      * Uses BM25 scoring — lower scores = better matches.
      * Query syntax: simple words, OR, NOT, "exact phrases", prefix*
      */
-    search(query: string, options: BM25Options = {}): SearchResult[] {
+    async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
         const { codeK = 8, gitK = 5, patternK = 4 } = options;
         const results: SearchResult[] = [];
 
@@ -181,5 +173,4 @@ export class BM25Search {
             this._db.prepare("INSERT INTO fts_patterns(fts_patterns) VALUES('rebuild')").run();
         } catch {}
     }
-
 }

@@ -8,17 +8,17 @@
  *   Phase 2 (lateInit)   — loads vectors, runs indexers, builds search.
  */
 
-import { Database } from '../../db/database.ts';
-import { HNSWIndex } from '../../providers/vector/hnsw.ts';
-import { LocalEmbedding } from '../../providers/embeddings/local.ts';
-import { MultiIndexSearch } from '../../search/vector/multi-index.ts';
-import { BM25Search } from '../../search/keyword/bm25.ts';
-import { ContextBuilder } from '../search/context-builder.ts';
-import { setEmbeddingMeta, detectProviderMismatch } from '../../services/reembed.ts';
+import { Database } from '../db/database.ts';
+import { HNSWIndex } from '../providers/vector/hnsw-index.ts';
+import { LocalEmbedding } from '../providers/embeddings/local-embedding.ts';
+import { VectorSearch } from '../search/vector/vector-search.ts';
+import { KeywordSearch } from '../search/keyword/keyword-search.ts';
+import { ContextBuilder } from './context-builder.ts';
+import { setEmbeddingMeta, detectProviderMismatch } from '../services/reembed.ts';
 import type { IndexerRegistry } from './registry.ts';
-import type { Collection } from '../collection.ts';
-import type { ResolvedConfig, EmbeddingProvider } from '../../types.ts';
-import type { IndexerContext } from '../../indexers/base.ts';
+import type { Collection } from './collection.ts';
+import type { ResolvedConfig, EmbeddingProvider } from '../types.ts';
+import type { IndexerContext } from '../indexers/base.ts';
 
 // ── Result types ─────────────────────────────────────
 
@@ -32,8 +32,8 @@ export interface EarlyInit {
 
 /** Available after phase 2 — once indexers have initialized. */
 export interface LateInit {
-    search?: MultiIndexSearch;
-    bm25?: BM25Search;
+    search?: VectorSearch;
+    bm25?: KeywordSearch;
     contextBuilder?: ContextBuilder;
 }
 
@@ -137,12 +137,12 @@ export async function lateInit(
     const gitMod  = sharedHnsw.get('git');
     const memMod  = registry.firstByType('memory') as any;
 
-    let search: MultiIndexSearch | undefined;
-    let bm25:   BM25Search | undefined;
+    let search: VectorSearch | undefined;
+    let bm25:   KeywordSearch | undefined;
     let contextBuilder: ContextBuilder | undefined;
 
     if (codeMod || gitMod || memMod) {
-        search = new MultiIndexSearch({
+        search = new VectorSearch({
             db,
             codeHnsw:    codeMod?.hnsw,
             gitHnsw:     gitMod?.hnsw,
@@ -153,7 +153,7 @@ export async function lateInit(
             embedding,
             reranker: config.reranker,
         });
-        bm25 = new BM25Search(db);
+        bm25 = new KeywordSearch(db);
     }
 
     if (search) {

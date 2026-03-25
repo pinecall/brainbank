@@ -11,7 +11,7 @@
  *   - Consistent error messages on missing indexers
  */
 
-import type { Indexer } from '../../indexers/base.ts';
+import type { Indexer } from '../indexers/base.ts';
 
 /** Shorthand aliases that map public names to canonical indexer names. */
 const ALIASES: Readonly<Record<string, string>> = {

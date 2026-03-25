@@ -7,7 +7,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { BrainBank } from '../engine/brainbank.ts';
+import { BrainBank } from '../brainbank.ts';
 import { code } from '../indexers/code/code-plugin.ts';
 import { git } from '../indexers/git/git-plugin.ts';
 import { docs } from '../indexers/docs/docs-plugin.ts';
@@ -139,7 +139,7 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     // Embedding provider via BRAINBANK_EMBEDDING env (default: local WASM)
     const embeddingEnv = process.env.BRAINBANK_EMBEDDING;
     if (embeddingEnv === 'openai') {
-        const { OpenAIEmbedding } = await import('../providers/embeddings/openai.ts');
+        const { OpenAIEmbedding } = await import('../providers/embeddings/openai-embedding.ts');
         const provider = new OpenAIEmbedding();
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;

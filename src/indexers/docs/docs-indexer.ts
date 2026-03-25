@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, VectorIndex } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
 
 // ── Break Point Scoring (qmd-inspired) ──────────────
 

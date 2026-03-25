@@ -12,10 +12,9 @@
 
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, SearchResult } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
-import { BM25Search } from '../../search/keyword/bm25.ts';
-import { reciprocalRankFusion } from '../../search/rrf.ts';
-import { sanitizeFTS, normalizeBM25 } from '../../search/keyword/utils.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import { reciprocalRankFusion } from '../../lib/rrf.ts';
+import { sanitizeFTS, normalizeBM25 } from '../../lib/fts.ts';
 
 export interface NoteDigest {
     title: string;

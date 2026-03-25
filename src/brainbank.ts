@@ -12,24 +12,24 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { resolveConfig } from '../config/defaults.ts';
-import { Database } from '../db/database.ts';
-import { HNSWIndex } from '../providers/vector/hnsw.ts';
-import { Collection } from './collection.ts';
-import { IndexerRegistry } from './lifecycle/registry.ts';
-import { earlyInit, lateInit } from './lifecycle/initializer.ts';
-import { SearchAPI } from './search/search-api.ts';
-import { IndexAPI } from './lifecycle/index-api.ts';
-import { reembedAll } from '../services/reembed.ts';
-import { createWatcher, type WatchOptions, type Watcher } from '../services/watch.ts';
-import type { ReembedResult, ReembedOptions } from '../services/reembed.ts';
-import type { Indexer } from '../indexers/base.ts';
+import { resolveConfig } from './config/defaults.ts';
+import { Database } from './db/database.ts';
+import { HNSWIndex } from './providers/vector/hnsw-index.ts';
+import { Collection } from './core/collection.ts';
+import { IndexerRegistry } from './core/registry.ts';
+import { earlyInit, lateInit } from './core/initializer.ts';
+import { SearchAPI } from './core/search-api.ts';
+import { IndexAPI } from './core/index-api.ts';
+import { reembedAll } from './services/reembed.ts';
+import { createWatcher, type WatchOptions, type Watcher } from './services/watch.ts';
+import type { ReembedResult, ReembedOptions } from './services/reembed.ts';
+import type { Indexer } from './indexers/base.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
     ContextOptions, CoEditSuggestion, ProgressCallback, StageProgressCallback,
     DocumentCollection,
-} from '../types.ts';
+} from './types.ts';
 
 export class BrainBank extends EventEmitter {
     // ── State ───────────────────────────────────────
@@ -294,7 +294,7 @@ export class BrainBank extends EventEmitter {
     }
 
     /** BM25 keyword search only (no embeddings needed). */
-    searchBM25(query: string, options?: { codeK?: number; gitK?: number; patternK?: number }): SearchResult[] {
+    async searchBM25(query: string, options?: { codeK?: number; gitK?: number; patternK?: number }): Promise<SearchResult[]> {
         this._requireInit('searchBM25');
         return this._searchAPI!.searchBM25(query, options);
     }

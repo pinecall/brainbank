@@ -2,7 +2,7 @@
  * BrainBank — BM25 + FTS5 Tests
  */
 
-import { Database, BM25Search, SCHEMA_VERSION, tmpDb } from '../../helpers.ts';
+import { Database, KeywordSearch, BM25Search, SCHEMA_VERSION, tmpDb } from '../../helpers.ts';
 
 export const name = 'BM25 Full-Text Search';
 
@@ -44,7 +44,7 @@ export const tests = {
         db.close();
     },
 
-    async 'BM25Search finds code by keyword'(assert: any) {
+    async 'KeywordSearch finds code by keyword'(assert: any) {
         const db = new Database(tmpDb('bm25-search'));
 
         db.prepare(`
@@ -60,8 +60,8 @@ export const tests = {
                     'typescript', 'hash2')
         `).run();
 
-        const bm25 = new BM25Search(db);
-        const results = bm25.search('authenticate password');
+        const bm25 = new KeywordSearch(db);
+        const results = await bm25.search('authenticate password');
 
         assert(results.length > 0, 'should find results for authenticate');
         assert.equal(results[0].type, 'code');
@@ -70,7 +70,7 @@ export const tests = {
         db.close();
     },
 
-    async 'BM25Search finds git commits'(assert: any) {
+    async 'KeywordSearch finds git commits'(assert: any) {
         const db = new Database(tmpDb('bm25-git'));
 
         db.prepare(`
@@ -78,8 +78,8 @@ export const tests = {
             VALUES ('abc123full', 'abc123', 'fix: resolve authentication bypass vulnerability', 'dev', '2024-01-15', 1705305600, '["src/auth.ts"]', 'diff here', 0)
         `).run();
 
-        const bm25 = new BM25Search(db);
-        const results = bm25.search('authentication vulnerability');
+        const bm25 = new KeywordSearch(db);
+        const results = await bm25.search('authentication vulnerability');
 
         assert(results.length > 0, 'should find commit');
         assert.equal(results[0].type, 'commit');
@@ -88,7 +88,7 @@ export const tests = {
         db.close();
     },
 
-    async 'BM25Search finds memory patterns'(assert: any) {
+    async 'KeywordSearch finds memory patterns'(assert: any) {
         const db = new Database(tmpDb('bm25-mem'));
 
         db.prepare(`
@@ -96,8 +96,8 @@ export const tests = {
             VALUES ('api', 'implement rate limiting middleware', 'used express-rate-limit with Redis store', 'working rate limiter', 0.9)
         `).run();
 
-        const bm25 = new BM25Search(db);
-        const results = bm25.search('rate limiting');
+        const bm25 = new KeywordSearch(db);
+        const results = await bm25.search('rate limiting');
 
         assert(results.length > 0, 'should find pattern');
         assert.equal(results[0].type, 'pattern');
@@ -107,8 +107,8 @@ export const tests = {
 
     async 'BM25 returns empty for no matches'(assert: any) {
         const db = new Database(tmpDb('bm25-empty'));
-        const bm25 = new BM25Search(db);
-        const results = bm25.search('xyznonexistentterm');
+        const bm25 = new KeywordSearch(db);
+        const results = await bm25.search('xyznonexistentterm');
 
         assert.equal(results.length, 0);
         db.close();
@@ -116,12 +116,12 @@ export const tests = {
 
     async 'BM25 sanitizes dangerous queries'(assert: any) {
         const db = new Database(tmpDb('bm25-sanitize'));
-        const bm25 = new BM25Search(db);
+        const bm25 = new KeywordSearch(db);
 
-        bm25.search('test AND OR NOT');
-        bm25.search('test {brackets} [square]');
-        bm25.search('test^power ~fuzzy');
-        const empty = bm25.search('');
+        await bm25.search('test AND OR NOT');
+        await bm25.search('test {brackets} [square]');
+        await bm25.search('test^power ~fuzzy');
+        const empty = await bm25.search('');
 
         assert.equal(empty.length, 0);
         db.close();

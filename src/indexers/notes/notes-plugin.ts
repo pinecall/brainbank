@@ -9,7 +9,7 @@
  */
 
 import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
 import { NoteStore } from './note-store.ts';
 import type { NoteDigest, StoredNote, RecallOptions } from './note-store.ts';
 

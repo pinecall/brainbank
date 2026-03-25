@@ -50,7 +50,7 @@ export async function cmdKeywordSearch(): Promise<void> {
     console.log(c.bold(`\n━━━ BrainBank Keyword Search: "${query}" ━━━`));
     console.log(c.dim(`  Mode: BM25 full-text (instant)\n`));
 
-    const results = brain.searchBM25(query);
+    const results = await brain.searchBM25(query);
     printResults(results);
     brain.close();
 }

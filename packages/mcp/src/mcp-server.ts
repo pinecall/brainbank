@@ -472,7 +472,7 @@ server.registerTool(
     },
     async ({ query, codeK, gitK, repo }) => {
         const brainbank = await getBrainBank(repo);
-        const results = brainbank.searchBM25(query, { codeK, gitK });
+        const results = await brainbank.searchBM25(query, { codeK, gitK });
 
         if (results.length === 0) {
             return { content: [{ type: 'text', text: 'No keyword matches found.' }] };

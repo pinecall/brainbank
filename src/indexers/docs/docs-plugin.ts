@@ -9,7 +9,7 @@
  */
 
 import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, DocumentCollection, SearchResult } from '../../types.ts';
 import { DocsIndexer } from './docs-indexer.ts';

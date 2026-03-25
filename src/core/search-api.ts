@@ -2,22 +2,21 @@
  * BrainBank — Search API
  *
  * All search and context operations in one place.
- * Composed from MultiIndexSearch, BM25, ContextBuilder, and KV collections.
+ * Composed from VectorSearch, KeywordSearch, ContextBuilder, and KV collections.
  * Always created after initialization (even when search services are absent),
  * so BrainBank can unconditionally delegate to it.
  */
 
-import type { MultiIndexSearch } from '../../search/vector/multi-index.ts';
-import type { BM25Search } from '../../search/keyword/bm25.ts';
+import type { SearchStrategy } from '../search/types.ts';
 import type { ContextBuilder } from './context-builder.ts';
-import type { Collection } from '../collection.ts';
-import type { IndexerRegistry } from '../lifecycle/registry.ts';
-import type { ResolvedConfig, SearchResult, ContextOptions } from '../../types.ts';
-import { reciprocalRankFusion } from '../../search/rrf.ts';
+import type { Collection } from './collection.ts';
+import type { IndexerRegistry } from './registry.ts';
+import type { ResolvedConfig, SearchResult, ContextOptions } from '../types.ts';
+import { reciprocalRankFusion } from '../lib/rrf.ts';
 
 export interface SearchAPIDeps {
-    search?:         MultiIndexSearch;
-    bm25?:           BM25Search;
+    search?:         SearchStrategy;
+    bm25?:           SearchStrategy;
     contextBuilder?: ContextBuilder;
     registry:        IndexerRegistry;
     config:          ResolvedConfig;
@@ -119,11 +118,11 @@ export class SearchAPI {
 
     // ── Keyword ─────────────────────────────────────
 
-    searchBM25(query: string, options?: { codeK?: number; gitK?: number; patternK?: number }): SearchResult[] {
+    async searchBM25(query: string, options?: { codeK?: number; gitK?: number; patternK?: number }): Promise<SearchResult[]> {
         return this._d.bm25?.search(query, options) ?? [];
     }
 
-    rebuildFTS(): void { this._d.bm25?.rebuild(); }
+    rebuildFTS(): void { this._d.bm25?.rebuild?.(); }
 
     // ── Context ─────────────────────────────────────
 

@@ -18,7 +18,7 @@
 
 // ── Public API ──────────────────────────────────────
 
-export { BrainBank } from './engine/brainbank.ts';
+export { BrainBank } from './brainbank.ts';
 
 // Plugin factories
 export { code } from './indexers/code/code-plugin.ts';
@@ -31,8 +31,8 @@ export { notes } from './indexers/notes/notes-plugin.ts';
 export type { Indexer, IndexerContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
 
 // Collections
-export { Collection } from './engine/collection.ts';
-export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './engine/collection.ts';
+export { Collection } from './core/collection.ts';
+export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './core/collection.ts';
 
 // Types
 export type {
@@ -54,9 +54,9 @@ export type {
 } from './types.ts';
 
 // Embeddings
-export { LocalEmbedding } from './providers/embeddings/local.ts';
-export { OpenAIEmbedding } from './providers/embeddings/openai.ts';
-export type { OpenAIEmbeddingOptions } from './providers/embeddings/openai.ts';
+export { LocalEmbedding } from './providers/embeddings/local-embedding.ts';
+export { OpenAIEmbedding } from './providers/embeddings/openai-embedding.ts';
+export type { OpenAIEmbeddingOptions } from './providers/embeddings/openai-embedding.ts';
 export type { ReembedResult, ReembedOptions } from './services/reembed.ts';
 export type { WatchOptions, Watcher } from './services/watch.ts';
 export { cosineSimilarity, normalize } from './lib/math.ts';
@@ -67,7 +67,7 @@ export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 // ── Internals (for custom plugins & power users) ────
 
 // Vector indices
-export { HNSWIndex } from './providers/vector/hnsw.ts';
+export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';
 
 // Indexer implementations
@@ -78,14 +78,21 @@ export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Agent memory stores
-export { PatternStore } from './memory/store.ts';
-export { Consolidator } from './memory/consolidator.ts';
+export { PatternStore } from './indexers/memory/pattern-store.ts';
+export { Consolidator } from './indexers/memory/consolidator.ts';
 export { NoteStore } from './indexers/notes/note-store.ts';
 export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/note-store.ts';
 
 // Search internals
-export { ContextBuilder } from './engine/search/context-builder.ts';
-export { MultiIndexSearch } from './search/vector/multi-index.ts';
+export { ContextBuilder } from './core/context-builder.ts';
+export { VectorSearch } from './search/vector/vector-search.ts';
 export { CoEditAnalyzer } from './indexers/git/co-edit-analyzer.ts';
-export { BM25Search } from './search/keyword/bm25.ts';
-export { reciprocalRankFusion } from './search/rrf.ts';
+export { KeywordSearch } from './search/keyword/keyword-search.ts';
+export { reciprocalRankFusion } from './lib/rrf.ts';
+
+// Search types
+export type { SearchStrategy, SearchOptions } from './search/types.ts';
+
+// Backwards compatibility aliases
+export { VectorSearch as MultiIndexSearch } from './search/vector/vector-search.ts';
+export { KeywordSearch as BM25Search } from './search/keyword/keyword-search.ts';

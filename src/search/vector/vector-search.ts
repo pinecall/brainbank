@@ -1,16 +1,18 @@
 /**
- * BrainBank — Multi-Index Search
+ * BrainBank — Vector Search Strategy
  * 
- * Searches across all three indices (code, git, memory patterns)
- * and returns typed results sorted by relevance.
+ * Searches across code, git, and memory pattern HNSW indices.
+ * Returns typed results sorted by relevance.
  */
 
 import type { Database } from '../../db/database.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import type { SearchStrategy, SearchOptions } from '../types.ts';
 import { searchMMR } from './mmr.ts';
+import { rerank } from './rerank.ts';
 
-export interface SearchConfig {
+export interface VectorSearchConfig {
     db: Database;
     codeHnsw?: HNSWIndex;
     gitHnsw?: HNSWIndex;
@@ -22,25 +24,10 @@ export interface SearchConfig {
     reranker?: Reranker;
 }
 
-export interface SearchOptions {
-    /** Max code results. Default: 6 */
-    codeK?: number;
-    /** Max git results. Default: 5 */
-    gitK?: number;
-    /** Max pattern results. Default: 4 */
-    patternK?: number;
-    /** Minimum similarity score. Default: 0.25 */
-    minScore?: number;
-    /** Use MMR for diversity. Default: true */
-    useMMR?: boolean;
-    /** MMR lambda. Default: 0.7 */
-    mmrLambda?: number;
-}
+export class VectorSearch implements SearchStrategy {
+    private _config: VectorSearchConfig;
 
-export class MultiIndexSearch {
-    private _config: SearchConfig;
-
-    constructor(config: SearchConfig) {
+    constructor(config: VectorSearchConfig) {
         this._config = config;
     }
 
@@ -173,33 +160,9 @@ export class MultiIndexSearch {
 
         // Apply re-ranking if available
         if (this._config.reranker && results.length > 1) {
-            return this._rerank(query, results);
+            return rerank(query, results, this._config.reranker);
         }
 
         return results;
-    }
-
-    /**
-     * Re-rank results using position-aware blending.
-     * 
-     * Top 1-3:  75% retrieval / 25% reranker (preserves exact matches)
-     * Top 4-10: 60% retrieval / 40% reranker
-     * Top 11+:  40% retrieval / 60% reranker (trust reranker more)
-     */
-    private async _rerank(query: string, results: SearchResult[]): Promise<SearchResult[]> {
-        const reranker = this._config.reranker!;
-        const documents = results.map(r => r.content);
-        const scores = await reranker.rank(query, documents);
-
-        const blended = results.map((r, i) => {
-            const pos = i + 1;
-            const rrfWeight = pos <= 3 ? 0.75 : pos <= 10 ? 0.60 : 0.40;
-            return {
-                ...r,
-                score: rrfWeight * r.score + (1 - rrfWeight) * (scores[i] ?? 0),
-            };
-        });
-
-        return blended.sort((a, b) => b.score - a.score);
     }
 }

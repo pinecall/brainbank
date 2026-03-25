@@ -5,17 +5,17 @@
  * Import once at the top of each test file instead of per-spec.
  */
 
-import { BrainBank } from '../src/engine/brainbank.ts';
+import { BrainBank } from '../src/brainbank.ts';
 import { Database } from '../src/db/database.ts';
-import { HNSWIndex } from '../src/providers/vector/hnsw.ts';
-import { BM25Search } from '../src/search/keyword/bm25.ts';
+import { HNSWIndex } from '../src/providers/vector/hnsw-index.ts';
+import { KeywordSearch } from '../src/search/keyword/keyword-search.ts';
 import { NoteStore } from '../src/indexers/notes/note-store.ts';
-import { OpenAIEmbedding } from '../src/providers/embeddings/openai.ts';
-import { Collection } from '../src/engine/collection.ts';
+import { OpenAIEmbedding } from '../src/providers/embeddings/openai-embedding.ts';
+import { Collection } from '../src/core/collection.ts';
 import { CodeChunker } from '../src/indexers/code/code-chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';
-import { reciprocalRankFusion } from '../src/search/rrf.ts';
+import { reciprocalRankFusion } from '../src/lib/rrf.ts';
 import { searchMMR } from '../src/search/vector/mmr.ts';
 import {
     cosineSimilarity, cosineSimilarityFull,
@@ -92,7 +92,8 @@ export {
     BrainBank,
     Database,
     HNSWIndex,
-    BM25Search,
+    KeywordSearch,
+    KeywordSearch as BM25Search,
     NoteStore,
     OpenAIEmbedding,
     Collection,
