@@ -2,14 +2,15 @@
  * brainbank collection add|list|remove — Document collection management
  */
 
-import { c, args, getFlag } from '@/cli/utils.ts';
+import { c, args, getFlag, stripFlags } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdCollection(): Promise<void> {
-    const sub = args[1];
+    const pos = stripFlags(args);
+    const sub = pos[1];
 
     if (sub === 'add') {
-        const path = args[2];
+        const path = pos[2];
         const name = getFlag('name');
         const pattern = getFlag('pattern') ?? '**/*.md';
         const context = getFlag('context');
@@ -53,7 +54,7 @@ export async function cmdCollection(): Promise<void> {
     }
 
     if (sub === 'remove') {
-        const name = args[2];
+        const name = pos[2];
         if (!name) {
             console.log(c.red('Usage: brainbank collection remove <name>'));
             process.exit(1);

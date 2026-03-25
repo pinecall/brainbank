@@ -2,16 +2,17 @@
  * brainbank kv add|search|list|trim|clear — Dynamic KV collection management
  */
 
-import { c, args, getFlag } from '@/cli/utils.ts';
+import { c, args, getFlag, stripFlags } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdKv(): Promise<void> {
-    const sub = args[1];
+    const pos = stripFlags(args);
+    const sub = pos[1];
 
     // ── add ─────────────────────────────────────────
     if (sub === 'add') {
-        const collName = args[2];
-        const content = args.slice(3).filter(a => !a.startsWith('--')).join(' ');
+        const collName = pos[2];
+        const content = pos.slice(3).join(' ');
         const metaRaw = getFlag('meta');
 
         if (!collName || !content) {
@@ -31,8 +32,8 @@ export async function cmdKv(): Promise<void> {
 
     // ── search ──────────────────────────────────────
     if (sub === 'search') {
-        const collName = args[2];
-        const query = args.slice(3).filter(a => !a.startsWith('--')).join(' ');
+        const collName = pos[2];
+        const query = pos.slice(3).join(' ');
         const k = parseInt(getFlag('k') || '5', 10);
         const mode = (getFlag('mode') as any) || 'hybrid';
 
@@ -64,7 +65,7 @@ export async function cmdKv(): Promise<void> {
 
     // ── list ────────────────────────────────────────
     if (sub === 'list') {
-        const collName = args[2];
+        const collName = pos[2];
         const limit = parseInt(getFlag('limit') || '20', 10);
 
         if (!collName) {
@@ -103,7 +104,7 @@ export async function cmdKv(): Promise<void> {
 
     // ── trim ────────────────────────────────────────
     if (sub === 'trim') {
-        const collName = args[2];
+        const collName = pos[2];
         const keep = parseInt(getFlag('keep') || '0', 10);
 
         if (!collName || keep <= 0) {
@@ -122,7 +123,7 @@ export async function cmdKv(): Promise<void> {
 
     // ── clear ───────────────────────────────────────
     if (sub === 'clear') {
-        const collName = args[2];
+        const collName = pos[2];
         if (!collName) {
             console.log(c.red('Usage: brainbank kv clear <collection>'));
             process.exit(1);
@@ -141,3 +142,4 @@ export async function cmdKv(): Promise<void> {
     console.log(c.red('Usage: brainbank kv <add|search|list|trim|clear>'));
     process.exit(1);
 }
+

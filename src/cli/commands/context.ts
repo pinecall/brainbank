@@ -8,13 +8,14 @@ import { c, args, stripFlags } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdContext(): Promise<void> {
-    const sub = args[1];
+    const pos = stripFlags(args);
+    const sub = pos[1];
 
     // brainbank context add <collection> <path> <description>
     if (sub === 'add') {
-        const collection = args[2];
-        const path = args[3];
-        const desc = args.slice(4).join(' ');
+        const collection = pos[2];
+        const path = pos[3];
+        const desc = pos.slice(4).join(' ');
 
         if (!collection || !path || !desc) {
             console.log(c.red('Usage: brainbank context add <collection> <path> <description>'));
