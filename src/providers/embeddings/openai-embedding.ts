@@ -19,7 +19,9 @@ const DEFAULT_DIMS: Record<string, number> = {
     'text-embedding-ada-002': 1536,
 };
 const API_URL = 'https://api.openai.com/v1/embeddings';
-const MAX_BATCH = 100; // OpenAI limit per request
+const MAX_BATCH = 100;
+const REQUEST_TIMEOUT_MS = 30_000;
+const BATCH_DELAY_MS = 100;
 
 export interface OpenAIEmbeddingOptions {
     /** OpenAI API key. Falls back to OPENAI_API_KEY env var. */
@@ -30,6 +32,8 @@ export interface OpenAIEmbeddingOptions {
     dims?: number;
     /** Base URL override (for Azure, proxies, etc.) */
     baseUrl?: string;
+    /** Request timeout in ms. Default: 30000 */
+    timeout?: number;
 }
 
 export class OpenAIEmbedding implements EmbeddingProvider {
@@ -39,11 +43,13 @@ export class OpenAIEmbedding implements EmbeddingProvider {
     private _model: string;
     private _baseUrl: string;
     private _requestDims: number | undefined;
+    private _timeout: number;
 
     constructor(options: OpenAIEmbeddingOptions = {}) {
         this._apiKey = options.apiKey ?? process.env.OPENAI_API_KEY ?? '';
         this._model = options.model ?? DEFAULT_MODEL;
         this._baseUrl = options.baseUrl ?? API_URL;
+        this._timeout = options.timeout ?? REQUEST_TIMEOUT_MS;
 
         // Custom dims only supported by text-embedding-3-*
         if (options.dims && this._model.startsWith('text-embedding-3')) {
@@ -64,8 +70,8 @@ export class OpenAIEmbedding implements EmbeddingProvider {
 
         const results: Float32Array[] = [];
 
-        // Split into chunks of MAX_BATCH
         for (let i = 0; i < texts.length; i += MAX_BATCH) {
+            if (i > 0) await sleep(BATCH_DELAY_MS);
             const batch = texts.slice(i, i + MAX_BATCH);
             const embeddings = await this._request(batch);
             results.push(...embeddings);
@@ -95,14 +101,29 @@ export class OpenAIEmbedding implements EmbeddingProvider {
         const body: Record<string, any> = { model: this._model, input: safeInput };
         if (this._requestDims) body.dimensions = this._requestDims;
 
-        const res = await fetch(this._baseUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this._apiKey}`,
-            },
-            body: JSON.stringify(body),
-        });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this._timeout);
+
+        let res: Response;
+        try {
+            res = await fetch(this._baseUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this._apiKey}`,
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+        } catch (err: any) {
+            clearTimeout(timer);
+            if (err.name === 'AbortError') {
+                throw new Error(`OpenAI embedding request timed out after ${this._timeout}ms.`);
+            }
+            throw err;
+        } finally {
+            clearTimeout(timer);
+        }
 
         if (!res.ok) {
             return this._handleApiError(res, safeInput, retryDepth);
@@ -136,4 +157,9 @@ export class OpenAIEmbedding implements EmbeddingProvider {
         }
         throw new Error(`OpenAI embedding API error (${res.status}): ${err}`);
     }
+}
+
+/** Simple delay helper. */
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }

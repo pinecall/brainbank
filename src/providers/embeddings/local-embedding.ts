@@ -61,14 +61,27 @@ export class LocalEmbedding implements EmbeddingProvider {
     }
 
     /**
-     * Embed multiple texts.
-     * Processes sequentially to avoid OOM on large batches.
+     * Embed multiple texts using real batch processing.
+     * Chunks into groups of BATCH_SIZE to balance throughput vs memory.
      */
     async embedBatch(texts: string[]): Promise<Float32Array[]> {
+        if (texts.length === 0) return [];
+
+        const BATCH_SIZE = 32;
+        const pipe = await this._getPipeline();
         const results: Float32Array[] = [];
-        for (const text of texts) {
-            results.push(await this.embed(text));
+
+        for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+            const batch = texts.slice(i, i + BATCH_SIZE);
+            const output = await pipe(batch, { pooling: 'mean', normalize: true });
+
+            // output.data is a flat Float32Array of length (batch.length * dims)
+            for (let j = 0; j < batch.length; j++) {
+                const start = j * this.dims;
+                results.push(new Float32Array(output.data.buffer, start * 4, this.dims));
+            }
         }
+
         return results;
     }
 

@@ -45,8 +45,8 @@ export const tests = {
         assert.gte(funcChunks.length, 2, 'should detect at least 2 functions');
         
         const names = funcChunks.map(c => c.name);
-        assert.ok(names.some(n => n.includes('hello')), 'should have hello');
-        assert.ok(names.some(n => n.includes('goodbye')), 'should have goodbye');
+        assert.ok(names.some(n => n!.includes('hello')), 'should have hello');
+        assert.ok(names.some(n => n!.includes('goodbye')), 'should have goodbye');
     },
 
     async 'detects class with methods'(assert: any) {
@@ -82,9 +82,9 @@ export class UserService {
         assert.gte(methods.length, 3, 'should detect at least 3 methods');
         
         const methodNames = methods.map(c => c.name);
-        assert.ok(methodNames.some(n => n.includes('findAll')), 'should have findAll');
-        assert.ok(methodNames.some(n => n.includes('findById')), 'should have findById');
-        assert.ok(methodNames.some(n => n.includes('create')), 'should have create');
+        assert.ok(methodNames.some(n => n!.includes('findAll')), 'should have findAll');
+        assert.ok(methodNames.some(n => n!.includes('findById')), 'should have findById');
+        assert.ok(methodNames.some(n => n!.includes('create')), 'should have create');
     },
 
     async 'detects decorated class (NestJS @Module)'(assert: any) {
@@ -109,7 +109,8 @@ export function standalone() {
         
         const classChunks = chunks.filter(c => c.chunkType === 'class');
         assert.gte(classChunks.length, 1, 'should detect AuthModule class');
-        assert.ok(classChunks[0].name.includes('AuthModule'), 'name should be AuthModule');
+        const firstClass = classChunks[0];
+        assert.ok(firstClass && firstClass.name?.includes('AuthModule'), 'name should be AuthModule');
     },
 
     async 'detects TypeScript interface and type'(assert: any) {
@@ -136,7 +137,8 @@ export function doSomething() {
         
         const interfaces = chunks.filter(c => c.chunkType === 'interface');
         assert.gte(interfaces.length, 1, 'should detect interface');
-        assert.ok(interfaces[0].name.includes('UserProfile'), 'should be UserProfile');
+        const firstInterface = interfaces[0];
+        assert.ok(firstInterface && firstInterface.name?.includes('UserProfile'), 'should be UserProfile');
     },
 
     async 'Python: detects functions and classes'(assert: any) {

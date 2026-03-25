@@ -184,13 +184,13 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 
 ### Ask first:
 - `npm install` / add dependencies
-- `git commit` / `git push`
 - Delete files or directories
 - Modify `tsconfig.json`, `tsup.config.ts`, `package.json`
 - `npm run build` or full test suite
 - Modify `src/db/database.ts` (schema changes)
 
 ### NEVER without approval:
+- `git commit` / `git push` — **always** ask the user before committing or pushing
 - `npm publish`
 - Modify SQLite schema without review
 - Delete or rename public exports from `src/index.ts` (breaking change)

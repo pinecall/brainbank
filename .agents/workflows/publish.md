@@ -16,10 +16,20 @@ npm test
 If tests fail, STOP and fix them first.
 
 ### 2. Check what changed since last version
+
+Find the latest tag and show commits since then. This two-step approach never fails:
+
+// turbo
 ```
-git log $(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~50")..HEAD --oneline --no-merges
+LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1); git log ${LAST_TAG:+${LAST_TAG}..}HEAD --oneline --no-merges -50
 ```
-If `git describe` fails (no tags), use the last 50 commits.
+
+**How it works:**
+- `git tag -l 'v*' --sort=-v:refname | head -1` gets the latest `v*` tag (empty string if none exist)
+- `${LAST_TAG:+${LAST_TAG}..}` expands to `vX.Y.Z..` only if a tag exists, otherwise expands to nothing
+- Without a tag, this becomes `git log HEAD --oneline -50` (last 50 commits)
+- The `-50` flag prevents pager issues
+
 Save this output — you'll need it to verify the CHANGELOG.
 
 ### 3. Ask the user for bump type
@@ -59,6 +69,7 @@ Then:
 Omit empty sections. Use concise, user-facing descriptions (not raw commit messages).
 
 ### 5. Bump version in package.json
+// turbo
 ```
 npm version <patch|minor|major> --no-git-tag-version
 ```

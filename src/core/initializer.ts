@@ -27,6 +27,7 @@ export interface EarlyInit {
     db: Database;
     embedding: EmbeddingProvider;
     kvHnsw: HNSWIndex;
+    /** True when force-init with mismatched dims — vectors skipped until reembed. */
     skipVectorLoad: boolean;
 }
 
@@ -42,20 +43,19 @@ export interface LateInit {
 export async function earlyInit(
     config: ResolvedConfig,
     emit: (event: string, data: any) => void,
+    options: { force?: boolean } = {},
 ): Promise<EarlyInit> {
     const db = new Database(config.dbPath);
     const embedding: EmbeddingProvider = config.embeddingProvider ?? new LocalEmbedding();
 
     const mismatch = detectProviderMismatch(db, embedding);
-    const skipVectorLoad = !!mismatch?.mismatch;
 
-    if (skipVectorLoad) {
-        emit('warning', {
-            type: 'provider_mismatch',
-            previous: mismatch!.stored,
-            current: mismatch!.current,
-            message: 'Embedding provider changed — vectors not loaded. Run brain.reembed() to regenerate.',
-        });
+    if (mismatch?.mismatch && !options.force) {
+        db.close();
+        throw new Error(
+            `BrainBank: Embedding dimension mismatch (stored: ${mismatch.stored}, current: ${mismatch.current}). ` +
+            `Run brain.reembed() to re-index with the new provider, or switch back to the original provider.`
+        );
     }
 
     setEmbeddingMeta(db, embedding);
@@ -68,6 +68,9 @@ export async function earlyInit(
         config.hnswEfSearch,
     );
     await kvHnsw.init();
+
+    // When forced with a mismatch, skip loading old vectors (wrong dims)
+    const skipVectorLoad = !!(options.force && mismatch?.mismatch);
 
     return { db, embedding, kvHnsw, skipVectorLoad };
 }

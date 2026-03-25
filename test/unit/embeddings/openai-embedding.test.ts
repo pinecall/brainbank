@@ -124,4 +124,56 @@ export const tests = {
         await provider.close();
         assert(true, 'close should succeed');
     },
+
+    async 'timeout fires on slow response'(assert: any) {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (_url: any, opts: any) => {
+            // Simulate a response that takes longer than the timeout
+            await new Promise((_, reject) => {
+                opts.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+            });
+            return new Response('{}', { status: 200 });
+        };
+
+        try {
+            const provider = new OpenAIEmbedding({ apiKey: 'sk-test', timeout: 50 });
+            let threw = false;
+            try {
+                await provider.embed('test');
+            } catch (e: any) {
+                threw = true;
+                assert.includes(e.message, 'timed out');
+            }
+            assert(threw, 'should throw timeout error');
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    },
+
+    async 'embedBatch delays between chunks'(assert: any) {
+        const timestamps: number[] = [];
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (_url: any, opts: any) => {
+            timestamps.push(Date.now());
+            const body = JSON.parse(opts.body);
+            const data = body.input.map((_: string, i: number) => ({
+                embedding: [0.1, 0.2, 0.3, 0.4],
+                index: i,
+            }));
+            return new Response(JSON.stringify({ data }), { status: 200 });
+        };
+
+        try {
+            const provider = new OpenAIEmbedding({ apiKey: 'sk-test', dims: 4 });
+            // Create 150 texts to force 2 batch chunks (100 + 50)
+            const texts = Array.from({ length: 150 }, (_, i) => `text ${i}`);
+            await provider.embedBatch(texts);
+
+            assert.equal(timestamps.length, 2, 'should make 2 requests');
+            const delay = timestamps[1] - timestamps[0];
+            assert.ok(delay >= 80, `delay between batches should be >= 80ms, got ${delay}ms`);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    },
 };

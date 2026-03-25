@@ -9,6 +9,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import assert from 'node:assert/strict';
 import { BrainBank, code, hashEmbedding } from '../../helpers.ts';
 
 export const name = 'Code Indexer';
@@ -134,7 +135,6 @@ export class Router {
 export const tests: Record<string, () => Promise<void>> = {};
 
 tests['index: indexes TypeScript and Python files from nested dirs'] = async () => {
-    const assert = (await import('node:assert')).strict;
     setup();
 
     brain = new BrainBank({ repoPath: tmpDir, dbPath: path.join(tmpDir, 'test.db'), embeddingProvider: emb })
@@ -147,7 +147,6 @@ tests['index: indexes TypeScript and Python files from nested dirs'] = async () 
 };
 
 tests['index: creates chunks with correct metadata (language, lines, type)'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const db = (brain as any)._db;
     const chunks = db.prepare('SELECT * FROM code_chunks ORDER BY file_path, start_line').all() as any[];
 
@@ -162,7 +161,6 @@ tests['index: creates chunks with correct metadata (language, lines, type)'] = a
 };
 
 tests['index: skips unchanged files on second run'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const result = await brain.indexCode();
 
     assert.equal(result.indexed, 0, 'nothing re-indexed');
@@ -170,14 +168,12 @@ tests['index: skips unchanged files on second run'] = async () => {
 };
 
 tests['index: force reindex re-processes all files'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const result = await brain.indexCode({ forceReindex: true });
 
     assert.ok(result.indexed >= 4, `force re-indexed ${result.indexed} files`);
 };
 
 tests['index: detects changed file and re-indexes only it'] = async () => {
-    const assert = (await import('node:assert')).strict;
 
     // Modify one file
     fs.appendFileSync(path.join(tmpDir, 'src', 'auth.ts'), '\nexport const VERSION = "2.0";\n');
@@ -188,7 +184,6 @@ tests['index: detects changed file and re-indexes only it'] = async () => {
 };
 
 tests['search: HNSW finds code by semantic query'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const codeMod = brain.indexer('code') as any;
     const queryVec = await emb.embed('user authentication login token');
     const hits = codeMod.hnsw.search(queryVec, 5);
@@ -198,7 +193,6 @@ tests['search: HNSW finds code by semantic query'] = async () => {
 };
 
 tests['search: finds Python functions'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const codeMod = brain.indexer('code') as any;
     const queryVec = await emb.embed('parse CSV data processing');
     const hits = codeMod.hnsw.search(queryVec, 5);
@@ -207,7 +201,6 @@ tests['search: finds Python functions'] = async () => {
 };
 
 tests['search: finds class definitions'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const codeMod = brain.indexer('code') as any;
     const queryVec = await emb.embed('database connection pool');
     const hits = codeMod.hnsw.search(queryVec, 5);
@@ -216,7 +209,6 @@ tests['search: finds class definitions'] = async () => {
 };
 
 tests['search: finds router/middleware patterns'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const codeMod = brain.indexer('code') as any;
     const queryVec = await emb.embed('HTTP route handler middleware');
     const hits = codeMod.hnsw.search(queryVec, 5);
@@ -225,7 +217,6 @@ tests['search: finds router/middleware patterns'] = async () => {
 };
 
 tests['stats: reports correct file and chunk counts'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const stats = brain.stats();
 
     assert.ok(stats.code, 'code stats present');

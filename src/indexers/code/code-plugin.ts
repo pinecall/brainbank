@@ -16,6 +16,7 @@
 
 import type { Indexer, IndexerContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { Database } from '@/db/database.ts';
 import { CodeIndexer } from './code-indexer.ts';
 import type { IndexResult, ProgressCallback } from '@/types.ts';
 
@@ -30,6 +31,7 @@ export interface CodePluginOptions {
 
 class CodePlugin implements Indexer {
     readonly name: string;
+    private db!: Database;
     hnsw!: HNSWIndex;
     indexer!: CodeIndexer;
     vecCache = new Map<number, Float32Array>();
@@ -39,6 +41,7 @@ class CodePlugin implements Indexer {
     }
 
     async initialize(ctx: IndexerContext): Promise<void> {
+        this.db = ctx.db;
         // Use shared HNSW so all code indexers (code, code:frontend, etc.) share one index
         const shared = await ctx.getOrCreateSharedHnsw('code');
         this.hnsw = shared.hnsw;
@@ -65,8 +68,12 @@ class CodePlugin implements Indexer {
         return this.indexer.index(options);
     }
 
-    stats(): Record<string, any> {
-        return { hnswSize: this.hnsw.size };
+    stats(): Record<string, number> {
+        return {
+            files:    (this.db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM code_chunks').get() as { c: number }).c,
+            chunks:   (this.db.prepare('SELECT COUNT(*) as c FROM code_chunks').get() as { c: number }).c,
+            hnswSize: this.hnsw.size,
+        };
     }
 }
 

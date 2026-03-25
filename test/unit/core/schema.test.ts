@@ -66,6 +66,13 @@ export const tests = {
         db.close();
     },
 
+    'busy_timeout is set'(assert: any) {
+        const db = freshDb();
+        const timeout = db.db.pragma('busy_timeout') as any[];
+        assert.equal(timeout[0].timeout, 5000);
+        db.close();
+    },
+
     'insert and query roundtrip'(assert: any) {
         const db = freshDb();
         db.prepare(`INSERT INTO code_chunks (file_path, chunk_type, start_line, end_line, content, language)

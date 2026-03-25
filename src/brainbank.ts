@@ -86,19 +86,19 @@ export class BrainBank extends EventEmitter {
      * Only initializes registered modules.
      * Automatically called by index/search methods if not yet initialized.
      */
-    async initialize(): Promise<void> {
+    async initialize(options: { force?: boolean } = {}): Promise<void> {
         if (this._initialized) return;
         if (this._initPromise) return this._initPromise;
 
-        this._initPromise = this._runInitialize()
+        this._initPromise = this._runInitialize(options)
             .catch(err => {
                 // Reset shared state so a retry starts clean
                 for (const { hnsw } of this._sharedHnsw.values()) try { hnsw.reinit(); } catch {}
                 this._kvVecs.clear();
                 if (this._kvHnsw) try { this._kvHnsw.reinit(); } catch {}
                 try { this._db?.close(); } catch {}
-                this._db        = undefined as any;
-                this._kvHnsw    = undefined as any;
+                this._db        = undefined!;
+                this._kvHnsw    = undefined!;
                 this._searchAPI = undefined;
                 this._indexAPI  = undefined;
                 throw err;
@@ -108,12 +108,12 @@ export class BrainBank extends EventEmitter {
         return this._initPromise;
     }
 
-    private async _runInitialize(): Promise<void> {
+    private async _runInitialize(options: { force?: boolean } = {}): Promise<void> {
         if (this._initialized) return;
 
         // Phase 1: set this._kvHnsw BEFORE phase 2 so collection() works
         // when indexers call ctx.collection() during their initialize()
-        const early = await earlyInit(this._config, (e, d) => this.emit(e, d));
+        const early = await earlyInit(this._config, (e, d) => this.emit(e, d), options);
         this._db        = early.db;
         this._embedding = early.embedding;
         this._kvHnsw    = early.kvHnsw;
@@ -199,18 +199,21 @@ export class BrainBank extends EventEmitter {
     /** Register a document collection. */
     async addCollection(collection: DocumentCollection): Promise<void> {
         await this.initialize();
+        this._requireDocs('addCollection');
         this.indexer('docs').addCollection!(collection);
     }
 
     /** Remove a collection and all its indexed data. */
     async removeCollection(name: string): Promise<void> {
         await this.initialize();
+        this._requireDocs('removeCollection');
         this.indexer('docs').removeCollection!(name);
     }
 
     /** List all registered collections. */
     listCollections(): DocumentCollection[] {
         this._requireInit('listCollections');
+        this._requireDocs('listCollections');
         return this.indexer('docs').listCollections!();
     }
 
@@ -220,6 +223,7 @@ export class BrainBank extends EventEmitter {
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
     } = {}): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>> {
         await this.initialize();
+        this._requireDocs('indexDocs');
         const results = await this.indexer('docs').indexCollections!(options);
         this.emit('docsIndexed', results);
         return results;
@@ -228,6 +232,7 @@ export class BrainBank extends EventEmitter {
     /** Search documents only. */
     async searchDocs(query: string, options?: { collection?: string; k?: number; minScore?: number }): Promise<SearchResult[]> {
         await this.initialize();
+        if (!this.has('docs')) return [];
         return this.indexer('docs').search!(query, options);
     }
 
@@ -235,16 +240,19 @@ export class BrainBank extends EventEmitter {
 
     /** Add context description for a collection path. */
     addContext(collection: string, path: string, context: string): void {
+        this._requireDocs('addContext');
         this.indexer('docs').addContext!(collection, path, context);
     }
 
     /** Remove context for a collection path. */
     removeContext(collection: string, path: string): void {
+        this._requireDocs('removeContext');
         this.indexer('docs').removeContext!(collection, path);
     }
 
     /** List all context entries. */
     listContexts(): { collection: string; path: string; context: string }[] {
+        this._requireDocs('listContexts');
         return this.indexer('docs').listContexts!();
     }
 
@@ -308,15 +316,17 @@ export class BrainBank extends EventEmitter {
     // ── Queries ──────────────────────────────────────
 
     /** Get git history for a specific file. */
-    async fileHistory(filePath: string, limit = 20): Promise<any[]> {
+    async fileHistory(filePath: string, limit = 20): Promise<Record<string, unknown>[]> {
         await this.initialize();
-        return (this.indexer('git') as any).fileHistory(filePath, limit);
+        const gitPlugin = this.indexer('git') as Indexer & { fileHistory(f: string, l: number): Record<string, unknown>[] };
+        return gitPlugin.fileHistory(filePath, limit);
     }
 
     /** Get co-edit suggestions for a file. */
     coEdits(filePath: string, limit = 5): CoEditSuggestion[] {
         this._requireInit('coEdits');
-        return (this.indexer('git') as any).suggestCoEdits(filePath, limit);
+        const gitPlugin = this.indexer('git') as Indexer & { suggestCoEdits(f: string, l: number): CoEditSuggestion[] };
+        return gitPlugin.suggestCoEdits(filePath, limit);
     }
 
     // ── Stats ────────────────────────────────────────
@@ -327,26 +337,13 @@ export class BrainBank extends EventEmitter {
         const result: IndexStats = {};
 
         if (this.has('code')) {
-            const sh = this._sharedHnsw.get('code');
-            result.code = {
-                files:    (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM code_chunks').get() as any).c,
-                chunks:   (this._db.prepare('SELECT COUNT(*) as c FROM code_chunks').get() as any).c,
-                hnswSize: sh?.hnsw.size ?? 0,
-            };
+            result.code = this._registry.firstByType('code')!.stats!() as IndexStats['code'];
         }
-
         if (this.has('git')) {
-            const sh = this._sharedHnsw.get('git');
-            result.git = {
-                commits:      (this._db.prepare('SELECT COUNT(*) as c FROM git_commits').get() as any).c,
-                filesTracked: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM commit_files').get() as any).c,
-                coEdits:      (this._db.prepare('SELECT COUNT(*) as c FROM co_edits').get() as any).c,
-                hnswSize:     sh?.hnsw.size ?? 0,
-            };
+            result.git = this._registry.firstByType('git')!.stats!() as IndexStats['git'];
         }
-
         if (this.has('docs')) {
-            result.documents = (this.indexer('docs') as any).stats();
+            result.documents = this._registry.firstByType('docs')!.stats!() as IndexStats['documents'];
         }
 
         return result;
@@ -403,12 +400,13 @@ export class BrainBank extends EventEmitter {
     close(): void {
         this._watcher?.close();
         for (const indexer of this._registry.all) indexer.close?.();
+        this._embedding?.close().catch(() => {});
         this._db?.close();
         this._initialized = false;
         this._collections.clear();
         this._sharedHnsw.clear();
         this._kvVecs.clear();
-        this._kvHnsw    = undefined as any;
+        this._kvHnsw    = undefined!;
         this._searchAPI = undefined;
         this._indexAPI  = undefined;
         this._registry.clear();
@@ -425,5 +423,10 @@ export class BrainBank extends EventEmitter {
     private _requireInit(method: string): void {
         if (!this._initialized)
             throw new Error(`BrainBank: Not initialized. Call await brain.initialize() before ${method}().`);
+    }
+
+    private _requireDocs(method: string): void {
+        if (!this.has('docs'))
+            throw new Error(`BrainBank: Docs indexer not loaded. Add .use(docs()) before calling ${method}().`);
     }
 }

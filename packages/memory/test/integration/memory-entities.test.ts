@@ -172,7 +172,7 @@ tests['turn 3: memory dedup catches repeated facts'] = async () => {
     if (!memory) return;
 
     // Count memories BEFORE repeating a known fact
-    const beforeCount = (await brain.collection('memory_facts').list()).length;
+    const beforeCount = (await brain.collection('memories').list()).length;
 
     // Say something already known
     const result = await memory.process(
@@ -181,7 +181,7 @@ tests['turn 3: memory dedup catches repeated facts'] = async () => {
     );
 
     // Count memories AFTER
-    const afterCount = (await brain.collection('memory_facts').list()).length;
+    const afterCount = (await brain.collection('memories').list()).length;
 
     // Dedup is validated if ANY of these hold:
     //   1. LLM returned NONE or UPDATE ops (recognized as duplicate)

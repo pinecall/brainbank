@@ -86,8 +86,13 @@ class GitPlugin implements Indexer {
         `).all(`%${filePath}%`, limit) as any[];
     }
 
-    stats(): Record<string, any> {
-        return { hnswSize: this.hnsw.size };
+    stats(): Record<string, number> {
+        return {
+            commits:      (this.db.prepare('SELECT COUNT(*) as c FROM git_commits').get() as { c: number }).c,
+            filesTracked: (this.db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM commit_files').get() as { c: number }).c,
+            coEdits:      (this.db.prepare('SELECT COUNT(*) as c FROM co_edits').get() as { c: number }).c,
+            hnswSize:     this.hnsw.size,
+        };
     }
 }
 

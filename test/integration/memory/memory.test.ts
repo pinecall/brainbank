@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import assert from 'node:assert/strict';
 import { BrainBank, memory, hashEmbedding } from '../../helpers.ts';
 
 export const name = 'Memory Module';
@@ -18,7 +19,6 @@ let brain: BrainBank;
 export const tests: Record<string, () => Promise<void>> = {};
 
 tests['setup: create brain with memory module'] = async () => {
-    const assert = (await import('node:assert')).strict;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-memory-'));
 
     brain = new BrainBank({ repoPath: tmpDir, dbPath: path.join(tmpDir, 'test.db'), embeddingProvider: hashEmbedding() })
@@ -28,7 +28,6 @@ tests['setup: create brain with memory module'] = async () => {
 };
 
 tests['learn: stores debugging patterns'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
 
     const id1 = await mem.learn({
@@ -58,7 +57,6 @@ tests['learn: stores debugging patterns'] = async () => {
 };
 
 tests['learn: stores performance patterns'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
 
     await mem.learn({
@@ -83,7 +81,6 @@ tests['learn: stores performance patterns'] = async () => {
 };
 
 tests['search: finds debugging patterns by similarity'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
     const results = await mem.search('null pointer exception fix', 4);
 
@@ -94,7 +91,6 @@ tests['search: finds debugging patterns by similarity'] = async () => {
 };
 
 tests['search: finds performance patterns'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
     const results = await mem.search('slow database query optimization');
 
@@ -102,7 +98,6 @@ tests['search: finds performance patterns'] = async () => {
 };
 
 tests['search: returns scored results sorted by relevance'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
     const results = await mem.search('fix bug', 5);
 
@@ -113,7 +108,6 @@ tests['search: returns scored results sorted by relevance'] = async () => {
 };
 
 tests['consolidate: prunes and deduplicates patterns'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
     const result = mem.consolidate();
 
@@ -122,7 +116,6 @@ tests['consolidate: prunes and deduplicates patterns'] = async () => {
 };
 
 tests['distill: extracts strategy from task type'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
     const strategy = mem.distill('debugging');
 
@@ -131,7 +124,6 @@ tests['distill: extracts strategy from task type'] = async () => {
 };
 
 tests['stats: reports pattern count and avg success rate'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const mem = brain.indexer('memory') as any;
     const stats = mem.stats();
 

@@ -86,7 +86,14 @@ async function createEmbeddingProvider() {
 // ── Multi-Workspace BrainBank Pool ─────────────────────
 // Reranker + embedding provider are shared; each repo gets its own DB.
 
-const _pool = new Map<string, BrainBank>();
+const MAX_POOL_SIZE = 10;
+
+interface PoolEntry {
+    brain: BrainBank;
+    lastAccess: number;
+}
+
+const _pool = new Map<string, PoolEntry>();
 let _sharedReranker: any = undefined;
 let _sharedEmbedding: any = undefined;
 let _sharedReady = false;
@@ -109,11 +116,11 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
     const resolved = rp.replace(/\/+$/, ''); // normalize
 
     if (_pool.has(resolved)) {
-        const cached = _pool.get(resolved)!;
+        const entry = _pool.get(resolved)!;
         // Evict stale instances: if cached brain has 0 code vectors
         // but the DB file has since been repopulated (e.g. after re-index)
         try {
-            const codeStats = cached.indexer('code')?.stats?.();
+            const codeStats = entry.brain.indexer('code')?.stats?.();
             if (codeStats && codeStats.hnswSize === 0) {
                 const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
                 const dbSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
@@ -121,20 +128,36 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
                     evictPool(resolved);
                     // fall through to re-create below
                 } else {
-                    return cached;
+                    entry.lastAccess = Date.now();
+                    return entry.brain;
                 }
             } else {
-                return cached;
+                entry.lastAccess = Date.now();
+                return entry.brain;
             }
         } catch {
-            return cached;
+            entry.lastAccess = Date.now();
+            return entry.brain;
         }
     }
 
     await ensureShared();
 
+    // LRU eviction: close + remove least recently used entry when at capacity
+    if (_pool.size >= MAX_POOL_SIZE) {
+        let oldest: string | undefined;
+        let oldestTime = Infinity;
+        for (const [key, entry] of _pool) {
+            if (entry.lastAccess < oldestTime) {
+                oldestTime = entry.lastAccess;
+                oldest = key;
+            }
+        }
+        if (oldest) evictPool(oldest);
+    }
+
     const brain = await _createBrain(resolved);
-    _pool.set(resolved, brain);
+    _pool.set(resolved, { brain, lastAccess: Date.now() });
     return brain;
 }
 
@@ -175,11 +198,11 @@ async function _createBrain(resolved: string): Promise<BrainBank> {
     return brain;
 }
 
-/** Evict a repo from the pool (used after re-indexing). */
+/** Evict a repo from the pool (used after re-indexing or LRU). */
 function evictPool(resolved: string) {
-    const brain = _pool.get(resolved);
-    if (brain) {
-        try { brain.close(); } catch {}
+    const entry = _pool.get(resolved);
+    if (entry) {
+        try { entry.brain.close(); } catch {}
         _pool.delete(resolved);
     }
 }

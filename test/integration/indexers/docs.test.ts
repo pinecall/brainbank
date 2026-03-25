@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import assert from 'node:assert/strict';
 import { BrainBank, docs, hashEmbedding } from '../../helpers.ts';
 
 export const name = 'Docs Indexer';
@@ -121,7 +122,6 @@ Alice, Bob, Charlie
 export const tests: Record<string, () => Promise<void>> = {};
 
 tests['setup: create brain with docs module'] = async () => {
-    const assert = (await import('node:assert')).strict;
     setup();
 
     brain = new BrainBank({ repoPath: tmpDir, dbPath: path.join(tmpDir, 'test.db'), embeddingProvider: hashEmbedding() })
@@ -131,7 +131,6 @@ tests['setup: create brain with docs module'] = async () => {
 };
 
 tests['register: add two document collections'] = async () => {
-    const assert = (await import('node:assert')).strict;
 
     await brain.addCollection({ name: 'project-docs', path: docsDir, pattern: '**/*.md' });
     await brain.addCollection({ name: 'meeting-notes', path: notesDir, pattern: '**/*.md' });
@@ -142,7 +141,6 @@ tests['register: add two document collections'] = async () => {
 };
 
 tests['index: indexes both collections'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const result = await brain.indexDocs();
 
     assert.ok(result['project-docs'], 'project-docs indexed');
@@ -154,7 +152,6 @@ tests['index: indexes both collections'] = async () => {
 };
 
 tests['index: skips unchanged docs on re-index'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const result = await brain.indexDocs();
 
     assert.equal(result['project-docs'].indexed, 0, 'docs unchanged');
@@ -162,7 +159,6 @@ tests['index: skips unchanged docs on re-index'] = async () => {
 };
 
 tests['index: re-indexes only changed doc'] = async () => {
-    const assert = (await import('node:assert')).strict;
 
     fs.appendFileSync(path.join(docsDir, 'getting-started.md'), '\n## Troubleshooting\n\nCommon issues and solutions.\n');
     const result = await brain.indexDocs();
@@ -172,7 +168,6 @@ tests['index: re-indexes only changed doc'] = async () => {
 };
 
 tests['search: finds docs by content'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const results = await brain.searchDocs('npm install setup');
 
     assert.ok(results.length > 0, `got ${results.length} results`);
@@ -180,31 +175,28 @@ tests['search: finds docs by content'] = async () => {
 };
 
 tests['search: returns title and collection metadata'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const results = await brain.searchDocs('API reference search options');
 
     assert.ok(results.length > 0, 'has results');
     const first = results[0];
-    assert.ok(first.metadata?.collection, 'has collection');
-    assert.ok(first.metadata?.title, 'has title');
+    assert.ok((first.metadata as Record<string, unknown>)?.collection, 'has collection');
+    assert.ok((first.metadata as Record<string, unknown>)?.title, 'has title');
 };
 
 tests['search: filters by collection'] = async () => {
-    const assert = (await import('node:assert')).strict;
 
     const docsResults = await brain.searchDocs('search', { collection: 'project-docs' });
     const notesResults = await brain.searchDocs('search', { collection: 'meeting-notes' });
 
     for (const r of docsResults) {
-        assert.equal(r.metadata?.collection, 'project-docs', 'filtered to project-docs');
+        assert.equal((r.metadata as Record<string, unknown>)?.collection, 'project-docs', 'filtered to project-docs');
     }
     for (const r of notesResults) {
-        assert.equal(r.metadata?.collection, 'meeting-notes', 'filtered to meeting-notes');
+        assert.equal((r.metadata as Record<string, unknown>)?.collection, 'meeting-notes', 'filtered to meeting-notes');
     }
 };
 
 tests['context: add and resolve path context'] = async () => {
-    const assert = (await import('node:assert')).strict;
 
     brain.addContext('project-docs', '/api-reference.md', 'Main API documentation for BrainBank library');
     const contexts = brain.listContexts();
@@ -216,7 +208,6 @@ tests['context: add and resolve path context'] = async () => {
 };
 
 tests['context: remove context'] = async () => {
-    const assert = (await import('node:assert')).strict;
 
     brain.removeContext('project-docs', '/api-reference.md');
     const contexts = brain.listContexts();
@@ -225,7 +216,6 @@ tests['context: remove context'] = async () => {
 };
 
 tests['remove: removeCollection clears all data'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const docsMod = brain.indexer('docs') as any;
 
     docsMod.removeCollection('meeting-notes');

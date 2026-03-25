@@ -632,6 +632,18 @@ The agent passes the `repo` parameter on each tool call based on the active work
 
 > Optionally set `BRAINBANK_REPO` as a default fallback repo. If omitted, every tool call must include the `repo` parameter (recommended for multi-workspace setups).
 
+> [!CAUTION]
+> **Embedding Provider Consistency is Critical**
+>
+> The embedding provider used by the MCP server **must match** the one used during indexing. Mismatched dimensions cause `initialize()` to throw or search to return empty results.
+>
+> **Common failure scenario:**
+> 1. You index via CLI with `BRAINBANK_EMBEDDING=openai` (1536 dims)
+> 2. MCP server starts without `BRAINBANK_EMBEDDING` env var → defaults to local (384 dims)
+> 3. **Result:** BrainBank throws `Embedding dimension mismatch` on every search
+>
+> **Fix:** Always set `BRAINBANK_EMBEDDING` consistently in your MCP config, CLI, and API usage. If you indexed with OpenAI, your MCP config **must** include `"BRAINBANK_EMBEDDING": "openai"`. If you switch providers, run `brainbank reembed` to regenerate all vectors.
+
 ### Available Tools
 
 | Tool | Description |
@@ -690,7 +702,8 @@ new OpenAIEmbedding({
 });
 ```
 
-> ⚠️ Switching embedding provider requires re-indexing — vectors are not cross-compatible.
+> [!WARNING]
+> Switching embedding provider (e.g. local → OpenAI) changes the vector dimensions. BrainBank will **refuse to initialize** if the stored dimensions don't match the current provider. Use `initialize({ force: true })` and then `reembed()` to migrate, or switch back to the original provider.
 
 ### Reranker
 
@@ -975,11 +988,9 @@ import { BrainBank, OpenAIEmbedding } from 'brainbank';
 const brain = new BrainBank({
   embeddingProvider: new OpenAIEmbedding(),
 });
-await brain.initialize();
 
-// ⚠ BrainBank emits 'warning' event if provider changed.
-brain.on('warning', (w) => console.warn(w.message));
-// → "Embedding provider changed (LocalEmbedding/384 → OpenAIEmbedding/1536). Run brain.reembed()"
+// force: true bypasses the dimension mismatch check for recovery
+await brain.initialize({ force: true });
 
 const result = await brain.reembed({
   onProgress: (table, current, total) => {

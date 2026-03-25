@@ -183,7 +183,7 @@ export const tests = {
         assert.equal(col1.count(), 1);
         brain1.close();
 
-        // Phase 2: reopen with 128-dim provider (different dims)
+        // Phase 2: reopen with 128-dim provider (different dims) — needs force
         const provider128: EmbeddingProvider = {
             dims: 128,
             async embed(_: string) { return new Float32Array(128).fill(0.3); },
@@ -191,7 +191,7 @@ export const tests = {
             async close() {},
         };
         const brain2 = new BrainBank({ dbPath, embeddingProvider: provider128, embeddingDims: 128 });
-        await brain2.initialize();
+        await brain2.initialize({ force: true });
 
         const result = await brain2.reembed();
         assert(result.kv >= 1, `should reembed >= 1 kv items, got ${result.kv}`);
@@ -202,5 +202,27 @@ export const tests = {
         assert.equal(hits.length, 1, 'should find item after dims change');
 
         brain2.close();
+    },
+
+    async 'initialize throws on dimension mismatch'(assert: any) {
+        const dbPath = tmpDb('reembed-mismatch-throw');
+
+        // Phase 1: index with 384-dim provider
+        const brain1 = new BrainBank({ dbPath, embeddingProvider: mockEmbedding(384), embeddingDims: 384 });
+        await brain1.initialize();
+        await brain1.collection('data').add('some content');
+        brain1.close();
+
+        // Phase 2: reopen with different dims — should throw
+        const brain2 = new BrainBank({ dbPath, embeddingProvider: mockEmbedding(128), embeddingDims: 128 });
+        let threw = false;
+        try {
+            await brain2.initialize();
+        } catch (e: any) {
+            threw = true;
+            assert.includes(e.message, 'dimension mismatch');
+            assert.includes(e.message, 'reembed');
+        }
+        assert(threw, 'should throw on dimension mismatch');
     },
 };

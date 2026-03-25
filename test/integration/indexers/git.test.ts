@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import { BrainBank, code, git, hashEmbedding } from '../../helpers.ts';
 
@@ -52,7 +53,6 @@ function setup() {
 export const tests: Record<string, () => Promise<void>> = {};
 
 tests['index: indexes all commits from git history'] = async () => {
-    const assert = (await import('node:assert')).strict;
     setup();
 
     brain = new BrainBank({ repoPath: tmpDir, dbPath: path.join(tmpDir, 'test.db'), embeddingProvider: emb })
@@ -65,7 +65,6 @@ tests['index: indexes all commits from git history'] = async () => {
 };
 
 tests['index: stores commit metadata (hash, author, date, files)'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const db = (brain as any)._db;
     const commits = db.prepare('SELECT * FROM git_commits ORDER BY timestamp DESC').all() as any[];
 
@@ -78,7 +77,6 @@ tests['index: stores commit metadata (hash, author, date, files)'] = async () =>
 };
 
 tests['index: stores commit files for co-edit analysis'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const db = (brain as any)._db;
     const files = db.prepare('SELECT * FROM commit_files').all() as any[];
 
@@ -87,7 +85,6 @@ tests['index: stores commit files for co-edit analysis'] = async () => {
 };
 
 tests['index: co-edits table exists'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const db = (brain as any)._db;
     const coEdits = db.prepare('SELECT * FROM co_edits ORDER BY count DESC').all() as any[];
 
@@ -95,7 +92,6 @@ tests['index: co-edits table exists'] = async () => {
 };
 
 tests['index: skips already indexed commits'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const result = await brain.indexGit({ depth: 50 });
 
     assert.equal(result.indexed, 0, 'no new commits');
@@ -103,7 +99,6 @@ tests['index: skips already indexed commits'] = async () => {
 };
 
 tests['search: HNSW finds commits by message content'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const gitMod = brain.indexer('git') as any;
     const queryVec = await emb.embed('authentication JWT token');
     const hits = gitMod.hnsw.search(queryVec, 5);
@@ -112,7 +107,6 @@ tests['search: HNSW finds commits by message content'] = async () => {
 };
 
 tests['search: HNSW finds security-related commits'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const gitMod = brain.indexer('git') as any;
     const queryVec = await emb.embed('injection attack security fix');
     const hits = gitMod.hnsw.search(queryVec, 5);
@@ -121,7 +115,6 @@ tests['search: HNSW finds security-related commits'] = async () => {
 };
 
 tests['search: HNSW finds refactoring commits'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const gitMod = brain.indexer('git') as any;
     const queryVec = await emb.embed('database class refactoring');
     const hits = gitMod.hnsw.search(queryVec, 5);
@@ -130,7 +123,6 @@ tests['search: HNSW finds refactoring commits'] = async () => {
 };
 
 tests['co-edits: suggest returns related files'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const gitMod = brain.indexer('git') as any;
     const suggestions = gitMod.suggestCoEdits('src/auth.ts', 5);
 
@@ -143,7 +135,6 @@ tests['co-edits: suggest returns related files'] = async () => {
 };
 
 tests['stats: reports correct HNSW size'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const stats = brain.stats();
 
     assert.ok(stats.git, 'git stats present');
@@ -152,7 +143,6 @@ tests['stats: reports correct HNSW size'] = async () => {
 };
 
 tests['index: additions/deletions are real line counts (not visual chars)'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const db = (brain as any)._db;
     const commits = db.prepare(
         'SELECT message, additions, deletions FROM git_commits WHERE is_merge = 0 ORDER BY timestamp ASC'
@@ -174,7 +164,6 @@ tests['index: additions/deletions are real line counts (not visual chars)'] = as
 };
 
 tests['index: commit_files correctly populated from --numstat'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const db = (brain as any)._db;
     const files = db.prepare('SELECT * FROM commit_files').all() as any[];
 
@@ -188,7 +177,6 @@ tests['index: commit_files correctly populated from --numstat'] = async () => {
 };
 
 tests['fileHistory: returns commit history for a file'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const history = await brain.fileHistory('src/api.ts', 10);
 
     assert.ok(Array.isArray(history), 'returns array');
@@ -201,7 +189,6 @@ tests['fileHistory: returns commit history for a file'] = async () => {
 };
 
 tests['coEdits: throws before initialize'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const uninitBrain = new BrainBank({ repoPath: tmpDir, dbPath: path.join(tmpDir, 'uninit.db'), embeddingProvider: emb })
         .use(git({ repoPath: tmpDir }));
 
@@ -216,7 +203,6 @@ tests['coEdits: throws before initialize'] = async () => {
 };
 
 tests['co-edits: auth.ts suggests api.ts'] = async () => {
-    const assert = (await import('node:assert')).strict;
     const suggestions = brain.coEdits('src/auth.ts', 5);
 
     assert.ok(Array.isArray(suggestions), 'returns array');

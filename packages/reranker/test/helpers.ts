@@ -2,7 +2,7 @@
  * @brainbank/reranker — Test Helpers
  * Re-exports from brainbank and provides test utilities.
  */
-import { BrainBank } from '../../../src/engine/brainbank.ts';
+import { BrainBank } from '../../../src/brainbank.ts';
 import { code } from '../../../src/indexers/code/code-plugin.ts';
 
 // Simple hash-based embedding for testing (no real model needed)
