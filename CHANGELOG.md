@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-03-25
+
 ### Fixed
 - CLI `kv`, `context`, and `collection` commands now use `stripFlags()` — `--repo` values no longer pollute positional args
 
