@@ -120,7 +120,7 @@ await brain.index();  // indexes code + git history (incremental)
 
 // Search across everything
 const results = await brain.hybridSearch('authentication middleware');
-console.log(results.map(r => `${r.filePath}:${r.line} (${r.score.toFixed(2)})`));
+console.log(results.map(r => `${r.filePath}:L${r.metadata?.startLine} (${r.score.toFixed(2)})`));
 
 // Store agent memory
 const log = brain.collection('decisions');
@@ -134,7 +134,7 @@ await log.add(
 // Recall later: "what did we decide about password hashing?"
 const hits = await log.search('password hashing decision');
 
-await brain.close();
+brain.close();
 ```
 
 Or use the CLI — zero code:
@@ -569,7 +569,7 @@ export default {
   name: 'conversations',
   async initialize(ctx: IndexerContext) {
     const conversations = ctx.collection('conversations');
-    const logsDir = path.join(ctx.repoPath, '.gemini/antigravity/brain');
+    const logsDir = path.join(ctx.config.repoPath, '.gemini/antigravity/brain');
     if (!fs.existsSync(logsDir)) return;
 
     for (const dir of fs.readdirSync(logsDir)) {
@@ -830,7 +830,6 @@ The `LLMProvider` interface works with any framework:
 |----------|-------------|
 | `BRAINBANK_REPO` | Default repository path (optional — auto-detected from `.git/` or passed per tool call) |
 | `BRAINBANK_EMBEDDING` | Embedding provider: `local` (default), `openai` |
-| `BRAINBANK_RERANKER` | Reranker: `none` (default), `qwen3` to enable |
 | `BRAINBANK_DEBUG` | Show full stack traces |
 | `OPENAI_API_KEY` | Required when using `BRAINBANK_EMBEDDING=openai` |
 

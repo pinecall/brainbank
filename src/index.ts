@@ -24,6 +24,8 @@ export { BrainBank } from './engine/brainbank.ts';
 export { code } from './indexers/code/code-plugin.ts';
 export { git } from './indexers/git/git-plugin.ts';
 export { docs } from './indexers/docs/docs-plugin.ts';
+export { memory } from './indexers/memory/memory-plugin.ts';
+export { notes } from './indexers/notes/notes-plugin.ts';
 
 // Plugin types
 export type { Indexer, IndexerContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
