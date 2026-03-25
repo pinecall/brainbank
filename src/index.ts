@@ -18,7 +18,7 @@
 
 // ── Public API ──────────────────────────────────────
 
-export { BrainBank } from './app/brainbank.ts';
+export { BrainBank } from './engine/brainbank.ts';
 
 // Plugin factories
 export { code } from './indexers/code/code-plugin.ts';
@@ -29,8 +29,8 @@ export { docs } from './indexers/docs/docs-plugin.ts';
 export type { Indexer, IndexerContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
 
 // Collections
-export { Collection } from './app/collection.ts';
-export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './app/collection.ts';
+export { Collection } from './engine/collection.ts';
+export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './engine/collection.ts';
 
 // Types
 export type {
@@ -82,7 +82,7 @@ export { NoteStore } from './indexers/notes/note-store.ts';
 export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/note-store.ts';
 
 // Search internals
-export { ContextBuilder } from './app/context-builder.ts';
+export { ContextBuilder } from './engine/search/context-builder.ts';
 export { MultiIndexSearch } from './search/vector/multi-index.ts';
 export { CoEditAnalyzer } from './indexers/git/co-edit-analyzer.ts';
 export { BM25Search } from './search/keyword/bm25.ts';

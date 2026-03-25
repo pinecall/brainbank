@@ -5,13 +5,13 @@
  * Import once at the top of each test file instead of per-spec.
  */
 
-import { BrainBank } from '../src/app/brainbank.ts';
+import { BrainBank } from '../src/engine/brainbank.ts';
 import { Database } from '../src/db/database.ts';
 import { HNSWIndex } from '../src/providers/vector/hnsw.ts';
 import { BM25Search } from '../src/search/keyword/bm25.ts';
 import { NoteStore } from '../src/indexers/notes/note-store.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai.ts';
-import { Collection } from '../src/app/collection.ts';
+import { Collection } from '../src/engine/collection.ts';
 import { CodeChunker } from '../src/indexers/code/code-chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';

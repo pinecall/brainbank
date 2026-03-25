@@ -8,17 +8,17 @@
  *   Phase 2 (lateInit)   — loads vectors, runs indexers, builds search.
  */
 
-import { Database } from '../db/database.ts';
-import { HNSWIndex } from '../providers/vector/hnsw.ts';
-import { LocalEmbedding } from '../providers/embeddings/local.ts';
-import { MultiIndexSearch } from '../search/vector/multi-index.ts';
-import { BM25Search } from '../search/keyword/bm25.ts';
-import { ContextBuilder } from './context-builder.ts';
-import { setEmbeddingMeta, detectProviderMismatch } from '../services/reembed.ts';
+import { Database } from '../../db/database.ts';
+import { HNSWIndex } from '../../providers/vector/hnsw.ts';
+import { LocalEmbedding } from '../../providers/embeddings/local.ts';
+import { MultiIndexSearch } from '../../search/vector/multi-index.ts';
+import { BM25Search } from '../../search/keyword/bm25.ts';
+import { ContextBuilder } from '../search/context-builder.ts';
+import { setEmbeddingMeta, detectProviderMismatch } from '../../services/reembed.ts';
 import type { IndexerRegistry } from './registry.ts';
-import type { Collection } from './collection.ts';
-import type { ResolvedConfig, EmbeddingProvider } from '../types.ts';
-import type { IndexerContext } from '../indexers/base.ts';
+import type { Collection } from '../collection.ts';
+import type { ResolvedConfig, EmbeddingProvider } from '../../types.ts';
+import type { IndexerContext } from '../../indexers/base.ts';
 
 // ── Result types ─────────────────────────────────────
 

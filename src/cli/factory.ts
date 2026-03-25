@@ -7,7 +7,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { BrainBank } from '../app/brainbank.ts';
+import { BrainBank } from '../engine/brainbank.ts';
 import { code } from '../indexers/code/code-plugin.ts';
 import { git } from '../indexers/git/git-plugin.ts';
 import { docs } from '../indexers/docs/docs-plugin.ts';

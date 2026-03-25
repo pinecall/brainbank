@@ -6,9 +6,9 @@
  * Groups code by file, includes git history and learned patterns.
  */
 
-import type { SearchResult, CoEditSuggestion, ContextOptions } from '../types.ts';
-import type { MultiIndexSearch } from '../search/vector/multi-index.ts';
-import type { CoEditAnalyzer } from '../indexers/git/co-edit-analyzer.ts';
+import type { SearchResult, CoEditSuggestion, ContextOptions } from '../../types.ts';
+import type { MultiIndexSearch } from '../../search/vector/multi-index.ts';
+import type { CoEditAnalyzer } from '../../indexers/git/co-edit-analyzer.ts';
 
 export class ContextBuilder {
     constructor(

@@ -7,13 +7,13 @@
  * so BrainBank can unconditionally delegate to it.
  */
 
-import type { MultiIndexSearch } from '../search/vector/multi-index.ts';
-import type { BM25Search } from '../search/keyword/bm25.ts';
+import type { MultiIndexSearch } from '../../search/vector/multi-index.ts';
+import type { BM25Search } from '../../search/keyword/bm25.ts';
 import type { ContextBuilder } from './context-builder.ts';
-import type { Collection } from './collection.ts';
-import type { IndexerRegistry } from './registry.ts';
-import type { ResolvedConfig, SearchResult, ContextOptions } from '../types.ts';
-import { reciprocalRankFusion } from '../search/rrf.ts';
+import type { Collection } from '../collection.ts';
+import type { IndexerRegistry } from '../lifecycle/registry.ts';
+import type { ResolvedConfig, SearchResult, ContextOptions } from '../../types.ts';
+import { reciprocalRankFusion } from '../../search/rrf.ts';
 
 export interface SearchAPIDeps {
     search?:         MultiIndexSearch;
