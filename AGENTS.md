@@ -150,6 +150,10 @@ console.log('indexing done');  // WRONG — use this.emit('progress', ...)
 import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
 ```
 
+**Size limits:**
+- **Functions**: Max **40 lines**. If longer, extract helpers.
+- **Files**: Max **300 lines**. If longer, split into focused modules.
+
 **Exception**: Dynamic `import()` is allowed in `src/cli/` for lazy-loading heavy dependencies (e.g. tree-sitter) that shouldn't slow down CLI startup.
 
 ## Git Workflow

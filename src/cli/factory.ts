@@ -128,63 +128,54 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     const folderIndexers = await discoverFolderIndexers();
 
     const brainOpts: Record<string, any> = { repoPath: rp, ...(config?.brainbank ?? {}) };
+    await setupProviders(brainOpts);
 
-    // Optional Qwen3 reranker via --reranker qwen3
+    const brain = new BrainBank(brainOpts);
+    const builtins = config?.builtins ?? ['code', 'git', 'docs'];
+    registerBuiltins(brain, rp, builtins);
+
+    for (const indexer of folderIndexers) brain.use(indexer);
+    if (config?.indexers) {
+        for (const indexer of config.indexers) brain.use(indexer);
+    }
+
+    return brain;
+}
+
+/** Configure reranker and embedding provider on brainOpts. */
+async function setupProviders(brainOpts: Record<string, any>): Promise<void> {
     const rerankerFlag = getFlag('reranker');
     if (rerankerFlag === 'qwen3') {
         const { Qwen3Reranker } = await import('@brainbank/reranker');
         brainOpts.reranker = new Qwen3Reranker();
     }
 
-    // Embedding provider via BRAINBANK_EMBEDDING env (default: local WASM)
-    const embeddingEnv = process.env.BRAINBANK_EMBEDDING;
-    if (embeddingEnv === 'openai') {
+    if (process.env.BRAINBANK_EMBEDDING === 'openai') {
         const { OpenAIEmbedding } = await import('../providers/embeddings/openai-embedding.ts');
         const provider = new OpenAIEmbedding();
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;
     }
+}
 
-    const brain = new BrainBank(brainOpts);
-
-    // 1. Built-in indexers (default: all three)
-    const builtins = config?.builtins ?? ['code', 'git', 'docs'];
-
-    // Multi-repo detection: check if repoPath has no .git but subdirs do
+/** Register built-in indexers with multi-repo detection. */
+function registerBuiltins(
+    brain: BrainBank, rp: string, builtins: ('code' | 'git' | 'docs')[],
+): void {
     const resolvedRp = path.resolve(rp);
     const hasRootGit = fs.existsSync(path.join(resolvedRp, '.git'));
     const gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp) : [];
 
     if (gitSubdirs.length > 0 && (builtins.includes('code') || builtins.includes('git'))) {
-        // Multi-repo mode: create namespaced indexers for each subdir
         console.log(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
         for (const sub of gitSubdirs) {
-            if (builtins.includes('code')) {
-                brain.use(code({ repoPath: sub.path, name: `code:${sub.name}` }));
-            }
-            if (builtins.includes('git')) {
-                brain.use(git({ repoPath: sub.path, name: `git:${sub.name}` }));
-            }
+            if (builtins.includes('code')) brain.use(code({ repoPath: sub.path, name: `code:${sub.name}` }));
+            if (builtins.includes('git')) brain.use(git({ repoPath: sub.path, name: `git:${sub.name}` }));
         }
     } else {
-        // Single-repo mode (standard)
         if (builtins.includes('code')) brain.use(code({ repoPath: rp }));
         if (builtins.includes('git')) brain.use(git());
     }
 
     if (builtins.includes('docs')) brain.use(docs());
-
-    // 2. Auto-discovered from .brainbank/indexers/
-    for (const indexer of folderIndexers) {
-        brain.use(indexer);
-    }
-
-    // 3. Indexers from config file
-    if (config?.indexers) {
-        for (const indexer of config.indexers) {
-            brain.use(indexer);
-        }
-    }
-
-    return brain;
 }

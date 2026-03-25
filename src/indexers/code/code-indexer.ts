@@ -38,10 +38,7 @@ export class CodeIndexer {
         this._maxFileSize = maxFileSize;
     }
 
-    /**
-     * Index all supported files in the repository.
-     * Skips unchanged files (same content hash).
-     */
+    /** Index all supported files. Skips unchanged files (same content hash). */
     async index(options: CodeIndexOptions = {}): Promise<IndexResult> {
         const { forceReindex = false, onProgress } = options;
         const files = this._walkRepo(this._repoPath);
@@ -66,57 +63,67 @@ export class CodeIndexer {
                 continue;
             }
 
-            // Always clean up old chunks for this file (catches orphaned chunks from interrupted first-run)
-            const oldChunks = this._deps.db.prepare(
-                'SELECT id FROM code_chunks WHERE file_path = ?'
-            ).all(rel) as any[];
-            if (oldChunks.length > 0) {
-                for (const { id } of oldChunks) {
-                    this._deps.hnsw.remove(id);
-                    this._deps.vectorCache.delete(id);
-                }
-                this._deps.db.prepare('DELETE FROM code_chunks WHERE file_path = ?').run(rel);
-            }
-
-            const ext = path.extname(filePath).toLowerCase();
-            const language = SUPPORTED_EXTENSIONS[ext] ?? 'text';
-            const chunks = await this._chunker.chunk(rel, content, language);
-
-            // Build embedding texts for all chunks and batch embed (10-50x faster)
-            const embeddingTexts = chunks.map(chunk => [
-                `File: ${rel}`,
-                chunk.name ? `${chunk.chunkType}: ${chunk.name}` : chunk.chunkType,
-                chunk.content,
-            ].join('\n'));
-
-            const vecs = await this._deps.embedding.embedBatch(embeddingTexts);
-
-            // Insert chunks + vectors individually (preserves auto-increment ID ordering)
-            for (let ci = 0; ci < chunks.length; ci++) {
-                const chunk = chunks[ci];
-                const result = this._deps.db.prepare(
-                    `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-                ).run(rel, chunk.chunkType, chunk.name ?? null, chunk.startLine, chunk.endLine, chunk.content, language, hash);
-
-                const id = Number(result.lastInsertRowid);
-                this._deps.db.prepare(
-                    'INSERT INTO code_vectors (chunk_id, embedding) VALUES (?, ?)'
-                ).run(id, Buffer.from(vecs[ci].buffer));
-
-                this._deps.hnsw.add(vecs[ci], id);
-                this._deps.vectorCache.set(id, vecs[ci]);
-                totalChunks++;
-            }
-
-            // Mark file as indexed
-            this._deps.db.prepare(
-                'INSERT OR REPLACE INTO indexed_files (file_path, file_hash) VALUES (?, ?)'
-            ).run(rel, hash);
+            this._removeOldChunks(rel);
+            const chunkCount = await this._indexFile(filePath, rel, content, hash);
             indexed++;
+            totalChunks += chunkCount;
         }
 
         return { indexed, skipped, chunks: totalChunks };
+    }
+
+    /** Remove old chunks and their HNSW vectors for a file. */
+    private _removeOldChunks(relPath: string): void {
+        const oldChunks = this._deps.db.prepare(
+            'SELECT id FROM code_chunks WHERE file_path = ?'
+        ).all(relPath) as any[];
+
+        if (oldChunks.length > 0) {
+            for (const { id } of oldChunks) {
+                this._deps.hnsw.remove(id);
+                this._deps.vectorCache.delete(id);
+            }
+            this._deps.db.prepare('DELETE FROM code_chunks WHERE file_path = ?').run(relPath);
+        }
+    }
+
+    /** Chunk, embed, and store a single file. Returns chunk count. */
+    private async _indexFile(
+        filePath: string, rel: string, content: string, hash: string,
+    ): Promise<number> {
+        const ext = path.extname(filePath).toLowerCase();
+        const language = SUPPORTED_EXTENSIONS[ext] ?? 'text';
+        const chunks = await this._chunker.chunk(rel, content, language);
+
+        const embeddingTexts = chunks.map(chunk => [
+            `File: ${rel}`,
+            chunk.name ? `${chunk.chunkType}: ${chunk.name}` : chunk.chunkType,
+            chunk.content,
+        ].join('\n'));
+
+        const vecs = await this._deps.embedding.embedBatch(embeddingTexts);
+
+        for (let ci = 0; ci < chunks.length; ci++) {
+            const chunk = chunks[ci];
+            const result = this._deps.db.prepare(
+                `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(rel, chunk.chunkType, chunk.name ?? null, chunk.startLine, chunk.endLine, chunk.content, language, hash);
+
+            const id = Number(result.lastInsertRowid);
+            this._deps.db.prepare(
+                'INSERT INTO code_vectors (chunk_id, embedding) VALUES (?, ?)'
+            ).run(id, Buffer.from(vecs[ci].buffer));
+
+            this._deps.hnsw.add(vecs[ci], id);
+            this._deps.vectorCache.set(id, vecs[ci]);
+        }
+
+        this._deps.db.prepare(
+            'INSERT OR REPLACE INTO indexed_files (file_path, file_hash) VALUES (?, ?)'
+        ).run(rel, hash);
+
+        return chunks.length;
     }
 
     // ── File Walker ─────────────────────────────────

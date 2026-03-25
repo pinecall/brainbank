@@ -84,7 +84,17 @@ export class SearchAPI {
             if (docs.length > 0) resultLists.push(docs);
         }
 
-        // KV collections (any non-reserved key in `collections`)
+        await this._searchKvCollections(query, cols, resultLists);
+        if (resultLists.length === 0) return [];
+
+        const fused = reciprocalRankFusion(resultLists);
+        return this._applyReranking(query, fused);
+    }
+
+    /** Search non-reserved KV collections and push results. */
+    private async _searchKvCollections(
+        query: string, cols: Record<string, number>, resultLists: SearchResult[][],
+    ): Promise<void> {
         const reserved = new Set(['code', 'git', 'docs']);
         for (const [name, k] of Object.entries(cols)) {
             if (reserved.has(name)) continue;
@@ -98,22 +108,19 @@ export class SearchAPI {
                 })));
             }
         }
+    }
 
-        if (resultLists.length === 0) return [];
+    /** Apply reranking if a reranker is configured. */
+    private async _applyReranking(query: string, fused: SearchResult[]): Promise<SearchResult[]> {
+        if (!this._d.config.reranker || fused.length <= 1) return fused;
 
-        const fused = reciprocalRankFusion(resultLists);
-
-        if (this._d.config.reranker && fused.length > 1) {
-            const scores = await this._d.config.reranker.rank(query, fused.map(r => r.content));
-            return fused
-                .map((r, i) => {
-                    const w = (i < 3) ? 0.75 : (i < 10) ? 0.60 : 0.40;
-                    return { ...r, score: w * r.score + (1 - w) * (scores[i] ?? 0) };
-                })
-                .sort((a, b) => b.score - a.score);
-        }
-
-        return fused;
+        const scores = await this._d.config.reranker.rank(query, fused.map(r => r.content));
+        return fused
+            .map((r, i) => {
+                const w = (i < 3) ? 0.75 : (i < 10) ? 0.60 : 0.40;
+                return { ...r, score: w * r.score + (1 - w) * (scores[i] ?? 0) };
+            })
+            .sort((a, b) => b.score - a.score);
     }
 
     // ── Keyword ─────────────────────────────────────

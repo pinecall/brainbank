@@ -89,18 +89,11 @@ export class OpenAIEmbedding implements EmbeddingProvider {
             throw new Error('OpenAI API key required. Set OPENAI_API_KEY env var or pass apiKey option.');
         }
 
-        // Truncate texts that would exceed token limit (~4 chars per token, 8192 max)
         const MAX_CHARS = 24_000;
         const safeInput = input.map(t => t.length > MAX_CHARS ? t.slice(0, MAX_CHARS) : t);
 
-        const body: Record<string, any> = {
-            model: this._model,
-            input: safeInput,
-        };
-
-        if (this._requestDims) {
-            body.dimensions = this._requestDims;
-        }
+        const body: Record<string, any> = { model: this._model, input: safeInput };
+        if (this._requestDims) body.dimensions = this._requestDims;
 
         const res = await fetch(this._baseUrl, {
             method: 'POST',
@@ -112,32 +105,35 @@ export class OpenAIEmbedding implements EmbeddingProvider {
         });
 
         if (!res.ok) {
-            const err = await res.text();
-            const isTokenLimit = res.status === 400 && this._isTokenLimitError(err);
-
-            // If token limit error in a batch, retry each item individually with more aggressive truncation
-            if (isTokenLimit && safeInput.length > 1) {
-                const results: Float32Array[] = [];
-                for (const text of safeInput) {
-                    const r = await this._request([text.slice(0, 8_000)]);
-                    results.push(r[0]);
-                }
-                return results;
-            }
-            // Last resort: if single item still fails, truncate to ~2k tokens (max 1 retry)
-            if (isTokenLimit && safeInput.length === 1 && retryDepth < 1) {
-                return await this._request([safeInput[0].slice(0, 6_000)], retryDepth + 1);
-            }
-            throw new Error(`OpenAI embedding API error (${res.status}): ${err}`);
+            return this._handleApiError(res, safeInput, retryDepth);
         }
 
         const json = await res.json() as {
             data: Array<{ embedding: number[]; index: number }>;
         };
+        return json.data.sort((a, b) => a.index - b.index).map(d => new Float32Array(d.embedding));
+    }
 
-        // Sort by index (API may return out of order)
-        const sorted = json.data.sort((a, b) => a.index - b.index);
+    /** Handle API errors with token-limit retry logic. */
+    private async _handleApiError(
+        res: Response, safeInput: string[], retryDepth: number,
+    ): Promise<Float32Array[]> {
+        const err = await res.text();
+        const isTokenLimit = res.status === 400 && this._isTokenLimitError(err);
 
-        return sorted.map(d => new Float32Array(d.embedding));
+        // Batch token limit → retry each item individually with aggressive truncation
+        if (isTokenLimit && safeInput.length > 1) {
+            const results: Float32Array[] = [];
+            for (const text of safeInput) {
+                const r = await this._request([text.slice(0, 8_000)]);
+                results.push(r[0]);
+            }
+            return results;
+        }
+        // Single item still failing → truncate to ~2k tokens (max 1 retry)
+        if (isTokenLimit && safeInput.length === 1 && retryDepth < 1) {
+            return this._request([safeInput[0].slice(0, 6_000)], retryDepth + 1);
+        }
+        throw new Error(`OpenAI embedding API error (${res.status}): ${err}`);
     }
 }

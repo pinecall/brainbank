@@ -11,12 +11,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - `matchResult()` pattern-matching helper for exhaustive SearchResult handling
 - Reembed test for embedding dimension mismatch (384 → 128)
 - `/publish` workflow (`.agents/workflows/publish.md`)
+- Anti-pattern rules in `AGENTS.md`: size limits (40 lines/function, 300 lines/file), inline imports, `../` imports
 
 ### Changed
 - `DocumentResult.filePath` is now required (was optional — docs indexer always provides it)
 - `Collection.search()` results now use `type: 'collection'` instead of `type: 'document'`
 - `reembed` streams per-batch — O(batchSize) memory instead of O(totalRows)
 - `fileHistory()` delegated to `GitPlugin` (no raw SQL in BrainBank)
+- Refactored 10 methods exceeding 40-line limit into focused helpers (largest: GitIndexer.index 152→15 lines)
+- `AGENTS.md` fully translated to English
 
 ## [0.2.2] — 2025-03-25
 

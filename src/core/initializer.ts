@@ -46,7 +46,6 @@ export async function earlyInit(
     const db = new Database(config.dbPath);
     const embedding: EmbeddingProvider = config.embeddingProvider ?? new LocalEmbedding();
 
-    // Must check BEFORE setEmbeddingMeta overwrites stored values
     const mismatch = detectProviderMismatch(db, embedding);
     const skipVectorLoad = !!mismatch?.mismatch;
 
@@ -89,7 +88,25 @@ export async function lateInit(
         loadVectors(db, 'kv_vectors', 'data_id', kvHnsw, kvVecs);
     }
 
-    const ctx: IndexerContext = {
+    const ctx = buildIndexerContext(db, embedding, config, sharedHnsw, skipVectorLoad, getCollection);
+
+    for (const mod of registry.all) {
+        await mod.initialize(ctx);
+    }
+
+    return buildSearchLayer(db, embedding, config, registry, sharedHnsw);
+}
+
+/** Build the IndexerContext passed to each plugin's initialize(). */
+function buildIndexerContext(
+    db: Database,
+    embedding: EmbeddingProvider,
+    config: ResolvedConfig,
+    sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
+    skipVectorLoad: boolean,
+    getCollection: (name: string) => Collection,
+): IndexerContext {
+    return {
         db,
         embedding,
         config,
@@ -127,39 +144,37 @@ export async function lateInit(
 
         collection: getCollection,
     };
+}
 
-    for (const mod of registry.all) {
-        await mod.initialize(ctx);
-    }
-
-    // ── Cross-module search ──────────────────────────
+/** Build VectorSearch + KeywordSearch + ContextBuilder from initialized plugins. */
+function buildSearchLayer(
+    db: Database,
+    embedding: EmbeddingProvider,
+    config: ResolvedConfig,
+    registry: IndexerRegistry,
+    sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
+): LateInit {
     const codeMod = sharedHnsw.get('code');
     const gitMod  = sharedHnsw.get('git');
     const memMod  = registry.firstByType('memory') as any;
 
-    let search: VectorSearch | undefined;
-    let bm25:   KeywordSearch | undefined;
-    let contextBuilder: ContextBuilder | undefined;
+    if (!codeMod && !gitMod && !memMod) return {};
 
-    if (codeMod || gitMod || memMod) {
-        search = new VectorSearch({
-            db,
-            codeHnsw:    codeMod?.hnsw,
-            gitHnsw:     gitMod?.hnsw,
-            patternHnsw: memMod?.hnsw,
-            codeVecs:    codeMod?.vecCache ?? new Map(),
-            gitVecs:     gitMod?.vecCache  ?? new Map(),
-            patternVecs: memMod?.vecCache  ?? new Map(),
-            embedding,
-            reranker: config.reranker,
-        });
-        bm25 = new KeywordSearch(db);
-    }
+    const search = new VectorSearch({
+        db,
+        codeHnsw:    codeMod?.hnsw,
+        gitHnsw:     gitMod?.hnsw,
+        patternHnsw: memMod?.hnsw,
+        codeVecs:    codeMod?.vecCache ?? new Map(),
+        gitVecs:     gitMod?.vecCache  ?? new Map(),
+        patternVecs: memMod?.vecCache  ?? new Map(),
+        embedding,
+        reranker: config.reranker,
+    });
+    const bm25 = new KeywordSearch(db);
 
-    if (search) {
-        const firstGit = registry.firstByType('git') as any;
-        contextBuilder = new ContextBuilder(search, firstGit?.coEdits);
-    }
+    const firstGit = registry.firstByType('git') as any;
+    const contextBuilder = new ContextBuilder(search, firstGit?.coEdits);
 
     return { search, bm25, contextBuilder };
 }
