@@ -4,8 +4,8 @@
  * brainbank ksearch — Keyword search (BM25)
  */
 
-import { c, args, stripFlags, printResults } from '../utils.ts';
-import { createBrain } from '../factory.ts';
+import { c, args, stripFlags, printResults } from '@/cli/utils.ts';
+import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdSearch(): Promise<void> {
     const query = stripFlags(args).slice(1).join(' ');

@@ -5,7 +5,7 @@
  * Implement SearchStrategy to add a new search backend.
  */
 
-import type { SearchResult } from '../types.ts';
+import type { SearchResult } from '@/types.ts';
 
 /** Any search implementation follows this shape. */
 export interface SearchStrategy {

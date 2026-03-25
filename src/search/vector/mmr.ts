@@ -6,8 +6,8 @@
  * Default λ=0.7 balances both.
  */
 
-import type { VectorIndex, SearchHit } from '../../types.ts';
-import { cosineSimilarity } from '../../lib/math.ts';
+import type { VectorIndex, SearchHit } from '@/types.ts';
+import { cosineSimilarity } from '@/lib/math.ts';
 
 /**
  * Search with Maximum Marginal Relevance for diversified results.

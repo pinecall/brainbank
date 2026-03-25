@@ -5,8 +5,8 @@
  * Analogous to SONA's Deep Loop — periodic knowledge distillation.
  */
 
-import type { Database } from '../../db/database.ts';
-import type { DistilledStrategy } from '../../types.ts';
+import type { Database } from '@/db/database.ts';
+import type { DistilledStrategy } from '@/types.ts';
 
 export class StrategyDistiller {
     constructor(private _db: Database) {}

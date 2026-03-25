@@ -6,9 +6,9 @@
  * Incremental: only processes new commits.
  */
 
-import type { Database } from '../../db/database.ts';
-import type { EmbeddingProvider, ProgressCallback, IndexResult } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import type { Database } from '@/db/database.ts';
+import type { EmbeddingProvider, ProgressCallback, IndexResult } from '@/types.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 
 export interface GitIndexerDeps {
     db: Database;

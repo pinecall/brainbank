@@ -33,5 +33,6 @@ export default defineConfig({
     },
     esbuildOptions(options) {
         options.keepNames = true;
+        options.alias = { '@': './src' };
     },
 });

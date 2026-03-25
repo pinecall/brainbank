@@ -3,8 +3,8 @@
  */
 
 import * as path from 'node:path';
-import { c, args, getFlag, hasFlag } from '../utils.ts';
-import { createBrain } from '../factory.ts';
+import { c, args, getFlag, hasFlag } from '@/cli/utils.ts';
+import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdIndex(): Promise<void> {
     const repoPath = args[1] || '.';

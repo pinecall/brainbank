@@ -5,8 +5,8 @@
  * Based on git commit co-occurrence analysis.
  */
 
-import type { Database } from '../../db/database.ts';
-import type { CoEditSuggestion } from '../../types.ts';
+import type { Database } from '@/db/database.ts';
+import type { CoEditSuggestion } from '@/types.ts';
 
 export class CoEditAnalyzer {
     constructor(private _db: Database) {}

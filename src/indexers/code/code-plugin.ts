@@ -14,10 +14,10 @@
  *     .use(code({ repoPath: './backend',  name: 'code:backend' }));
  */
 
-import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { CodeIndexer } from './code-indexer.ts';
-import type { IndexResult, ProgressCallback } from '../../types.ts';
+import type { IndexResult, ProgressCallback } from '@/types.ts';
 
 export interface CodePluginOptions {
     /** Repository path to index. Default: '.' */

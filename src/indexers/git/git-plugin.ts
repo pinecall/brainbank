@@ -12,11 +12,11 @@
  *     .use(git({ repoPath: './backend',  name: 'git:backend' }));
  */
 
-import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
+import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { GitIndexer } from './git-indexer.ts';
 import { CoEditAnalyzer } from './co-edit-analyzer.ts';
-import type { IndexResult, ProgressCallback, CoEditSuggestion } from '../../types.ts';
+import type { IndexResult, ProgressCallback, CoEditSuggestion } from '@/types.ts';
 
 export interface GitPluginOptions {
     /** Repository path. Default: from config */

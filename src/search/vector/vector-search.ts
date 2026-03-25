@@ -5,10 +5,10 @@
  * Returns typed results sorted by relevance.
  */
 
-import type { Database } from '../../db/database.ts';
-import type { EmbeddingProvider, Reranker, SearchResult } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
-import type { SearchStrategy, SearchOptions } from '../types.ts';
+import type { Database } from '@/db/database.ts';
+import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { searchMMR } from './mmr.ts';
 import { rerank } from './rerank.ts';
 

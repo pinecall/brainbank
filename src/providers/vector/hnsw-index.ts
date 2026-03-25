@@ -6,7 +6,7 @@
  * 150x faster than brute force at 1M vectors.
  */
 
-import type { VectorIndex, SearchHit } from '../../types.ts';
+import type { VectorIndex, SearchHit } from '@/types.ts';
 
 export class HNSWIndex implements VectorIndex {
     private _index: any = null;

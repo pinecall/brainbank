@@ -6,7 +6,7 @@
  */
 
 import type { IndexerRegistry } from './registry.ts';
-import type { IndexResult, StageProgressCallback, ProgressCallback } from '../types.ts';
+import type { IndexResult, StageProgressCallback, ProgressCallback } from '@/types.ts';
 
 export interface IndexAPIDeps {
     registry: IndexerRegistry;

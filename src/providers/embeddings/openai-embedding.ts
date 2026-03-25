@@ -10,7 +10,7 @@
  *   });
  */
 
-import type { EmbeddingProvider } from '../../types.ts';
+import type { EmbeddingProvider } from '@/types.ts';
 
 const DEFAULT_MODEL = 'text-embedding-3-small';
 const DEFAULT_DIMS: Record<string, number> = {

@@ -2,8 +2,8 @@
  * brainbank kv add|search|list|trim|clear — Dynamic KV collection management
  */
 
-import { c, args, getFlag } from '../utils.ts';
-import { createBrain } from '../factory.ts';
+import { c, args, getFlag } from '@/cli/utils.ts';
+import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdKv(): Promise<void> {
     const sub = args[1];

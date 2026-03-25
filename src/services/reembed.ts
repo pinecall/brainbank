@@ -10,9 +10,9 @@
  *   // → { code: 1200, git: 500, docs: 80, kv: 45, notes: 12, total: 1837 }
  */
 
-import type { Database } from '../db/database.ts';
-import type { EmbeddingProvider, ProgressCallback } from '../types.ts';
-import type { HNSWIndex } from '../providers/vector/hnsw-index.ts';
+import type { Database } from '@/db/database.ts';
+import type { EmbeddingProvider, ProgressCallback } from '@/types.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 
 // ── Table Definitions ───────────────────────────────
 

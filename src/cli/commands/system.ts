@@ -5,8 +5,8 @@
  * brainbank serve    — Start MCP server
  */
 
-import { c } from '../utils.ts';
-import { createBrain } from '../factory.ts';
+import { c } from '@/cli/utils.ts';
+import { createBrain } from '@/cli/factory.ts';
 
 // ── Stats ───────────────────────────────────────────
 

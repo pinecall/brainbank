@@ -7,12 +7,12 @@
  * so BrainBank can unconditionally delegate to it.
  */
 
-import type { SearchStrategy } from '../search/types.ts';
+import type { SearchStrategy } from '@/search/types.ts';
 import type { ContextBuilder } from './context-builder.ts';
 import type { Collection } from './collection.ts';
 import type { IndexerRegistry } from './registry.ts';
-import type { ResolvedConfig, SearchResult, ContextOptions } from '../types.ts';
-import { reciprocalRankFusion } from '../lib/rrf.ts';
+import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
+import { reciprocalRankFusion } from '@/lib/rrf.ts';
 
 export interface SearchAPIDeps {
     search?:         SearchStrategy;

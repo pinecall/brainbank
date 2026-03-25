@@ -8,17 +8,17 @@
  *   Phase 2 (lateInit)   — loads vectors, runs indexers, builds search.
  */
 
-import { Database } from '../db/database.ts';
-import { HNSWIndex } from '../providers/vector/hnsw-index.ts';
-import { LocalEmbedding } from '../providers/embeddings/local-embedding.ts';
-import { VectorSearch } from '../search/vector/vector-search.ts';
-import { KeywordSearch } from '../search/keyword/keyword-search.ts';
+import { Database } from '@/db/database.ts';
+import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import { LocalEmbedding } from '@/providers/embeddings/local-embedding.ts';
+import { VectorSearch } from '@/search/vector/vector-search.ts';
+import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
 import { ContextBuilder } from './context-builder.ts';
-import { setEmbeddingMeta, detectProviderMismatch } from '../services/reembed.ts';
+import { setEmbeddingMeta, detectProviderMismatch } from '@/services/reembed.ts';
 import type { IndexerRegistry } from './registry.ts';
 import type { Collection } from './collection.ts';
-import type { ResolvedConfig, EmbeddingProvider } from '../types.ts';
-import type { IndexerContext } from '../indexers/base.ts';
+import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
+import type { IndexerContext } from '@/indexers/base.ts';
 
 // ── Result types ─────────────────────────────────────
 

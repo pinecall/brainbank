@@ -7,8 +7,8 @@
  *   - consolidate: run both
  */
 
-import type { Database } from '../../db/database.ts';
-import { cosineSimilarity } from '../../lib/math.ts';
+import type { Database } from '@/db/database.ts';
+import { cosineSimilarity } from '@/lib/math.ts';
 
 export class Consolidator {
     constructor(

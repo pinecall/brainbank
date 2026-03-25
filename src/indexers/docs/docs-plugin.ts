@@ -8,10 +8,10 @@
  *   brain.use(docs());
  */
 
-import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
-import type { Database } from '../../db/database.ts';
-import type { EmbeddingProvider, DocumentCollection, SearchResult } from '../../types.ts';
+import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { Database } from '@/db/database.ts';
+import type { EmbeddingProvider, DocumentCollection, SearchResult } from '@/types.ts';
 import { DocsIndexer } from './docs-indexer.ts';
 
 class DocsPlugin implements Indexer {

@@ -7,7 +7,7 @@
  */
 
 import { createRequire } from 'node:module';
-import type { CodeChunk } from '../../types.ts';
+import type { CodeChunk } from '@/types.ts';
 import { GRAMMARS, type LangGrammar } from './grammars.ts';
 
 const require = createRequire(import.meta.url);

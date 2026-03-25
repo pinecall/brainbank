@@ -2,8 +2,8 @@
  * brainbank collection add|list|remove — Document collection management
  */
 
-import { c, args, getFlag } from '../utils.ts';
-import { createBrain } from '../factory.ts';
+import { c, args, getFlag } from '@/cli/utils.ts';
+import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdCollection(): Promise<void> {
     const sub = args[1];

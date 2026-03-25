@@ -4,8 +4,8 @@
  * brainbank context list
  */
 
-import { c, args, stripFlags } from '../utils.ts';
-import { createBrain } from '../factory.ts';
+import { c, args, stripFlags } from '@/cli/utils.ts';
+import { createBrain } from '@/cli/factory.ts';
 
 export async function cmdContext(): Promise<void> {
     const sub = args[1];

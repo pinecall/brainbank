@@ -10,11 +10,11 @@
  *   - "long":  Compressed to patterns + decisions only
  */
 
-import type { Database } from '../../db/database.ts';
-import type { EmbeddingProvider, SearchResult } from '../../types.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
-import { reciprocalRankFusion } from '../../lib/rrf.ts';
-import { sanitizeFTS, normalizeBM25 } from '../../lib/fts.ts';
+import type { Database } from '@/db/database.ts';
+import type { EmbeddingProvider, SearchResult } from '@/types.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import { reciprocalRankFusion } from '@/lib/rrf.ts';
+import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 
 export interface NoteDigest {
     title: string;

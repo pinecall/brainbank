@@ -9,7 +9,7 @@
  * Top 11+:  40% retrieval / 60% reranker (trust reranker more)
  */
 
-import type { Reranker, SearchResult } from '../../types.ts';
+import type { Reranker, SearchResult } from '@/types.ts';
 
 /** Re-rank results using position-aware blending. */
 export async function rerank(

@@ -6,10 +6,10 @@
  * Uses Porter stemming + unicode61 tokenizer.
  */
 
-import type { Database } from '../../db/database.ts';
-import type { SearchResult } from '../../types.ts';
-import type { SearchStrategy, SearchOptions } from '../types.ts';
-import { sanitizeFTS, normalizeBM25 } from '../../lib/fts.ts';
+import type { Database } from '@/db/database.ts';
+import type { SearchResult } from '@/types.ts';
+import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
+import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 
 export class KeywordSearch implements SearchStrategy {
     constructor(private _db: Database) {}

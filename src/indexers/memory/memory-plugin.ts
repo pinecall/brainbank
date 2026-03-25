@@ -8,13 +8,13 @@
  *   brain.use(memory());
  */
 
-import type { Indexer, IndexerContext } from '../base.ts';
-import type { HNSWIndex } from '../../providers/vector/hnsw-index.ts';
-import type { Database } from '../../db/database.ts';
+import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { Database } from '@/db/database.ts';
 import { PatternStore } from './pattern-store.ts';
 import { Consolidator } from './consolidator.ts';
 import { StrategyDistiller } from './distiller.ts';
-import type { LearningPattern, DistilledStrategy } from '../../types.ts';
+import type { LearningPattern, DistilledStrategy } from '@/types.ts';
 
 class MemoryPlugin implements Indexer {
     readonly name = 'memory';

@@ -19,8 +19,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { isSupported, isIgnoredDir, isIgnoredFile } from '../indexers/languages.ts';
-import type { Indexer } from '../indexers/base.ts';
+import { isSupported, isIgnoredDir, isIgnoredFile } from '@/indexers/languages.ts';
+import type { Indexer } from '@/indexers/base.ts';
 
 // ── Types ───────────────────────────────────────────
 

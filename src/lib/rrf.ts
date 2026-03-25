@@ -11,7 +11,7 @@
  * Condorcet and individual Rank Learning Methods" (2009)
  */
 
-import type { SearchResult } from '../types.ts';
+import type { SearchResult } from '@/types.ts';
 
 /**
  * Fuse ranked lists from different search systems into a single ranked list.

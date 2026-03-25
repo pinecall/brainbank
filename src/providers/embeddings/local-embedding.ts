@@ -6,7 +6,7 @@
  * No external API calls — runs entirely in-process.
  */
 
-import type { EmbeddingProvider } from '../../types.ts';
+import type { EmbeddingProvider } from '@/types.ts';
 
 export class LocalEmbedding implements EmbeddingProvider {
     readonly dims: number = 384;
