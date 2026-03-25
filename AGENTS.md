@@ -60,21 +60,66 @@ packages/
 └── reranker/        ← Qwen3 reranker (separate package)
 ```
 
+### Key Files
 - `src/brainbank.ts` — The main orchestrator. All public API lives here.
 - `src/indexers/base.ts` — The `Indexer` interface. Read this before writing any plugin.
 - `src/core/collection.ts` — Universal KV store with hybrid search. Core primitive.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
+- `src/packages.d.ts` — Type declarations for `@brainbank/*` packages (reranker, memory, mcp).
 
-## Code Style
+## Code Conventions
 
-- TypeScript strict — no `any` in new code, no `@ts-ignore`
+### TypeScript
+- Strict mode — no `any` in new code, no `@ts-ignore`
 - ESM only (`"type": "module"` in package.json)
 - Imports use `.ts` extensions (`import { X } from './foo.ts'`)
 - JSDoc on every exported function and class — concise, no `@param` spam
-- Naming: `camelCase` functions/variables, `PascalCase` classes/interfaces, `kebab-case` files
-- Error messages: `BrainBank: <context>. <what to do>.` (e.g. `BrainBank: Not initialized. Call await brain.initialize() before search().`)
 - Never `console.log` in library code — use `this.emit('event', data)` on BrainBank
-- Plugin pattern: factory function exports (e.g. `export function code(opts): Indexer`)
+
+### Naming
+- `camelCase` — functions, variables, methods
+- `PascalCase` — classes, interfaces, type aliases
+- `kebab-case` — file names (e.g. `hnsw-index.ts`, `code-chunker.ts`)
+- Files containing a class are named after the class in kebab-case: `VectorSearch` → `vector-search.ts`
+- Files containing pure functions use descriptive kebab-case: `rrf.ts`, `fts.ts`, `math.ts`
+
+### Import Rules (Critical)
+- **Path aliases**: All cross-directory imports use `@/` (configured in `tsconfig.json` and `tsup.config.ts`)
+- **Same-directory**: Use `./` for files in the same directory
+- **NEVER use `../`**: No relative parent imports. If you see `../` in src/, it's a bug.
+- **Layer direction**: Imports only flow downward (Layer 3 → 2 → 1 → 0). Never import from a higher layer.
+
+```typescript
+// ✅ Correct — cross-directory with @/
+import { Database } from '@/db/database.ts';
+import type { SearchResult } from '@/types.ts';
+import { reciprocalRankFusion } from '@/lib/rrf.ts';
+
+// ✅ Correct — same directory with ./
+import { ContextBuilder } from './context-builder.ts';
+import type { IndexerRegistry } from './registry.ts';
+
+// ❌ WRONG — never use ../
+import { Database } from '../db/database.ts';
+import type { SearchResult } from '../../types.ts';
+```
+
+### Error Messages
+- Format: `BrainBank: <context>. <what to do>.`
+- Example: `BrainBank: Not initialized. Call await brain.initialize() before search().`
+
+### Plugin Pattern
+- Factory function exports: `export function code(opts): Indexer`
+- All plugins implement the `Indexer` interface from `src/indexers/base.ts`
+- Registered via `.use()` builder pattern on BrainBank
+
+### Architecture Rules
+- `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts`, `index.ts`, `packages.d.ts`)
+- `core/` is internal orchestration — never imported by layers 0-2
+- `lib/` contains pure, stateless functions with zero side effects
+- `search/types.ts` defines `SearchStrategy` — all search backends implement it
+- `BrainBank` extends `EventEmitter` for progress/warning events (no callbacks)
+- `close()` on BrainBank is **synchronous** (returns `void`, not `Promise`). Don't `await` it.
 
 ## Git Workflow
 
@@ -84,7 +129,6 @@ packages/
 
 ## Gotchas
 
-- `close()` on BrainBank is **synchronous** (returns `void`, not `Promise`). Don't `await` it.
 - `IndexerContext` has no `repoPath` — use `ctx.config.repoPath`.
 - `SearchResult` has no `.line` — use `r.metadata?.startLine`.
 - Native deps (better-sqlite3, hnswlib-node) require `node-gyp`. If install fails, check C++ toolchain.
