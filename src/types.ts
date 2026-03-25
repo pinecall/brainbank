@@ -243,7 +243,7 @@ export interface PatternResult {
 export interface DocumentResult {
     type: 'document';
     score: number;
-    filePath?: string;
+    filePath: string;
     content: string;
     context?: string;
     metadata: DocumentResultMetadata;
@@ -259,6 +259,57 @@ export interface CollectionResult {
 }
 
 export type SearchResult = CodeResult | CommitResult | PatternResult | DocumentResult | CollectionResult;
+
+// ── Type Guards ──────────────────────────────────────
+
+/** Narrow a SearchResult to CodeResult. */
+export function isCodeResult(r: SearchResult): r is CodeResult {
+    return r.type === 'code';
+}
+/** Narrow a SearchResult to CommitResult. */
+export function isCommitResult(r: SearchResult): r is CommitResult {
+    return r.type === 'commit';
+}
+/** Narrow a SearchResult to DocumentResult. */
+export function isDocumentResult(r: SearchResult): r is DocumentResult {
+    return r.type === 'document';
+}
+/** Narrow a SearchResult to PatternResult. */
+export function isPatternResult(r: SearchResult): r is PatternResult {
+    return r.type === 'pattern';
+}
+/** Narrow a SearchResult to CollectionResult. */
+export function isCollectionResult(r: SearchResult): r is CollectionResult {
+    return r.type === 'collection';
+}
+
+// ── Match Helper ─────────────────────────────────────
+
+type MatchHandlers<T> = {
+    code?:       (r: CodeResult)       => T;
+    commit?:     (r: CommitResult)     => T;
+    pattern?:    (r: PatternResult)    => T;
+    document?:   (r: DocumentResult)   => T;
+    collection?: (r: CollectionResult) => T;
+    _?:          (r: SearchResult)     => T;
+};
+
+/**
+ * Pattern-match on SearchResult type. Calls the matching handler
+ * or the `_` fallback. Returns undefined if no handler matches.
+ */
+export function matchResult<T>(
+    result: SearchResult,
+    handlers: MatchHandlers<T>,
+): T | undefined {
+    switch (result.type) {
+        case 'code':       return (handlers.code       ?? handlers._)?.(result);
+        case 'commit':     return (handlers.commit     ?? handlers._)?.(result);
+        case 'pattern':    return (handlers.pattern    ?? handlers._)?.(result);
+        case 'document':   return (handlers.document   ?? handlers._)?.(result);
+        case 'collection': return (handlers.collection ?? handlers._)?.(result);
+    }
+}
 
 // ── Context Builder ─────────────────────────────────
 

@@ -52,6 +52,11 @@ export type {
     CoEditSuggestion,
     DocumentCollection, DocChunk,
 } from './types.ts';
+export {
+    isCodeResult, isCommitResult, isDocumentResult,
+    isPatternResult, isCollectionResult,
+    matchResult,
+} from './types.ts';
 
 // Embeddings
 export { LocalEmbedding } from './providers/embeddings/local-embedding.ts';

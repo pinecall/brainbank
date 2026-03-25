@@ -151,8 +151,8 @@ export class Collection {
         ]);
 
         const fused = reciprocalRankFusion([
-            vectorHits.map(h => ({ type: 'document' as const, score: h.score ?? 0, content: h.content, metadata: { id: h.id } as any })),
-            bm25Hits.map(h => ({ type: 'document' as const, score: h.score ?? 0, content: h.content, metadata: { id: h.id } as any })),
+            vectorHits.map(h => ({ type: 'collection' as const, score: h.score ?? 0, content: h.content, metadata: { id: h.id } as any })),
+            bm25Hits.map(h => ({ type: 'collection' as const, score: h.score ?? 0, content: h.content, metadata: { id: h.id } as any })),
         ]);
 
         const allById = new Map<number, CollectionItem>();

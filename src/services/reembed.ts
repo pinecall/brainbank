@@ -173,7 +173,13 @@ export async function reembedAll(
     };
 }
 
-/** Re-embed a single table. Returns count of vectors regenerated. */
+/**
+ * Re-embed a single table. Returns count of vectors regenerated.
+ * 
+ * Streams per-batch to avoid OOM on large tables — memory stays O(batchSize).
+ * Tradeoff: if embedBatch fails mid-way, partial vectors exist. Reembed is
+ * a destructive operation by design — re-run to completion if interrupted.
+ */
 async function reembedTable(
     db: Database,
     embedding: EmbeddingProvider,
@@ -181,16 +187,18 @@ async function reembedTable(
     batchSize: number,
     onProgress?: ProgressCallback,
 ): Promise<number> {
-    // Use pagination to avoid OOM on large tables
     const totalCount = (db.prepare(
         `SELECT COUNT(*) as c FROM ${table.textTable}`
     ).get() as any).c;
 
     if (totalCount === 0) return 0;
 
-    // Generate ALL new vectors first, before touching the database.
-    // This prevents data loss if embedBatch() fails partway through.
-    const allNewVectors: { id: number; vec: Float32Array }[] = [];
+    const insertVec = db.prepare(
+        `INSERT INTO ${table.vectorTable} (${table.fkColumn}, embedding) VALUES (?, ?)`
+    );
+
+    // Clear old vectors before streaming new ones
+    db.prepare(`DELETE FROM ${table.vectorTable}`).run();
 
     let processed = 0;
     for (let offset = 0; offset < totalCount; offset += batchSize) {
@@ -200,25 +208,16 @@ async function reembedTable(
         const texts = batch.map((r: any) => table.textBuilder(r));
         const vectors = await embedding.embedBatch(texts);
 
-        for (let j = 0; j < batch.length; j++) {
-            allNewVectors.push({ id: batch[j][table.idColumn], vec: vectors[j] });
-        }
+        // Commit this batch immediately — constant memory O(batchSize)
+        db.transaction(() => {
+            for (let j = 0; j < batch.length; j++) {
+                insertVec.run(batch[j][table.idColumn], Buffer.from(vectors[j].buffer));
+            }
+        });
 
         processed += batch.length;
         onProgress?.(table.name, processed, totalCount);
     }
-
-    // All embeddings succeeded — now atomically swap old → new
-    const insertVec = db.prepare(
-        `INSERT INTO ${table.vectorTable} (${table.fkColumn}, embedding) VALUES (?, ?)`
-    );
-
-    db.transaction(() => {
-        db.prepare(`DELETE FROM ${table.vectorTable}`).run();
-        for (const { id, vec } of allNewVectors) {
-            insertVec.run(id, Buffer.from(vec.buffer));
-        }
-    });
 
     return processed;
 }
