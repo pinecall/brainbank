@@ -731,6 +731,22 @@ new PerplexityContextEmbedding({
 });
 ```
 
+#### Benchmarks
+
+Real benchmarks on a production NestJS backend (1052 code chunks + git history):
+
+| Provider | Dims | Index Time | Avg Search | Cost |
+|----------|------|------------|------------|------|
+| **Local WASM** | 384 | 87s | **8ms** | Free |
+| **OpenAI** | 1536 | 106s | 202ms | $0.02/1M tok |
+| **Perplexity** | 2560 | **66s** ⚡ | 168ms | $0.02/1M tok |
+| **Perplexity Context** | 2560 | 78s | 135ms | $0.06/1M tok |
+
+- **Fastest indexing:** Perplexity standard — 38% faster than OpenAI
+- **Fastest search (API):** Perplexity Context — 33% faster than OpenAI
+- **Fastest search (total):** Local WASM — no network latency
+- **Best context awareness:** Perplexity Context — finds semantically related chunks others miss
+
 > [!WARNING]
 > Switching embedding provider (e.g. local → OpenAI) changes the vector dimensions. BrainBank will **refuse to initialize** if the stored dimensions don't match the current provider. Use `initialize({ force: true })` and then `reembed()` to migrate, or switch back to the original provider.
 
