@@ -127,7 +127,7 @@ import type { SearchResult } from '../../types.ts';
 - Before commit: `npm test` must pass
 - Keep commits small, focused, one logical change each
 - **Publishing**: Use `/publish` workflow — runs tests, updates CHANGELOG.md, bumps version, builds, and publishes to npm
-- **CHANGELOG**: Don't write it manually. The `/publish` workflow stamps `## [Unreleased]` with the version and date, then adds a fresh `## [Unreleased]` for future changes. During development, just use Conventional Commits.
+- **CHANGELOG**: After each change, update `## [Unreleased]` in `CHANGELOG.md` with what you did. This way any agent can see what's new even before publishing. The `/publish` workflow verifies the items against git log, fixes inaccuracies, stamps `## [Unreleased]` → `## [X.Y.Z] — date`, and adds a fresh `## [Unreleased]` section.
 
 ## Gotchas
 
