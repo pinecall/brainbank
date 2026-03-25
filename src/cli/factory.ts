@@ -155,6 +155,16 @@ async function setupProviders(brainOpts: Record<string, any>): Promise<void> {
         const provider = new OpenAIEmbedding();
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;
+    } else if (process.env.BRAINBANK_EMBEDDING === 'perplexity') {
+        const { PerplexityEmbedding } = await import('../providers/embeddings/perplexity-embedding.ts');
+        const provider = new PerplexityEmbedding();
+        brainOpts.embeddingProvider = provider;
+        brainOpts.embeddingDims = provider.dims;
+    } else if (process.env.BRAINBANK_EMBEDDING === 'perplexity-context') {
+        const { PerplexityContextEmbedding } = await import('../providers/embeddings/perplexity-context-embedding.ts');
+        const provider = new PerplexityContextEmbedding();
+        brainOpts.embeddingProvider = provider;
+        brainOpts.embeddingDims = provider.dims;
     }
 }
 

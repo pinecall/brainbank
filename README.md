@@ -8,7 +8,7 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 - **Pluggable indexers** — `.use()` only what you need (code, git, docs, or custom)
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
-- **Pluggable embeddings** — local WASM (free) or OpenAI (higher quality)
+- **Pluggable embeddings** — local WASM (free), OpenAI, or Perplexity (standard & contextualized)
 - **Multi-repo** — index multiple repositories into one shared database
 - **Portable** — single `.brainbank/brainbank.db` file
 - **Optional packages** — [`@brainbank/memory`](#memory) (fact extraction + entity graph), [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder), [`@brainbank/mcp`](#mcp-server) (MCP server)
@@ -628,7 +628,7 @@ Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Deskto
 
 The agent passes the `repo` parameter on each tool call based on the active workspace — no hardcoded paths needed.
 
-> Set `BRAINBANK_EMBEDDING` to `openai` for higher quality search (requires `OPENAI_API_KEY`). Omit to use the free local WASM embeddings.
+> Set `BRAINBANK_EMBEDDING` to `openai`, `perplexity`, or `perplexity-context` for higher quality search. Omit to use the free local WASM embeddings.
 
 > Optionally set `BRAINBANK_REPO` as a default fallback repo. If omitted, every tool call must include the `repo` parameter (recommended for multi-workspace setups).
 
@@ -642,7 +642,7 @@ The agent passes the `repo` parameter on each tool call based on the active work
 > 2. MCP server starts without `BRAINBANK_EMBEDDING` env var → defaults to local (384 dims)
 > 3. **Result:** BrainBank throws `Embedding dimension mismatch` on every search
 >
-> **Fix:** Always set `BRAINBANK_EMBEDDING` consistently in your MCP config, CLI, and API usage. If you indexed with OpenAI, your MCP config **must** include `"BRAINBANK_EMBEDDING": "openai"`. If you switch providers, run `brainbank reembed` to regenerate all vectors.
+> **Fix:** Always set `BRAINBANK_EMBEDDING` consistently in your MCP config, CLI, and API usage. If you indexed with OpenAI, your MCP config **must** include `"BRAINBANK_EMBEDDING": "openai"`. Same for `perplexity` or `perplexity-context`. If you switch providers, run `brainbank reembed` to regenerate all vectors.
 
 ### Available Tools
 
@@ -686,19 +686,48 @@ const brain = new BrainBank({
 |----------|--------|------|-------|------|
 | **Local (default)** | built-in | 384 | ⚡ 0ms | Free |
 | **OpenAI** | `OpenAIEmbedding` | 1536 | ~100ms | $0.02/1M tokens |
+| **Perplexity** | `PerplexityEmbedding` | 2560 (4b) / 1024 (0.6b) | ~100ms | $0.02/1M tokens |
+| **Perplexity Context** | `PerplexityContextEmbedding` | 2560 (4b) / 1024 (0.6b) | ~100ms | $0.06/1M tokens |
+
+#### OpenAI
 
 ```typescript
 import { OpenAIEmbedding } from 'brainbank';
 
-// Uses OPENAI_API_KEY env var by default
-new OpenAIEmbedding();
-
-// Custom options
+new OpenAIEmbedding();                        // uses OPENAI_API_KEY env var
 new OpenAIEmbedding({
   model: 'text-embedding-3-large',
-  dims: 512,                          // custom dims (text-embedding-3 only)
+  dims: 512,                                  // Matryoshka reduction
   apiKey: 'sk-...',
-  baseUrl: 'https://my-proxy.com/v1/embeddings',  // Azure, proxies
+  baseUrl: 'https://my-proxy.com/v1/embeddings',
+});
+```
+
+#### Perplexity (Standard)
+
+Best for independent texts, queries, and code chunks.
+
+```typescript
+import { PerplexityEmbedding } from 'brainbank';
+
+new PerplexityEmbedding();                    // uses PERPLEXITY_API_KEY env var
+new PerplexityEmbedding({
+  model: 'pplx-embed-v1-0.6b',               // smaller, faster (1024d)
+  dims: 512,                                  // Matryoshka reduction
+});
+```
+
+#### Perplexity (Contextualized)
+
+Chunks share document context → better retrieval for related code/docs.
+
+```typescript
+import { PerplexityContextEmbedding } from 'brainbank';
+
+new PerplexityContextEmbedding();             // uses PERPLEXITY_API_KEY env var
+new PerplexityContextEmbedding({
+  model: 'pplx-embed-context-v1-0.6b',       // smaller, faster (1024d)
+  dims: 512,                                  // Matryoshka reduction
 });
 ```
 
@@ -842,9 +871,10 @@ The `LLMProvider` interface works with any framework:
 | Variable | Description |
 |----------|-------------|
 | `BRAINBANK_REPO` | Default repository path (optional — auto-detected from `.git/` or passed per tool call) |
-| `BRAINBANK_EMBEDDING` | Embedding provider: `local` (default), `openai` |
+| `BRAINBANK_EMBEDDING` | Embedding provider: `local` (default), `openai`, `perplexity`, `perplexity-context` |
 | `BRAINBANK_DEBUG` | Show full stack traces |
 | `OPENAI_API_KEY` | Required when using `BRAINBANK_EMBEDDING=openai` |
+| `PERPLEXITY_API_KEY` | Required when using `BRAINBANK_EMBEDDING=perplexity` or `perplexity-context` |
 
 ---
 
@@ -1143,7 +1173,7 @@ node test/benchmarks/search-quality.mjs
 │  └──────────────────────────────────────────────────┘│
 │                                                      │
 │  ┌──────────────────────────────────────────────────┐│
-│  │  Embedding (Local WASM 384d │ OpenAI 1536d)      ││
+│  │  Embedding (Local 384d│OpenAI 1536d│Perplexity)  ││
 │  └──────────────────────────────────────────────────┘│
 │  ┌──────────────────────────────────────────────────┐│
 │  │  Qwen3-Reranker (opt-in cross-encoder)            ││

@@ -72,13 +72,21 @@ async function createReranker() {
     return undefined;
 }
 
-// ── Embedding Provider (default: local, set BRAINBANK_EMBEDDING=openai) ──
+// ── Embedding Provider (default: local, set BRAINBANK_EMBEDDING=openai|perplexity|perplexity-context) ──
 
 async function createEmbeddingProvider() {
     const embeddingEnv = process.env.BRAINBANK_EMBEDDING ?? 'local';
     if (embeddingEnv === 'openai') {
         const { OpenAIEmbedding } = await import('brainbank');
         return new OpenAIEmbedding();
+    }
+    if (embeddingEnv === 'perplexity') {
+        const { PerplexityEmbedding } = await import('brainbank');
+        return new PerplexityEmbedding();
+    }
+    if (embeddingEnv === 'perplexity-context') {
+        const { PerplexityContextEmbedding } = await import('brainbank');
+        return new PerplexityContextEmbedding();
     }
     return undefined; // BrainBank defaults to local WASM
 }

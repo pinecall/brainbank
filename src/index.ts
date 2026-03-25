@@ -62,6 +62,10 @@ export {
 export { LocalEmbedding } from './providers/embeddings/local-embedding.ts';
 export { OpenAIEmbedding } from './providers/embeddings/openai-embedding.ts';
 export type { OpenAIEmbeddingOptions } from './providers/embeddings/openai-embedding.ts';
+export { PerplexityEmbedding } from './providers/embeddings/perplexity-embedding.ts';
+export type { PerplexityEmbeddingOptions } from './providers/embeddings/perplexity-embedding.ts';
+export { PerplexityContextEmbedding } from './providers/embeddings/perplexity-context-embedding.ts';
+export type { PerplexityContextEmbeddingOptions } from './providers/embeddings/perplexity-context-embedding.ts';
 export type { ReembedResult, ReembedOptions } from './services/reembed.ts';
 export type { WatchOptions, Watcher } from './services/watch.ts';
 export { cosineSimilarity, normalize } from './lib/math.ts';

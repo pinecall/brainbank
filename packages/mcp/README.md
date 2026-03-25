@@ -76,8 +76,9 @@ brainbank serve
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `BRAINBANK_REPO` | Default repo path (fallback if `repo` param not provided) | — |
-| `BRAINBANK_EMBEDDING` | Embedding provider: `openai` or `local` | `local` |
+| `BRAINBANK_EMBEDDING` | Embedding provider: `local`, `openai`, `perplexity`, `perplexity-context` | `local` |
 | `OPENAI_API_KEY` | Required when using `openai` embeddings | — |
+| `PERPLEXITY_API_KEY` | Required when using `perplexity` or `perplexity-context` embeddings | — |
 
 > The agent passes the `repo` parameter per tool call based on the active workspace — no hardcoded paths needed.
 
