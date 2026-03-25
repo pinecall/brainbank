@@ -6,11 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-03-26
+
 ### Added
 - `PerplexityEmbedding` provider — standard embeddings via `pplx-embed-v1-{0.6b,4b}` models
 - `PerplexityContextEmbedding` provider — contextualized embeddings via `pplx-embed-context-v1-{0.6b,4b}` (cross-chunk context awareness)
 - CLI/MCP support: `BRAINBANK_EMBEDDING=perplexity` and `BRAINBANK_EMBEDDING=perplexity-context`
 - Matryoshka dimension reduction support for Perplexity models
+- Embedding provider benchmark script (`test/benchmarks/embedding-providers.ts`)
 
 ## [0.3.1] — 2026-03-25
 
