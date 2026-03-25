@@ -16,14 +16,14 @@ Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node 
 
 ## Commands
 
-### Scope reducido (preferir siempre)
+### Preferred (minimal scope)
 - Type-check: `npx tsc --noEmit`
-- Test por nombre: `npm test -- --filter <nombre>`
-- Test verbose: `npm test -- --verbose --filter <nombre>`
+- Test by name: `npm test -- --filter <name>`
+- Test verbose: `npm test -- --verbose --filter <name>`
 
-### Suite completa (solo si se pide)
-- Unit tests: `npm test` (145 tests, ~7s)
-- Integration: `npm run test:integration` (descarga modelo de embeddings, ~30s)
+### Full suite (only when requested)
+- Unit tests: `npm test` (146 tests, ~7s)
+- Integration: `npm run test:integration` (downloads embedding model, ~30s)
 - Build: `npm run build:core`
 
 ## Project Structure
@@ -68,6 +68,9 @@ packages/
 - `src/packages.d.ts` — Type declarations for `@brainbank/*` packages (reranker, memory, mcp).
 
 ## Code Conventions
+
+### Language
+- **All code, comments, docs, and tests must be written in English.** No exceptions.
 
 ### TypeScript
 - Strict mode — no `any` in new code, no `@ts-ignore`
@@ -121,6 +124,34 @@ import type { SearchResult } from '../../types.ts';
 - `BrainBank` extends `EventEmitter` for progress/warning events (no callbacks)
 - `close()` on BrainBank is **synchronous** (returns `void`, not `Promise`). Don't `await` it.
 
+## Anti-Patterns
+
+Things that are **never allowed** in this codebase:
+
+```typescript
+// ❌ Inline imports — all imports must be at the top of the file
+function doSomething() {
+    const { foo } = require('./foo');     // WRONG
+    const { bar } = await import('./bar'); // WRONG (except in CLI for lazy loading)
+}
+
+// ❌ Relative parent imports — use @/ aliases
+import { X } from '../types.ts';     // WRONG
+import { X } from '../../lib/rrf.ts'; // WRONG
+
+// ❌ any in new code
+function process(data: any) { ... }  // WRONG — define a proper type
+
+// ❌ console.log in library code
+console.log('indexing done');  // WRONG — use this.emit('progress', ...)
+
+// ❌ Importing from a higher layer
+// In lib/ (Layer 0):
+import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
+```
+
+**Exception**: Dynamic `import()` is allowed in `src/cli/` for lazy-loading heavy dependencies (e.g. tree-sitter) that shouldn't slow down CLI startup.
+
 ## Git Workflow
 
 - Commits: `feat(scope): description` / `fix(scope): description` (Conventional Commits)
@@ -140,29 +171,29 @@ import type { SearchResult } from '../../types.ts';
 
 ## Permissions
 
-### Sin preguntar:
-- Leer archivos, listar directorios
+### Without asking:
+- Read files, list directories
 - `npx tsc --noEmit`
-- `npm test -- --filter <nombre>`
-- Crear archivos nuevos en directorios existentes
-- Formatear código
+- `npm test -- --filter <name>`
+- Create new files in existing directories
+- Format code
 
-### Preguntar primero:
-- `npm install` / agregar dependencias
+### Ask first:
+- `npm install` / add dependencies
 - `git commit` / `git push`
-- Borrar archivos o directorios
-- Modificar `tsconfig.json`, `tsup.config.ts`, `package.json`
-- `npm run build` o suite de tests completa
-- Modificar `src/db/database.ts` (schema changes)
+- Delete files or directories
+- Modify `tsconfig.json`, `tsup.config.ts`, `package.json`
+- `npm run build` or full test suite
+- Modify `src/db/database.ts` (schema changes)
 
-### NUNCA sin aprobación:
+### NEVER without approval:
 - `npm publish`
-- Modificar el schema SQLite sin revisión
-- Borrar o renombrar exports públicos de `src/index.ts` (breaking change)
-- Modificar `packages/mcp/` sin entender el protocolo MCP
-- Si no estás seguro de la arquitectura: proponé un plan y esperá respuesta
+- Modify SQLite schema without review
+- Delete or rename public exports from `src/index.ts` (breaking change)
+- Modify `packages/mcp/` without understanding the MCP protocol
+- If unsure about architecture: propose a plan and wait for a response
 
 ## Notes
 
-- Si encontrás que este AGENTS.md es incorrecto o está incompleto, proponé una actualización.
-- Después de terminar un trabajo confirmado por el usuario, escribí una nota en `~/.berna/notes/{date}/{note}.md`.
+- If you find this AGENTS.md is incorrect or incomplete, propose an update.
+- After finishing work confirmed by the user, write a note at `~/.berna/notes/{date}/{note}.md`.

@@ -23,7 +23,7 @@ If `git describe` fails (no tags), use the last 50 commits.
 Save this output — you'll need it to verify the CHANGELOG.
 
 ### 3. Ask the user for bump type
-Ask: "¿Qué tipo de bump? `patch` (0.x.y → 0.x.y+1), `minor` (0.x.y → 0.x+1.0), o `major` (0.x.y → x+1.0.0)?"
+Ask: "What type of bump? `patch` (0.x.y → 0.x.y+1), `minor` (0.x.y → 0.x+1.0), or `major` (0.x.y → x+1.0.0)?"
 
 Wait for the user's response before proceeding.
 
