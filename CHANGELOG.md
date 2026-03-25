@@ -4,11 +4,11 @@ All notable changes to BrainBank will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.2.3] — Unreleased
+## [Unreleased]
 
 ### Added
-- **Type guards**: `isCodeResult()`, `isCommitResult()`, `isDocumentResult()`, `isPatternResult()`, `isCollectionResult()`
-- **`matchResult()`**: pattern-matching helper for exhaustive SearchResult handling
+- Type guards: `isCodeResult()`, `isCommitResult()`, `isDocumentResult()`, `isPatternResult()`, `isCollectionResult()`
+- `matchResult()` pattern-matching helper for exhaustive SearchResult handling
 - Reembed test for embedding dimension mismatch (384 → 128)
 - `/publish` workflow (`.agents/workflows/publish.md`)
 
