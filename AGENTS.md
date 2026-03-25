@@ -126,6 +126,7 @@ import type { SearchResult } from '../../types.ts';
 - Commits: `feat(scope): description` / `fix(scope): description` (Conventional Commits)
 - Before commit: `npm test` must pass
 - Keep commits small, focused, one logical change each
+- **Publishing**: Use `/publish` workflow — runs tests, updates CHANGELOG.md, bumps version, builds, and publishes to npm
 
 ## Gotchas
 

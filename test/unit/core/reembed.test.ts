@@ -171,4 +171,36 @@ export const tests = {
 
         brain2.close();
     },
+
+    async 'reembed handles dimension mismatch (384 → 128)'(assert: any) {
+        const dbPath = tmpDb('reembed-dims');
+
+        // Phase 1: index with 384-dim provider
+        const brain1 = new BrainBank({ dbPath, embeddingProvider: mockEmbedding(384), embeddingDims: 384 });
+        await brain1.initialize();
+        const col1 = brain1.collection('data');
+        await col1.add('dimension test item');
+        assert.equal(col1.count(), 1);
+        brain1.close();
+
+        // Phase 2: reopen with 128-dim provider (different dims)
+        const provider128: EmbeddingProvider = {
+            dims: 128,
+            async embed(_: string) { return new Float32Array(128).fill(0.3); },
+            async embedBatch(txts: string[]) { return txts.map(() => new Float32Array(128).fill(0.3)); },
+            async close() {},
+        };
+        const brain2 = new BrainBank({ dbPath, embeddingProvider: provider128, embeddingDims: 128 });
+        await brain2.initialize();
+
+        const result = await brain2.reembed();
+        assert(result.kv >= 1, `should reembed >= 1 kv items, got ${result.kv}`);
+
+        // Search with new dims should work
+        const col2 = brain2.collection('data');
+        const hits = await col2.search('dimension', { k: 1, mode: 'vector', minScore: 0 });
+        assert.equal(hits.length, 1, 'should find item after dims change');
+
+        brain2.close();
+    },
 };

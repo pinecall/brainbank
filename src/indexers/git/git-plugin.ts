@@ -14,6 +14,7 @@
 
 import type { Indexer, IndexerContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { Database } from '@/db/database.ts';
 import { GitIndexer } from './git-indexer.ts';
 import { CoEditAnalyzer } from './co-edit-analyzer.ts';
 import type { IndexResult, ProgressCallback, CoEditSuggestion } from '@/types.ts';
@@ -31,6 +32,7 @@ export interface GitPluginOptions {
 
 class GitPlugin implements Indexer {
     readonly name: string;
+    private db!: Database;
     hnsw!: HNSWIndex;
     indexer!: GitIndexer;
     coEdits!: CoEditAnalyzer;
@@ -41,6 +43,7 @@ class GitPlugin implements Indexer {
     }
 
     async initialize(ctx: IndexerContext): Promise<void> {
+        this.db = ctx.db;
         // Use shared HNSW so all git indexers share one index
         const shared = await ctx.getOrCreateSharedHnsw('git', 500_000);
         this.hnsw = shared.hnsw;
@@ -70,6 +73,17 @@ class GitPlugin implements Indexer {
 
     suggestCoEdits(filePath: string, limit: number = 5): CoEditSuggestion[] {
         return this.coEdits.suggest(filePath, limit);
+    }
+
+    /** Get git history for a specific file. */
+    fileHistory(filePath: string, limit: number = 20): any[] {
+        return this.db.prepare(`
+            SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions
+            FROM git_commits c
+            INNER JOIN commit_files cf ON c.id = cf.commit_id
+            WHERE cf.file_path LIKE ? AND c.is_merge = 0
+            ORDER BY c.timestamp DESC LIMIT ?
+        `).all(`%${filePath}%`, limit) as any[];
     }
 
     stats(): Record<string, any> {

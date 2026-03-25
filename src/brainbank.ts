@@ -309,15 +309,8 @@ export class BrainBank extends EventEmitter {
 
     /** Get git history for a specific file. */
     async fileHistory(filePath: string, limit = 20): Promise<any[]> {
-        this.indexer('git'); // throws if not loaded
         await this.initialize();
-        return this._db.prepare(`
-            SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions
-            FROM git_commits c
-            INNER JOIN commit_files cf ON c.id = cf.commit_id
-            WHERE cf.file_path LIKE ? AND c.is_merge = 0
-            ORDER BY c.timestamp DESC LIMIT ?
-        `).all(`%${filePath}%`, limit) as any[];
+        return (this.indexer('git') as any).fileHistory(filePath, limit);
     }
 
     /** Get co-edit suggestions for a file. */
