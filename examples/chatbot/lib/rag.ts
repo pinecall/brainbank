@@ -29,13 +29,12 @@ export async function indexDocs(brain: BrainBank, docsPath: string): Promise<num
     const docsPlugin = brain.indexer('docs') as any;
     if (!docsPlugin) return 0;
 
-    // Register collection (skip deprecated folder)
+    // Register collection (skip deprecated/scratchpad)
     docsPlugin.addCollection({
         name: 'project-docs',
         path: docsPath,
         pattern: '**/*.md',
         ignore: ['**/deprecated/**', '**/scratchpad/**'],
-        context: 'Project documentation — architecture, backend, frontend, database, security, operations guides.',
     });
 
     console.log(`${c.dim}  📚 Indexing docs from ${docsPath}...${c.reset}`);
@@ -54,18 +53,46 @@ export async function indexDocs(brain: BrainBank, docsPath: string): Promise<num
     return chunks;
 }
 
-/** Search docs and format top results as context for the system prompt. */
-export async function buildRAGContext(brain: BrainBank, query: string, k: number = 3): Promise<string> {
+/** Build a doc index summary from the indexed file paths. */
+export function buildDocsOverview(brain: BrainBank): string {
     const docsPlugin = brain.indexer('docs') as any;
     if (!docsPlugin) return '';
 
-    const results: SearchResult[] = await docsPlugin.search(query, { k, minScore: 0.2 });
+    const st = docsPlugin.stats();
+    if (!st.chunks) return '';
+
+    return `You have access to ${st.chunks} chunks from ${st.documents} project documentation files ` +
+        `covering architecture, backend, frontend, database, security, operations, testing, and more. ` +
+        `When the user asks broad questions about "the system", search across ALL relevant docs — ` +
+        `not just the top match. The documentation covers a full-stack application.`;
+}
+
+/** Deduplicate results by file path, keeping the highest-scoring chunk per file. */
+function dedupeByFile(results: SearchResult[]): SearchResult[] {
+    const seen = new Map<string, SearchResult>();
+    for (const r of results) {
+        const key = r.filePath ?? '';
+        if (!seen.has(key) || (seen.get(key)!.score < r.score)) {
+            seen.set(key, r);
+        }
+    }
+    return [...seen.values()];
+}
+
+/** Search docs and format top results as context for the system prompt. */
+export async function buildRAGContext(brain: BrainBank, query: string, k: number = 5): Promise<string> {
+    const docsPlugin = brain.indexer('docs') as any;
+    if (!docsPlugin) return '';
+
+    // Fetch more results than needed, then deduplicate by file
+    const raw: SearchResult[] = await docsPlugin.search(query, { k: k * 2, minScore: 0.15 });
+    const results = dedupeByFile(raw).slice(0, k);
     if (results.length === 0) return '';
 
     const sections = results.map((r, i) => {
         const title = (r.metadata as any)?.title || r.filePath?.split('/').pop() || 'Doc';
         const score = (r.score * 100).toFixed(0);
-        return `### ${i + 1}. ${title} (${score}% match)\n${r.content.slice(0, 800)}`;
+        return `### ${i + 1}. ${title} (${score}% match)\n${r.content.slice(0, 1200)}`;
     });
 
     return `## Relevant Documentation\n\n${sections.join('\n\n')}`;
@@ -79,7 +106,8 @@ export async function searchDocs(brain: BrainBank, query: string): Promise<void>
         return;
     }
 
-    const results: SearchResult[] = await docsPlugin.search(query, { k: 5, minScore: 0.15 });
+    const raw: SearchResult[] = await docsPlugin.search(query, { k: 10, minScore: 0.1 });
+    const results = dedupeByFile(raw).slice(0, 6);
     if (results.length === 0) {
         console.log(`${c.dim}  No docs matched "${query}"${c.reset}`);
         return;

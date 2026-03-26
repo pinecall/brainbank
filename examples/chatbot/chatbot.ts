@@ -17,7 +17,7 @@ import { BrainBank } from '../../src/index.ts';
 import { PerplexityContextEmbedding } from '../../src/providers/embeddings/perplexity-context-embedding.ts';
 import { docs } from '../../src/indexers/docs/docs-plugin.ts';
 import { Memory, EntityStore, OpenAIProvider } from '../../packages/memory/src/index.ts';
-import { parseDocsPath, createDocsEmbedding, indexDocs, buildRAGContext, searchDocs } from './lib/rag.ts';
+import { parseDocsPath, createDocsEmbedding, indexDocs, buildRAGContext, buildDocsOverview, searchDocs } from './lib/rag.ts';
 import * as ui from './lib/ui.ts';
 
 // ─── Config ─────────────────────────────────────────
@@ -104,16 +104,20 @@ async function streamChat(messages: { role: string; content: string }[]): Promis
 // ─── System Prompt ──────────────────────────────────
 
 async function systemPrompt(userQuery: string): Promise<string> {
-    let prompt = 'You are a helpful assistant with long-term memory. ' +
+    let prompt = 'You are a helpful assistant with long-term memory and access to project documentation. ' +
         'You remember facts about the user from past conversations. ' +
         'Use your memories naturally — don\'t list them unless asked.\n\n' +
         memory.buildContext();
 
     if (docsPath && docChunks > 0) {
+        // Give the LLM an overview of what docs exist
+        prompt += '\n\n' + buildDocsOverview(brain);
+
         const ragContext = await buildRAGContext(brain, userQuery);
         if (ragContext) {
             prompt += '\n\n' + ragContext +
-                '\n\nUse the documentation above to answer technical questions accurately. ' +
+                '\n\nUse the documentation above to answer technical questions comprehensively. ' +
+                'Synthesize information from ALL relevant docs, not just one. ' +
                 'Cite the document title when referencing docs.';
         }
     }
