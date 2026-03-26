@@ -10,7 +10,7 @@
  */
 
 import { BrainBank } from '../../src/index.ts';
-import { docs, summaryEnrichment, noneEnrichment } from '../../src/indexers/docs/docs-plugin.ts';
+import { docs } from '../../src/indexers/docs/docs-plugin.ts';
 import { PerplexityContextEmbedding } from '../../src/providers/embeddings/perplexity-context-embedding.ts';
 import type { SearchResult } from '../../src/types.ts';
 
@@ -199,7 +199,7 @@ function recallAtK(foundAt: number[], k: number, totalExpected: number): number 
 async function main() {
     const docsIdx = process.argv.indexOf('--docs');
     if (docsIdx === -1 || !process.argv[docsIdx + 1]) {
-        console.error(`${c.red}Usage: npx tsx examples/rag/eval.ts --docs <path> [--enrichment none|summary]${c.reset}`);
+        console.error(`${c.red}Usage: npx tsx examples/rag/eval.ts --docs <path>${c.reset}`);
         process.exit(1);
     }
     const docsPath = process.argv[docsIdx + 1];
@@ -209,11 +209,6 @@ async function main() {
         process.exit(1);
     }
 
-    // Parse enrichment strategy
-    const enrichIdx = process.argv.indexOf('--enrichment');
-    const enrichName = enrichIdx !== -1 ? process.argv[enrichIdx + 1] : 'none';
-    const enrichment = enrichName === 'summary' ? summaryEnrichment() : noneEnrichment();
-
     const pplxEmbed = new PerplexityContextEmbedding();
     const dbPath = '/tmp/brainbank-rag-eval.db';
     const brain = new BrainBank({
@@ -221,7 +216,7 @@ async function main() {
         embeddingProvider: pplxEmbed,
         embeddingDims: pplxEmbed.dims,
     });
-    brain.use(docs({ enrichment }));
+    brain.use(docs());
     await brain.initialize();
 
     const docsPlugin = brain.indexer('docs') as any;
@@ -245,7 +240,6 @@ async function main() {
     const st = docsPlugin.stats();
     console.log(`${c.green}  ✓ ${st.chunks} chunks from ${st.documents} files${c.reset}`);
     console.log(`${c.dim}  Provider: Perplexity Context (${pplxEmbed.dims}d)${c.reset}`);
-    console.log(`${c.dim}  Enrichment: ${enrichment.name}${c.reset}`);
     console.log(`${c.dim}  Queries: ${GOLDEN.length} (${[...new Set(GOLDEN.map(g => g.category))].join(', ')})${c.reset}\n`);
 
     // Run queries
