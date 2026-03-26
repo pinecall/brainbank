@@ -1,8 +1,8 @@
 /**
- * 📚 BrainBank RAG — Docs + Memory Chatbot
+ * 📚 BrainBank RAG — Docs Chatbot (Pure RAG, No Memory)
  *
- * Index local documentation and answer questions using RAG,
- * with automatic fact extraction and entity graphs.
+ * Index local documentation and answer questions using RAG.
+ * No memory extraction — just retrieval and generation.
  *
  * Run:
  *   OPENAI_API_KEY=sk-... PERPLEXITY_API_KEY=pplx-... \
@@ -17,7 +17,6 @@
 import { BrainBank } from '../../src/index.ts';
 import { docs } from '../../src/indexers/docs/docs-plugin.ts';
 import { PerplexityContextEmbedding } from '../../src/providers/embeddings/perplexity-context-embedding.ts';
-import { Memory, EntityStore, OpenAIProvider } from '../../packages/memory/src/index.ts';
 import { createDriver, parseBackend, parseModel } from '../lib/driver.ts';
 import type { SearchResult } from '../../src/types.ts';
 import * as ui from '../lib/ui.ts';
@@ -80,20 +79,9 @@ const docChunks = stats?.chunks ?? 0;
 process.stdout.write('\r' + ' '.repeat(80) + '\r');
 console.log(`${ui.c.green}  📚 ${docChunks} doc chunks indexed (${stats?.indexed ?? 0} files)${ui.c.reset}`);
 
-// ─── Memory + Entities ──────────────────────────────
+// ─── LLM Driver ─────────────────────────────────────
 
-const llmProvider = new OpenAIProvider({ model });
 const driver = await createDriver(backend, model);
-
-const entityStore = new EntityStore(brain, {
-    onEntity: (op) => ui.entityEvent(op),
-});
-
-const memory = new Memory(brain, {
-    llm: llmProvider,
-    entityStore,
-    onOperation: (op) => ui.memoryOp(op.action, op.fact, op.reason),
-});
 
 // ─── RAG Helpers ────────────────────────────────────
 
@@ -146,19 +134,16 @@ async function searchDocs(query: string) {
 // ─── System Prompt ──────────────────────────────────
 
 async function systemPrompt(query: string): Promise<string> {
-    let prompt = 'You are a helpful assistant with long-term memory and access to project documentation. ' +
-        'You remember facts about the user from past conversations. ' +
-        'Use your memories naturally — don\'t list them unless asked.\n\n' +
-        memory.buildContext();
-
-    prompt += `\n\nYou have access to ${docChunks} chunks from project documentation ` +
+    let prompt = 'You are a helpful assistant with access to project documentation. ' +
+        'Answer questions based on the docs provided.\n\n' +
+        `You have access to ${docChunks} chunks from project documentation ` +
         'covering architecture, backend, frontend, database, security, operations, testing, and more. ' +
-        'When the user asks broad questions about "the system", synthesize across ALL relevant docs.';
+        'When the user asks broad questions, synthesize across ALL relevant docs.';
 
     const ragContext = await buildRAGContext(query);
     if (ragContext) {
         prompt += '\n\n' + ragContext +
-            '\n\nUse the documentation above to answer technical questions comprehensively. ' +
+            '\n\nUse the documentation above to answer comprehensively. ' +
             'Synthesize information from ALL relevant docs, not just one. ' +
             'Cite the document title when referencing docs.';
     }
@@ -169,12 +154,8 @@ async function systemPrompt(query: string): Promise<string> {
 // ─── Main Loop ──────────────────────────────────────
 
 ui.header('BrainBank RAG', `${model} (${backend})`, DB_PATH);
-console.log(`${ui.c.blue}  📚 ${docChunks} doc chunks available for RAG${ui.c.reset}`);
-ui.showMemories(
-    memory.recall(5), memory.count(),
-    entityStore.entityCount(), entityStore.relationCount(),
-    ['docs <query>'],
-);
+console.log(`${ui.c.blue}  📚 ${docChunks} doc chunks available${ui.c.reset}`);
+console.log(`${ui.c.dim}  Commands: "quit" · "docs <query>" to search docs${ui.c.reset}\n`);
 
 const input = ui.createInput();
 const history: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
@@ -183,8 +164,6 @@ while (true) {
     const msg = await input.ask(input.prompt);
     if (!msg.trim()) continue;
     if (msg.toLowerCase() === 'quit') break;
-    if (msg.toLowerCase() === 'memories') { ui.listMemories(memory.recall(50)); continue; }
-    if (msg.toLowerCase() === 'entities') { ui.listEntities(entityStore.listEntities(), entityStore.listRelationships()); continue; }
 
     // docs command: search + generate answer
     if (msg.toLowerCase().startsWith('docs ')) {
@@ -199,11 +178,11 @@ while (true) {
         );
         ui.endResponse();
         history.push({ role: 'assistant', content: reply });
-        await memory.process(query, reply);
         console.log();
         continue;
     }
 
+    // Regular chat with RAG context
     history.push({ role: 'user', content: msg });
     ui.startResponse();
     const system = await systemPrompt(msg);
@@ -213,7 +192,6 @@ while (true) {
     );
     ui.endResponse();
     history.push({ role: 'assistant', content: reply });
-    await memory.process(msg, reply);
     console.log();
 }
 
