@@ -1,12 +1,16 @@
 {
     "name": "@brainbank/mcp",
-    "version": "0.1.5",
+    "version": "0.2.0",
     "description": "MCP (Model Context Protocol) server for BrainBank",
     "type": "module",
     "main": "dist/mcp-server.js",
     "bin": "dist/mcp-server.js",
-    "files": ["dist/"],
-    "scripts": { "build": "tsup" },
+    "files": [
+        "dist/"
+    ],
+    "scripts": {
+        "build": "tsup"
+    },
     "dependencies": {
         "brainbank": ">=0.2.2",
         "@modelcontextprotocol/sdk": "^1.27.1",
