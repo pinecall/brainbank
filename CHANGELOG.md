@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-03-26
+
+### Added
+- Embedding provider benchmark results table in README (Local vs OpenAI vs Perplexity)
+- Notes and Agent Memory plugin documentation in README
+
 ## [0.4.0] — 2026-03-26
 
 ### Added
