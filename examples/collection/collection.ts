@@ -2,7 +2,7 @@
  * BrainBank Collections — Quick Demo
  *
  * Store and search structured agent memory.
- * Run: npx tsx examples/collections.ts
+ * Run: npx tsx examples/collection/collection.ts
  */
 import { BrainBank } from '../../src/index.ts';
 import * as fs from 'node:fs';

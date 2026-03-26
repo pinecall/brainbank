@@ -1,6 +1,6 @@
 /**
  * CLI UI helpers — ANSI colors, formatting, readline.
- * Zero dependencies. Keeps the chatbot logic clean.
+ * Zero dependencies. Keeps the example code clean.
  */
 
 import * as readline from 'node:readline';
@@ -21,13 +21,13 @@ export const c = {
 
 // ─── Display helpers ────────────────────────────────
 
-export function header(model: string, db: string) {
+export function header(title: string, model: string, db: string) {
     console.log();
-    console.log(`${c.bold}${c.cyan}  🧠 BrainBank Chat${c.reset}`);
+    console.log(`${c.bold}${c.cyan}  🧠 ${title}${c.reset}`);
     console.log(`${c.dim}  Model: ${model} · DB: ${db}${c.reset}`);
 }
 
-export function showMemories(memories: { content: string }[], total: number, entityCount = 0, relationCount = 0, docChunks?: number) {
+export function showMemories(memories: { content: string }[], total: number, entityCount = 0, relationCount = 0, hints: string[] = []) {
     if (total > 0) {
         console.log(`${c.magenta}  💾 ${total} memories loaded${c.reset}`);
         for (const m of memories) console.log(`${c.dim}     • ${m.content}${c.reset}`);
@@ -37,8 +37,8 @@ export function showMemories(memories: { content: string }[], total: number, ent
     if (entityCount > 0) {
         console.log(`${c.blue}  🔗 ${entityCount} entities, ${relationCount} relationships${c.reset}`);
     }
-    const docsHint = docChunks ? ` · "docs <query>" to ask about docs` : '';
-    console.log(`${c.dim}  Type "quit" to exit · "memories" to list · "entities" to see graph${docsHint}${c.reset}`);
+    const commands = ['quit', 'memories', 'entities', ...hints].map(h => `"${h}"`).join(' · ');
+    console.log(`${c.dim}  Commands: ${commands}${c.reset}`);
     console.log();
 }
 

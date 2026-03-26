@@ -291,7 +291,7 @@ decisions.prune({ olderThan: '30d' });  // remove older than 30 days
 brain.listCollectionNames();            // → ['decisions', ...]
 ```
 
-> 📂 See [examples/collections](examples/collections/) for a complete runnable demo with cross-collection linking and metadata.
+> 📂 See [examples/collection](examples/collection/) for a complete runnable demo with cross-collection linking and metadata.
 
 ### Watch Mode
 
@@ -595,8 +595,9 @@ brainbank kv search conversations "what did we decide about auth"
 
 | Example | Description | Run |
 |---------|-------------|-----|
-| [chatbot](examples/chatbot/) | CLI chatbot with streaming + persistent memory (context injection + function calling) | `OPENAI_API_KEY=sk-... npx tsx examples/chatbot/chatbot.ts` |
-| [collections](examples/collections/) | Collections, semantic search, tags, metadata linking | `npx tsx examples/collections/collections.ts` |
+| [rag](examples/rag/) | RAG chatbot — docs retrieval + memory + entity graph | `OPENAI_API_KEY=sk-... PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/rag.ts --docs <path>` |
+| [memory](examples/memory/) | Memory chatbot — fact extraction + entity graph | `OPENAI_API_KEY=sk-... npx tsx examples/memory/memory.ts` |
+| [collection](examples/collection/) | Collections, semantic search, tags, metadata linking | `npx tsx examples/collection/collection.ts` |
 
 ---
 
@@ -961,7 +962,7 @@ The `LLMProvider` interface works with any framework:
 | Vercel AI SDK | `generateText()` → string |
 | Any LLM | Implement `{ generate(messages) → string }` |
 
-> 📂 See [examples/chatbot](examples/chatbot/) for runnable demos with all three frameworks.
+> 📂 See [examples/memory](examples/memory/) for a runnable demo. All three LLM backends supported via `--llm` flag.
 
 > 📦 Full docs: [packages/memory/README.md](packages/memory/README.md)
 
