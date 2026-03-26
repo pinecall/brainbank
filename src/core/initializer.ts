@@ -8,6 +8,7 @@
  *   Phase 2 (lateInit)   — loads vectors, runs indexers, builds search.
  */
 
+import { dirname, join } from 'node:path';
 import { Database } from '@/db/database.ts';
 import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { LocalEmbedding } from '@/providers/embeddings/local-embedding.ts';
@@ -88,7 +89,13 @@ export async function lateInit(
     const { db, embedding, kvHnsw, skipVectorLoad } = early;
 
     if (!skipVectorLoad) {
-        loadVectors(db, 'kv_vectors', 'data_id', kvHnsw, kvVecs);
+        const kvIndexPath = hnswPath(config.dbPath, 'kv');
+        const kvCount = countRows(db, 'kv_vectors');
+        if (kvHnsw.tryLoad(kvIndexPath, kvCount)) {
+            loadVecCache(db, 'kv_vectors', 'data_id', kvVecs);
+        } else {
+            loadVectors(db, 'kv_vectors', 'data_id', kvHnsw, kvVecs);
+        }
     }
 
     const ctx = buildIndexerContext(db, embedding, config, sharedHnsw, skipVectorLoad, getCollection);
@@ -96,6 +103,9 @@ export async function lateInit(
     for (const mod of registry.all) {
         await mod.initialize(ctx);
     }
+
+    // Save HNSW indexes to disk for faster next startup
+    saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw);
 
     return buildSearchLayer(db, embedding, config, registry, sharedHnsw);
 }
@@ -125,7 +135,15 @@ function buildIndexerContext(
 
         loadVectors: (table, idCol, hnsw, cache) => {
             if (skipVectorLoad) return;
-            loadVectors(db, table, idCol, hnsw, cache);
+            const indexName = table.replace('_vectors', '').replace('_chunks', '');
+            const indexPath = hnswPath(config.dbPath, indexName);
+            const rowCount = countRows(db, table);
+            if (hnsw.tryLoad(indexPath, rowCount)) {
+                // HNSW loaded from file — still populate vecCache for MMR
+                loadVecCache(db, table, idCol, cache);
+            } else {
+                loadVectors(db, table, idCol, hnsw, cache);
+            }
         },
 
         getOrCreateSharedHnsw: async (type, maxElements) => {
@@ -182,7 +200,34 @@ function buildSearchLayer(
     return { search, bm25, contextBuilder };
 }
 
-// ── Shared helper ─────────────────────────────────────
+// ── Shared helpers ────────────────────────────────────
+
+/** Derive the HNSW index file path from the DB path. */
+function hnswPath(dbPath: string, name: string): string {
+    return join(dirname(dbPath), `hnsw-${name}.index`);
+}
+
+/** Count rows in a vector table (fast, no data transfer). */
+function countRows(db: Database, table: string): number {
+    const row = db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as any;
+    return row?.c ?? 0;
+}
+
+/** Save all HNSW indexes to disk for fast startup next time. */
+function saveAllHnsw(
+    dbPath: string,
+    kvHnsw: HNSWIndex,
+    sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
+): void {
+    try {
+        kvHnsw.save(hnswPath(dbPath, 'kv'));
+        for (const [name, { hnsw }] of sharedHnsw) {
+            hnsw.save(hnswPath(dbPath, name));
+        }
+    } catch {
+        // Non-fatal: next startup will just rebuild from SQLite
+    }
+}
 
 export function loadVectors(
     db: Database,
@@ -200,6 +245,25 @@ export function loadVectors(
             ),
         );
         hnsw.add(vec, row[idCol]);
+        cache.set(row[idCol], vec);
+    }
+}
+
+/** Populate only the vecCache from SQLite (HNSW already loaded from file). */
+function loadVecCache(
+    db: Database,
+    table: string,
+    idCol: string,
+    cache: Map<number, Float32Array>,
+): void {
+    const rows = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).all() as any[];
+    for (const row of rows) {
+        const vec = new Float32Array(
+            row.embedding.buffer.slice(
+                row.embedding.byteOffset,
+                row.embedding.byteOffset + row.embedding.byteLength,
+            ),
+        );
         cache.set(row[idCol], vec);
     }
 }

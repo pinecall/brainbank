@@ -4,8 +4,12 @@
  * Wraps hnswlib-node for O(log n) approximate nearest neighbor search.
  * M=16 connections, ef=200 construction, ef=50 search by default.
  * 150x faster than brute force at 1M vectors.
+ *
+ * Supports disk persistence: save(path) / tryLoad(path, count)
+ * to skip costly vector-by-vector rebuild on startup.
  */
 
+import { existsSync } from 'node:fs';
 import type { VectorIndex, SearchHit } from '@/types.ts';
 
 export class HNSWIndex implements VectorIndex {
@@ -105,5 +109,44 @@ export class HNSWIndex implements VectorIndex {
     /** Number of vectors in the index. */
     get size(): number {
         return this._ids.size;
+    }
+
+    /**
+     * Save the HNSW graph to disk.
+     * The file can be loaded later with tryLoad() to skip vector-by-vector insertion.
+     */
+    save(path: string): void {
+        if (!this._index || this._ids.size === 0) return;
+        this._index.writeIndexSync(path);
+    }
+
+    /**
+     * Try to load a previously saved HNSW index from disk.
+     * Returns true if loaded successfully, false if stale or missing.
+     * @param path File path to the saved index
+     * @param expectedCount Expected number of vectors (from SQLite) — used to detect staleness
+     */
+    tryLoad(path: string, expectedCount: number): boolean {
+        if (!this._index || !existsSync(path)) return false;
+
+        try {
+            this._index.readIndexSync(path);
+            const loadedCount = this._index.getCurrentCount();
+
+            // Stale: vector count in DB differs from saved index
+            if (loadedCount !== expectedCount) {
+                this.reinit();
+                return false;
+            }
+
+            // Rebuild _ids set from the loaded index
+            const ids = this._index.getIdsList();
+            this._ids = new Set(ids);
+            this._index.setEf(this._efSearch);
+            return true;
+        } catch {
+            this.reinit();
+            return false;
+        }
     }
 }
