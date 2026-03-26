@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- HNSW disk persistence — indexes saved to `.brainbank/hnsw-{name}.index`, loaded on startup (skips O(n) rebuild)
+- `vecToBuffer()` helper in `math.ts` for safe Float32Array → Buffer conversion
+- `deleteCollection()` on BrainBank for evicting collections from memory
+
+### Fixed
+- **Buffer.from byteOffset bug** — 7 callsites stored entire shared buffer instead of vector slice (data corruption)
+- **Reembed non-atomic** — used temp table swap instead of delete-before-rebuild (ACID guarantee)
+- **Code-indexer crash window** — wrapped delete + insert in single transaction (prevents orphaned files)
+- **Watch concurrent flush** — added flushing guard to prevent parallel flush() race conditions
+- **embedBatch shared memory** — `LocalEmbedding.embedBatch` now copies via `.slice()` instead of creating views
+
+### Changed
+- `loadVectors` uses `.iterate()` cursor instead of `.all()` (O(1) vs O(n) memory)
+- Reranking deduplicated — 4 inline copies → single `rerank()` in `rerank.ts`
+- Collection `_searchVector` uses fixed k×10 multiplier (removed COUNT query per search)
+
 ## [0.4.1] — 2026-03-26
 
 ### Added
