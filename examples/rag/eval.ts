@@ -199,14 +199,22 @@ function recallAtK(foundAt: number[], k: number, totalExpected: number): number 
 async function main() {
     const docsIdx = process.argv.indexOf('--docs');
     if (docsIdx === -1 || !process.argv[docsIdx + 1]) {
-        console.error(`${c.red}Usage: npx tsx examples/rag/eval.ts --docs <path>${c.reset}`);
+        console.error(`${c.red}Usage: npx tsx examples/rag/eval.ts --docs <path> [--reranker]${c.reset}`);
         process.exit(1);
     }
     const docsPath = process.argv[docsIdx + 1];
+    const useReranker = process.argv.includes('--reranker');
 
     if (!process.env.PERPLEXITY_API_KEY) {
         console.error(`${c.yellow}⚠  Set PERPLEXITY_API_KEY${c.reset}`);
         process.exit(1);
+    }
+
+    // Lazy-load reranker only when requested (downloads ~640MB model on first use)
+    let reranker: any;
+    if (useReranker) {
+        const { Qwen3Reranker } = await import('../../packages/reranker/src/qwen3-reranker.ts');
+        reranker = new Qwen3Reranker();
     }
 
     const pplxEmbed = new PerplexityContextEmbedding();
@@ -215,6 +223,7 @@ async function main() {
         dbPath,
         embeddingProvider: pplxEmbed,
         embeddingDims: pplxEmbed.dims,
+        reranker,
     });
     brain.use(docs());
     await brain.initialize();
@@ -240,6 +249,7 @@ async function main() {
     const st = docsPlugin.stats();
     console.log(`${c.green}  ✓ ${st.chunks} chunks from ${st.documents} files${c.reset}`);
     console.log(`${c.dim}  Provider: Perplexity Context (${pplxEmbed.dims}d)${c.reset}`);
+    console.log(`${c.dim}  Reranker: ${useReranker ? 'Qwen3-Reranker-0.6B' : 'none'}${c.reset}`);
     console.log(`${c.dim}  Queries: ${GOLDEN.length} (${[...new Set(GOLDEN.map(g => g.category))].join(', ')})${c.reset}\n`);
 
     // Run queries
@@ -329,6 +339,7 @@ async function main() {
 
     console.log();
 
+    if (reranker?.close) await reranker.close();
     brain.close();
     try { (await import('node:fs')).unlinkSync(dbPath); } catch { /* ok */ }
 }
