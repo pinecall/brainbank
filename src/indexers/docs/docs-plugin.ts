@@ -15,6 +15,16 @@ import type { EmbeddingProvider, DocumentCollection, SearchResult } from '@/type
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 import { DocsIndexer } from './docs-indexer.ts';
+import type { ChunkEnrichment } from './chunk-enrichment.ts';
+
+export type { ChunkEnrichment, ChunkContext } from './chunk-enrichment.ts';
+export { noneEnrichment, summaryEnrichment } from './chunk-enrichment.ts';
+
+/** Options for the docs plugin. */
+export interface DocsOptions {
+    /** Chunk enrichment strategy for embeddings. Default: noneEnrichment() */
+    enrichment?: ChunkEnrichment;
+}
 
 class DocsPlugin implements Indexer {
     readonly name = 'docs';
@@ -23,13 +33,18 @@ class DocsPlugin implements Indexer {
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
+    private _enrichment?: ChunkEnrichment;
+
+    constructor(options?: DocsOptions) {
+        this._enrichment = options?.enrichment;
+    }
 
     async initialize(ctx: IndexerContext): Promise<void> {
         this._db = ctx.db;
         this._embedding = ctx.embedding;
         this.hnsw = await ctx.createHnsw();
         ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
-        this.indexer = new DocsIndexer(ctx.db, ctx.embedding, this.hnsw, this.vecCache);
+        this.indexer = new DocsIndexer(ctx.db, ctx.embedding, this.hnsw, this.vecCache, this._enrichment);
     }
 
     /** Register a document collection. */
@@ -308,6 +323,6 @@ class DocsPlugin implements Indexer {
 }
 
 /** Create a document collections plugin. */
-export function docs(): Indexer {
-    return new DocsPlugin();
+export function docs(options?: DocsOptions): Indexer {
+    return new DocsPlugin(options);
 }

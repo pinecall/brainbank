@@ -15,6 +15,8 @@ import { createHash } from 'node:crypto';
 import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, VectorIndex } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { ChunkEnrichment, ChunkContext } from './chunk-enrichment.ts';
+import { noneEnrichment } from './chunk-enrichment.ts';
 
 // ── Break Point Scoring (qmd-inspired) ──────────────
 
@@ -59,12 +61,17 @@ const IGNORED_DOC_DIRS = new Set([
 // ── DocsIndexer ──────────────────────────────────────
 
 export class DocsIndexer {
+    private _enrichment: ChunkEnrichment;
+
     constructor(
         private _db: Database,
         private _embedding: EmbeddingProvider,
         private _hnsw: HNSWIndex,
         private _vecCache: Map<number, Float32Array>,
-    ) {}
+        enrichment?: ChunkEnrichment,
+    ) {
+        this._enrichment = enrichment ?? noneEnrichment();
+    }
 
     /**
      * Index all documents in a collection.
@@ -182,6 +189,9 @@ export class DocsIndexer {
     ): Promise<number> {
         const title = this._extractTitle(content, relPath);
         const chunks = this._smartChunk(content);
+        const headings = this._extractHeadings(content);
+        const docSummary = this._extractSummary(content);
+        const folder = path.dirname(relPath);
 
         const insertChunk = this._db.prepare(`
             INSERT INTO doc_chunks (collection, file_path, title, content, seq, pos, content_hash)
@@ -198,7 +208,11 @@ export class DocsIndexer {
             }
         });
 
-        const texts = chunks.map(c => `title: ${title} | text: ${c.text}`);
+        // Build embedding texts via enrichment strategy
+        const texts = chunks.map((c, seq) => this._enrichment.enrich({
+            title, filePath: relPath, folder, content: c.text,
+            docSummary, headings, seq, totalChunks: chunks.length,
+        }));
         const embeddings = await this._embedding.embedBatch(texts);
 
         const insertVec = this._db.prepare(
@@ -343,5 +357,27 @@ export class DocsIndexer {
         const match = content.match(/^#{1,3}\s+(.+)$/m);
         if (match) return match[1].trim();
         return path.basename(filePath, path.extname(filePath));
+    }
+
+    /** Extract all headings from the document. */
+    private _extractHeadings(content: string): string[] {
+        const matches = content.match(/^#{1,4}\s+(.+)$/gm);
+        if (!matches) return [];
+        return matches.map(m => m.replace(/^#+\s+/, '').trim());
+    }
+
+    /** Extract a brief summary from the document intro (first ~500 non-heading chars). */
+    private _extractSummary(content: string): string {
+        const lines = content.split('\n');
+        const textLines: string[] = [];
+        let chars = 0;
+        for (const line of lines) {
+            if (line.startsWith('#') || line.startsWith('---') || line.trim() === '') continue;
+            if (line.startsWith('```')) break;
+            textLines.push(line.trim());
+            chars += line.length;
+            if (chars >= 500) break;
+        }
+        return textLines.join(' ');
     }
 }
