@@ -1234,6 +1234,59 @@ All 9 core grammars verified, each parsing in **<0.05ms**:
 
 > Additional grammars available: C++, Swift, C#, Kotlin, Scala, Lua, Elixir, Bash, HTML, CSS
 
+### RAG Retrieval Quality: Hybrid Search
+
+We evaluated BrainBank's **docs plugin** retrieval quality on a production documentation corpus (127 markdown files, 294 chunks) using 20 **semantic queries** designed to test cross-document understanding — NOT keyword matching.
+
+**Embedding provider**: Perplexity Context (`pplx-embed-v1`, 2560d contextual embeddings)
+
+#### Query Design
+
+Queries are grouped into 4 categories of increasing difficulty:
+
+| Category | Queries | What it tests |
+|----------|:---:|---|
+| **cross-doc** | 5 | Relationships spanning multiple documents (e.g. Redis → Workers → Notifications) |
+| **semantic** | 8 | Paraphrased questions with zero keyword overlap with filenames |
+| **broad** | 3 | System-level overview queries |
+| **specific** | 4 | Edge cases, niche docs, exact terminology |
+
+> None of the queries contain document titles or filenames. For example, "how are colors and fonts kept consistent?" should find the Theming/Sass docs without ever saying "Theming" or "Sass".
+
+#### Results: Vector-Only vs Hybrid Search
+
+| | R@3 | R@5 | MRR | Misses |
+|---|:---:|:---:|:---:|:---:|
+| Vector-only (HNSW) | 45% | 57% | 0.54 | 6/20 |
+| **Hybrid (Vector + BM25 → RRF)** | **55%** | **78%** | **0.55** | **2/20** |
+
+> Hybrid search improved R@5 by **+21 percentage points** over vector-only.
+
+#### Per-Category Breakdown (Hybrid)
+
+| Category | # | R@3 | R@5 | MRR |
+|----------|:-:|:---:|:---:|:---:|
+| cross-doc | 5 | 50% | 70% | 0.57 |
+| semantic | 8 | 69% | 94% | 0.65 |
+| broad | 3 | 33% | 83% | 0.47 |
+| specific | 4 | 50% | 50% | 0.41 |
+| **Overall** | **20** | **55%** | **78%** | **0.55** |
+
+#### What Made the Difference
+
+| Improvement | Impact |
+|---|---|
+| OR-mode BM25 (stop word removal, natural language) | Keyword signal for docs with specific terms (Swagger, SONARQUBE) |
+| RRF fusion (vector + BM25) | Docs appearing in BOTH ranked lists get boosted |
+| File-level dedup (best chunk per file) | Prevents one doc from eating multiple result slots |
+| BM25 title weight 10×, file_path 5× | Doc titles and filenames are strongest relevance signal |
+
+#### Running the RAG Eval
+
+```bash
+PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs
+```
+
 ### Running Benchmarks
 
 ```bash
@@ -1242,6 +1295,9 @@ node test/benchmarks/grammar-support.mjs
 
 # Search quality A/B (uses BrainBank's own source files)
 node test/benchmarks/search-quality.mjs
+
+# RAG retrieval quality (requires Perplexity API key + docs folder)
+PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs
 ```
 
 ---
