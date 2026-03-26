@@ -105,46 +105,57 @@ export function createWatcher(
         return filePath === pattern;
     }
 
-    // Process pending file changes
+    // Process pending file changes (serialized — no concurrent flushes)
+    let flushing = false;
+
     async function flush() {
-        if (pending.size === 0) return;
+        if (flushing || pending.size === 0) return;
+        flushing = true;
 
-        const files = [...pending];
-        pending.clear();
+        try {
+            const files = [...pending];
+            pending.clear();
 
-        // Group by handler
-        let needsReindex = false;
+            // Group by handler
+            let needsReindex = false;
 
-        for (const filePath of files) {
-            const absPath = path.resolve(repoPath, filePath);
+            for (const filePath of files) {
+                const absPath = path.resolve(repoPath, filePath);
 
-            // Try custom indexers first
-            const customIndexer = matchCustomIndexer(absPath);
-            if (customIndexer?.onFileChange) {
-                try {
-                    const handled = await customIndexer.onFileChange(absPath, detectEvent(absPath));
-                    if (handled) {
-                        onIndex?.(filePath, customIndexer.name);
-                        continue;
+                // Try custom indexers first
+                const customIndexer = matchCustomIndexer(absPath);
+                if (customIndexer?.onFileChange) {
+                    try {
+                        const handled = await customIndexer.onFileChange(absPath, detectEvent(absPath));
+                        if (handled) {
+                            onIndex?.(filePath, customIndexer.name);
+                            continue;
+                        }
+                    } catch (err) {
+                        onError?.(err instanceof Error ? err : new Error(String(err)));
                     }
+                }
+
+                // Fall back to built-in re-index for supported code files
+                if (isSupported(filePath)) {
+                    needsReindex = true;
+                    onIndex?.(filePath, 'code');
+                }
+            }
+
+            // Batch re-index if any code files changed
+            if (needsReindex) {
+                try {
+                    await reindexFn();
                 } catch (err) {
                     onError?.(err instanceof Error ? err : new Error(String(err)));
                 }
             }
-
-            // Fall back to built-in re-index for supported code files
-            if (isSupported(filePath)) {
-                needsReindex = true;
-                onIndex?.(filePath, 'code');
-            }
-        }
-
-        // Batch re-index if any code files changed
-        if (needsReindex) {
-            try {
-                await reindexFn();
-            } catch (err) {
-                onError?.(err instanceof Error ? err : new Error(String(err)));
+        } finally {
+            flushing = false;
+            // Process any changes that arrived during this flush
+            if (pending.size > 0) {
+                timer = setTimeout(() => flush(), debounceMs);
             }
         }
     }

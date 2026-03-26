@@ -236,8 +236,8 @@ export function loadVectors(
     hnsw: HNSWIndex,
     cache: Map<number, Float32Array>,
 ): void {
-    const rows = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).all() as any[];
-    for (const row of rows) {
+    const iter = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).iterate() as IterableIterator<any>;
+    for (const row of iter) {
         const vec = new Float32Array(
             row.embedding.buffer.slice(
                 row.embedding.byteOffset,
@@ -256,8 +256,8 @@ function loadVecCache(
     idCol: string,
     cache: Map<number, Float32Array>,
 ): void {
-    const rows = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).all() as any[];
-    for (const row of rows) {
+    const iter = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).iterate() as IterableIterator<any>;
+    for (const row of iter) {
         const vec = new Float32Array(
             row.embedding.buffer.slice(
                 row.embedding.byteOffset,

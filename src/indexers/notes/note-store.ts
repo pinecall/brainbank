@@ -11,6 +11,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
@@ -90,7 +91,7 @@ export class NoteStore {
         const vec = await this._embedding.embed(text);
 
         this._db.prepare('INSERT INTO note_vectors (note_id, embedding) VALUES (?, ?)').run(
-            id, Buffer.from(vec.buffer),
+            id, vecToBuffer(vec),
         );
 
         this._hnsw.add(vec, id);

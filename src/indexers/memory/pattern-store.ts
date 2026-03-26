@@ -7,6 +7,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, LearningPattern } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 
@@ -51,7 +52,7 @@ export class PatternStore {
 
         this._deps.db.prepare(
             'INSERT INTO memory_vectors (pattern_id, embedding) VALUES (?, ?)'
-        ).run(id, Buffer.from(vec.buffer));
+        ).run(id, vecToBuffer(vec));
 
         this._deps.hnsw.add(vec, id);
         this._deps.vectorCache.set(id, vec);

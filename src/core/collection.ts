@@ -10,6 +10,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, Reranker } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
@@ -80,7 +81,7 @@ export class Collection {
         const id = Number(result.lastInsertRowid);
         this._db.prepare(
             'INSERT INTO kv_vectors (data_id, embedding) VALUES (?, ?)'
-        ).run(id, Buffer.from(vec.buffer));
+        ).run(id, vecToBuffer(vec));
 
         this._hnsw.add(vec, id);
         this._vecs.set(id, vec);
@@ -120,7 +121,7 @@ export class Collection {
                 );
 
                 const id = Number(result.lastInsertRowid);
-                insertVec.run(id, Buffer.from(vecs[i].buffer));
+                insertVec.run(id, vecToBuffer(vecs[i]));
                 ids.push(id);
             }
         });

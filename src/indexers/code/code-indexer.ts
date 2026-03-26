@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CodeChunker } from './code-chunker.ts';
 import { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isIgnoredDir, isIgnoredFile } from '@/indexers/languages.ts';
+import { vecToBuffer } from '@/lib/math.ts';
 import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, ProgressCallback, IndexResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
@@ -63,7 +64,6 @@ export class CodeIndexer {
                 continue;
             }
 
-            this._removeOldChunks(rel);
             const chunkCount = await this._indexFile(filePath, rel, content, hash);
             indexed++;
             totalChunks += chunkCount;
@@ -103,25 +103,30 @@ export class CodeIndexer {
 
         const vecs = await this._deps.embedding.embedBatch(embeddingTexts);
 
-        for (let ci = 0; ci < chunks.length; ci++) {
-            const chunk = chunks[ci];
-            const result = this._deps.db.prepare(
-                `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-            ).run(rel, chunk.chunkType, chunk.name ?? null, chunk.startLine, chunk.endLine, chunk.content, language, hash);
+        // Transaction: delete old + insert new atomically — prevents orphaned files on crash
+        this._deps.db.transaction(() => {
+            this._removeOldChunks(rel);
 
-            const id = Number(result.lastInsertRowid);
+            for (let ci = 0; ci < chunks.length; ci++) {
+                const chunk = chunks[ci];
+                const result = this._deps.db.prepare(
+                    `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+                ).run(rel, chunk.chunkType, chunk.name ?? null, chunk.startLine, chunk.endLine, chunk.content, language, hash);
+
+                const id = Number(result.lastInsertRowid);
+                this._deps.db.prepare(
+                    'INSERT INTO code_vectors (chunk_id, embedding) VALUES (?, ?)'
+                ).run(id, vecToBuffer(vecs[ci]));
+
+                this._deps.hnsw.add(vecs[ci], id);
+                this._deps.vectorCache.set(id, vecs[ci]);
+            }
+
             this._deps.db.prepare(
-                'INSERT INTO code_vectors (chunk_id, embedding) VALUES (?, ?)'
-            ).run(id, Buffer.from(vecs[ci].buffer));
-
-            this._deps.hnsw.add(vecs[ci], id);
-            this._deps.vectorCache.set(id, vecs[ci]);
-        }
-
-        this._deps.db.prepare(
-            'INSERT OR REPLACE INTO indexed_files (file_path, file_hash) VALUES (?, ?)'
-        ).run(rel, hash);
+                'INSERT OR REPLACE INTO indexed_files (file_path, file_hash) VALUES (?, ?)'
+            ).run(rel, hash);
+        });
 
         return chunks.length;
     }

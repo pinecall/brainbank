@@ -76,3 +76,12 @@ export function euclideanDistance(a: Float32Array, b: Float32Array): number {
     }
     return Math.sqrt(sum);
 }
+
+/**
+ * Convert a Float32Array to a Buffer for SQLite storage.
+ * Handles views with non-zero byteOffset (e.g. from batched embedding output).
+ * Using Buffer.from(vec.buffer) directly is WRONG for views — it copies the entire parent buffer.
+ */
+export function vecToBuffer(vec: Float32Array): Buffer {
+    return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
+}

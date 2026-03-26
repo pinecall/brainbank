@@ -11,6 +11,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, ProgressCallback } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 
@@ -193,12 +194,14 @@ async function reembedTable(
 
     if (totalCount === 0) return 0;
 
-    const insertVec = db.prepare(
-        `INSERT INTO ${table.vectorTable} (${table.fkColumn}, embedding) VALUES (?, ?)`
-    );
+    // Phase 1: Build new vectors in a temp table (safe — old data untouched)
+    const tempTable = `_reembed_${table.vectorTable}`;
+    db.exec(`DROP TABLE IF EXISTS ${tempTable}`);
+    db.exec(`CREATE TABLE ${tempTable} AS SELECT * FROM ${table.vectorTable} WHERE 0`);
 
-    // Clear old vectors before streaming new ones
-    db.prepare(`DELETE FROM ${table.vectorTable}`).run();
+    const insertTemp = db.prepare(
+        `INSERT INTO ${tempTable} (${table.fkColumn}, embedding) VALUES (?, ?)`
+    );
 
     let processed = 0;
     for (let offset = 0; offset < totalCount; offset += batchSize) {
@@ -208,16 +211,22 @@ async function reembedTable(
         const texts = batch.map((r: any) => table.textBuilder(r));
         const vectors = await embedding.embedBatch(texts);
 
-        // Commit this batch immediately — constant memory O(batchSize)
         db.transaction(() => {
             for (let j = 0; j < batch.length; j++) {
-                insertVec.run(batch[j][table.idColumn], Buffer.from(vectors[j].buffer));
+                insertTemp.run(batch[j][table.idColumn], vecToBuffer(vectors[j]));
             }
         });
 
         processed += batch.length;
         onProgress?.(table.name, processed, totalCount);
     }
+
+    // Phase 2: Atomic swap — all or nothing
+    db.transaction(() => {
+        db.exec(`DELETE FROM ${table.vectorTable}`);
+        db.exec(`INSERT INTO ${table.vectorTable} SELECT * FROM ${tempTable}`);
+    });
+    db.exec(`DROP TABLE ${tempTable}`);
 
     return processed;
 }

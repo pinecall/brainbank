@@ -7,6 +7,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, ProgressCallback, IndexResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 
@@ -207,7 +208,7 @@ export class GitIndexer {
                     stmts.insertFile.run(commitId, f);
                 }
 
-                stmts.insertVec.run(commitId, Buffer.from(vecs[i].buffer));
+                stmts.insertVec.run(commitId, vecToBuffer(vecs[i]));
                 newCommitIds.push({ commitId, vecIndex: i });
                 indexed++;
             }
