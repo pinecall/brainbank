@@ -128,10 +128,7 @@ ui.header(mode, DB_PATH);
 if (docChunks > 0) {
     console.log(`${ui.c.blue}  📚 ${docChunks} doc chunks available for RAG${ui.c.reset}`);
 }
-ui.showMemories(memory.recall(5), memory.count(), entityStore.entityCount(), entityStore.relationCount());
-
-const docsHint = docsPath ? ' · "docs <query>" to search docs' : '';
-console.log(`${ui.c.dim}  Type "quit" to exit · "memories" to list · "entities" to see graph${docsHint}${ui.c.reset}\n`);
+ui.showMemories(memory.recall(5), memory.count(), entityStore.entityCount(), entityStore.relationCount(), docsPath ? docChunks : undefined);
 
 const input = ui.createInput();
 const history: { role: string; content: string }[] = [];
@@ -142,7 +139,20 @@ while (true) {
     if (msg.toLowerCase() === 'quit') break;
     if (msg.toLowerCase() === 'memories') { ui.listMemories(memory.recall(50)); continue; }
     if (msg.toLowerCase() === 'entities') { ui.listEntities(entityStore.listEntities(), entityStore.listRelationships()); continue; }
-    if (msg.toLowerCase().startsWith('docs ')) { await searchDocs(brain, msg.slice(5).trim()); continue; }
+    if (msg.toLowerCase().startsWith('docs ')) {
+        const query = msg.slice(5).trim();
+        await searchDocs(brain, query);
+        // Also generate an answer from the docs
+        history.push({ role: 'user', content: query });
+        ui.startResponse();
+        const system = await systemPrompt(query);
+        const reply = await streamChat([{ role: 'system', content: system }, ...history]);
+        ui.endResponse();
+        history.push({ role: 'assistant', content: reply });
+        await memory.process(query, reply);
+        console.log();
+        continue;
+    }
 
     history.push({ role: 'user', content: msg });
 

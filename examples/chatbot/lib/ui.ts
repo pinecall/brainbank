@@ -27,7 +27,7 @@ export function header(model: string, db: string) {
     console.log(`${c.dim}  Model: ${model} · DB: ${db}${c.reset}`);
 }
 
-export function showMemories(memories: { content: string }[], total: number, entityCount = 0, relationCount = 0) {
+export function showMemories(memories: { content: string }[], total: number, entityCount = 0, relationCount = 0, docChunks?: number) {
     if (total > 0) {
         console.log(`${c.magenta}  💾 ${total} memories loaded${c.reset}`);
         for (const m of memories) console.log(`${c.dim}     • ${m.content}${c.reset}`);
@@ -37,7 +37,8 @@ export function showMemories(memories: { content: string }[], total: number, ent
     if (entityCount > 0) {
         console.log(`${c.blue}  🔗 ${entityCount} entities, ${relationCount} relationships${c.reset}`);
     }
-    console.log(`${c.dim}  Type "quit" to exit · "memories" to list · "entities" to see graph${c.reset}`);
+    const docsHint = docChunks ? ` · "docs <query>" to ask about docs` : '';
+    console.log(`${c.dim}  Type "quit" to exit · "memories" to list · "entities" to see graph${docsHint}${c.reset}`);
     console.log();
 }
 
