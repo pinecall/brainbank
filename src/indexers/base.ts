@@ -14,9 +14,9 @@
  */
 
 import type { Database } from '@/db/database.ts';
-import type { EmbeddingProvider } from '@/types.ts';
+import type { EmbeddingProvider, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { ResolvedConfig } from '@/types.ts';
+import type { ResolvedConfig, DocumentCollection } from '@/types.ts';
 import type { Collection } from '@/core/collection.ts';
 
 // ── Indexer Context ────────────────────────────────
@@ -39,55 +39,33 @@ export interface IndexerContext {
     collection(name: string): Collection;
 }
 
-// ── Indexer Interface ──────────────────────────────────
+// ── Core Indexer Interface ─────────────────────────
+// Minimal contract: name + initialize. All capabilities are expressed
+// via composed interfaces below.
 
 export interface Indexer {
     /** Unique indexer name (e.g. 'code', 'git', 'docs'). */
     readonly name: string;
-
     /** Initialize the indexer (create HNSW, load vectors, etc.). */
     initialize(ctx: IndexerContext): Promise<void>;
-
-    // Optional capabilities — use composed interfaces below for strict typing
-    /** Index content (code, git plugins). */
-    index?(options?: any): Promise<any>;
-    /** Search indexed content (docs plugin). */
-    search?(query: string, options?: any): Promise<any[]>;
-    /** Register a document collection (docs plugin). */
-    addCollection?(collection: any): void;
-    /** Remove a collection (docs plugin). */
-    removeCollection?(name: string): void;
-    /** List registered collections (docs plugin). */
-    listCollections?(): any[];
-    /** Index collections (docs plugin). */
-    indexCollections?(options?: any): Promise<any>;
-    /** Add context for a collection path (docs plugin). */
-    addContext?(collection: string, path: string, context: string): void;
-    /** Remove context (docs plugin). */
-    removeContext?(collection: string, path: string): void;
-    /** List context entries (docs plugin). */
-    listContexts?(): any[];
-    /** Watch mode: handle file change (returns true if handled). */
-    onFileChange?(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
-    /** Glob patterns for watch mode. */
-    watchPatterns?(): string[];
-
     /** Return stats for this indexer. */
     stats?(): Record<string, any>;
     /** Clean up resources. */
     close?(): void;
 }
 
-// ── Indexer Capabilities (composed via intersection) ──
+// ── Capability Interfaces ──────────────────────────
+// Implemented by indexers that support specific capabilities.
+// Use type guards below to check at runtime.
 
-/** Indexers that can scan and index content. */
+/** Indexers that can scan and index content (code, git). */
 export interface IndexablePlugin extends Indexer {
     index(options?: any): Promise<any>;
 }
 
-/** Indexers that can search indexed content. */
+/** Indexers that can search indexed content (docs). */
 export interface SearchablePlugin extends Indexer {
-    search(query: string, options?: any): Promise<any[]>;
+    search(query: string, options?: any): Promise<SearchResult[]>;
 }
 
 /** Indexers that support file watch mode. */
@@ -98,11 +76,36 @@ export interface WatchablePlugin extends Indexer {
 
 /** Indexers that manage document collections. */
 export interface CollectionPlugin extends Indexer {
-    addCollection(collection: any): void;
+    addCollection(collection: DocumentCollection): void;
     removeCollection(name: string): void;
-    listCollections(): any[];
+    listCollections(): DocumentCollection[];
     indexCollections(options?: any): Promise<any>;
+    search(query: string, options?: any): Promise<SearchResult[]>;
     addContext?(collection: string, path: string, context: string): void;
     removeContext?(collection: string, path: string): void;
     listContexts?(): any[];
+}
+
+// ── Type Guards ────────────────────────────────────
+
+/** Check if an indexer can scan/index content. */
+export function isIndexable(i: Indexer): i is IndexablePlugin {
+    return typeof (i as IndexablePlugin).index === 'function';
+}
+
+/** Check if an indexer can search content. */
+export function isSearchable(i: Indexer): i is SearchablePlugin {
+    return typeof (i as SearchablePlugin).search === 'function';
+}
+
+/** Check if an indexer supports file watch mode. */
+export function isWatchable(i: Indexer): i is WatchablePlugin {
+    return typeof (i as WatchablePlugin).onFileChange === 'function'
+        && typeof (i as WatchablePlugin).watchPatterns === 'function';
+}
+
+/** Check if an indexer manages document collections. */
+export function isCollectionPlugin(i: Indexer): i is CollectionPlugin {
+    return typeof (i as CollectionPlugin).addCollection === 'function'
+        && typeof (i as CollectionPlugin).listCollections === 'function';
 }

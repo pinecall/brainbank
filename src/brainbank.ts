@@ -23,7 +23,8 @@ import { IndexAPI } from './core/index-api.ts';
 import { reembedAll } from './services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from './services/watch.ts';
 import type { ReembedResult, ReembedOptions } from './services/reembed.ts';
-import type { Indexer } from './indexers/base.ts';
+import type { Indexer, CollectionPlugin } from './indexers/base.ts';
+import { isCollectionPlugin } from './indexers/base.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
@@ -206,22 +207,18 @@ export class BrainBank extends EventEmitter {
     /** Register a document collection. */
     async addCollection(collection: DocumentCollection): Promise<void> {
         await this.initialize();
-        this._requireDocs('addCollection');
-        this.indexer('docs').addCollection!(collection);
+        this._docsPlugin('addCollection').addCollection(collection);
     }
 
     /** Remove a collection and all its indexed data. */
     async removeCollection(name: string): Promise<void> {
         await this.initialize();
-        this._requireDocs('removeCollection');
-        this.indexer('docs').removeCollection!(name);
+        this._docsPlugin('removeCollection').removeCollection(name);
     }
 
     /** List all registered collections. */
     listCollections(): DocumentCollection[] {
-        this._requireInit('listCollections');
-        this._requireDocs('listCollections');
-        return this.indexer('docs').listCollections!();
+        return this._docsPlugin('listCollections').listCollections();
     }
 
     /** Index all (or specific) document collections. */
@@ -230,8 +227,7 @@ export class BrainBank extends EventEmitter {
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
     } = {}): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>> {
         await this.initialize();
-        this._requireDocs('indexDocs');
-        const results = await this.indexer('docs').indexCollections!(options);
+        const results = await this._docsPlugin('indexDocs').indexCollections(options);
         this.emit('docsIndexed', results);
         return results;
     }
@@ -240,27 +236,27 @@ export class BrainBank extends EventEmitter {
     async searchDocs(query: string, options?: { collection?: string; k?: number; minScore?: number }): Promise<SearchResult[]> {
         await this.initialize();
         if (!this.has('docs')) return [];
-        return this.indexer('docs').search!(query, options);
+        return this._docsPlugin('searchDocs').search(query, options);
     }
 
     // ── Context metadata ─────────────────────────────
 
     /** Add context description for a collection path. */
     addContext(collection: string, path: string, context: string): void {
-        this._requireDocs('addContext');
-        this.indexer('docs').addContext!(collection, path, context);
+        const docs = this._docsPlugin('addContext');
+        if (docs.addContext) docs.addContext(collection, path, context);
     }
 
     /** Remove context for a collection path. */
     removeContext(collection: string, path: string): void {
-        this._requireDocs('removeContext');
-        this.indexer('docs').removeContext!(collection, path);
+        const docs = this._docsPlugin('removeContext');
+        if (docs.removeContext) docs.removeContext(collection, path);
     }
 
     /** List all context entries. */
     listContexts(): { collection: string; path: string; context: string }[] {
-        this._requireDocs('listContexts');
-        return this.indexer('docs').listContexts!();
+        const docs = this._docsPlugin('listContexts');
+        return docs.listContexts?.() ?? [];
     }
 
     // ── Search (delegated to SearchAPI) ─────────────
@@ -432,8 +428,12 @@ export class BrainBank extends EventEmitter {
             throw new Error(`BrainBank: Not initialized. Call await brain.initialize() before ${method}().`);
     }
 
-    private _requireDocs(method: string): void {
-        if (!this.has('docs'))
+    /** Get the docs indexer as CollectionPlugin with init + type check. */
+    private _docsPlugin(method: string): CollectionPlugin {
+        this._requireInit(method);
+        const docs = this._registry.get('docs');
+        if (!docs || !isCollectionPlugin(docs))
             throw new Error(`BrainBank: Docs indexer not loaded. Add .use(docs()) before calling ${method}().`);
+        return docs;
     }
 }

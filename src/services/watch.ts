@@ -21,6 +21,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isSupported, isIgnoredDir, isIgnoredFile } from '@/indexers/languages.ts';
 import type { Indexer } from '@/indexers/base.ts';
+import { isWatchable } from '@/indexers/base.ts';
 
 // ── Types ───────────────────────────────────────────
 
@@ -73,7 +74,7 @@ export function createWatcher(
     // Collect custom watch patterns from indexers
     const customPatterns: { indexer: Indexer; patterns: string[] }[] = [];
     for (const indexer of indexers.values()) {
-        if (indexer.watchPatterns) {
+        if (isWatchable(indexer)) {
             customPatterns.push({ indexer, patterns: indexer.watchPatterns() });
         }
     }
@@ -124,7 +125,7 @@ export function createWatcher(
 
                 // Try custom indexers first
                 const customIndexer = matchCustomIndexer(absPath);
-                if (customIndexer?.onFileChange) {
+                if (customIndexer && isWatchable(customIndexer)) {
                     try {
                         const handled = await customIndexer.onFileChange(absPath, detectEvent(absPath));
                         if (handled) {

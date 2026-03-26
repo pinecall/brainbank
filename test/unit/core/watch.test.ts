@@ -11,7 +11,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createWatcher } from '../../../src/services/watch.ts';
-import type { Indexer } from '../../../src/indexers/base.ts';
+import type { Indexer, WatchablePlugin } from '../../../src/indexers/base.ts';
 
 export const name = 'Watch Mode';
 
@@ -41,11 +41,11 @@ export const tests = {
         const indexedFiles: string[] = [];
 
         // Custom indexer that watches .csv files
-        const csvIndexer: Indexer = {
+        const csvIndexer: WatchablePlugin = {
             name: 'csv',
             async initialize() {},
             watchPatterns() { return ['**/*.csv']; },
-            async onFileChange(filePath, event) {
+            async onFileChange(filePath: string, event: 'create' | 'update' | 'delete') {
                 indexedFiles.push(filePath);
                 return true;
             },
@@ -206,11 +206,11 @@ export const tests = {
         const dir = tmpWatchDir('reindex');
         const indexed: { path: string; event: string }[] = [];
 
-        const customIndexer: Indexer = {
+        const customIndexer: WatchablePlugin = {
             name: 'json-data',
             async initialize() {},
             watchPatterns() { return ['**/*.json']; },
-            async onFileChange(filePath, event) {
+            async onFileChange(filePath: string, event: 'create' | 'update' | 'delete') {
                 indexed.push({ path: filePath, event });
                 return true;
             },

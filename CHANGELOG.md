@@ -18,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Code-indexer crash window** — wrapped delete + insert in single transaction (prevents orphaned files)
 - **Watch concurrent flush** — added flushing guard to prevent parallel flush() race conditions
 - **embedBatch shared memory** — `LocalEmbedding.embedBatch` now copies via `.slice()` instead of creating views
+- **Silent FTS catch blocks** — `keyword-search.ts` only swallows FTS5 syntax errors now, other errors propagate
 - **Collection remove order** — DB delete first (can fail), then HNSW+cache (always succeed). Prevents inconsistent state on disk full/lock
 - **Dead code** — removed unused `escapeRegex` in `docs-indexer.ts`
 
@@ -26,6 +27,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Reranking deduplicated — 4 inline copies → single `rerank()` in `rerank.ts`
 - Collection `_searchVector` uses fixed k×10 multiplier (removed COUNT query per search)
 - CLI factory cache uses `NOT_LOADED` sentinel instead of confusing `undefined`/`null` + added `resetFactoryCache()`
+- **Indexer interface composition** — stripped 15 optional methods to core contract + 4 composed interfaces (`IndexablePlugin`, `SearchablePlugin`, `WatchablePlugin`, `CollectionPlugin`) with runtime type guards
+- **DocsPlugin split** — search logic extracted to `docs-search.ts` (DocsPlugin 324 → 140 lines)
+- **`_requireDocs` init check** — replaced with type-safe `_docsPlugin()` that includes init + type guard check
+- **Row types** — `db/rows.ts` with typed interfaces for kv_data, code_chunks, etc. Applied to `collection.ts` (10 `as any[]` → typed)
+- **`packages.d.ts`** — added sync warning comment (can't delete until packages are npm-linked)
 
 ## [0.4.1] — 2026-03-26
 

@@ -10,6 +10,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import type { KvDataRow, CountRow } from '@/db/rows.ts';
 import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
@@ -199,7 +200,7 @@ export class Collection {
 
         const rows = this._db.prepare(
             'SELECT * FROM kv_data WHERE collection = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?'
-        ).all(this._name, Math.floor(Date.now() / 1000), limit, offset) as any[];
+        ).all(this._name, Math.floor(Date.now() / 1000), limit, offset) as KvDataRow[];
         return this._filterByTags(rows.map(r => this._rowToItem(r)), tags);
     }
 
@@ -207,7 +208,7 @@ export class Collection {
     count(): number {
         return (this._db.prepare(
             'SELECT COUNT(*) as c FROM kv_data WHERE collection = ? AND (expires_at IS NULL OR expires_at > ?)'
-        ).get(this._name, Math.floor(Date.now() / 1000)) as any).c;
+        ).get(this._name, Math.floor(Date.now() / 1000)) as CountRow).c;
     }
 
     /** Keep only the N most recent items, remove the rest. */
@@ -221,7 +222,7 @@ export class Collection {
             WHERE collection = ? 
             ORDER BY created_at DESC, id DESC 
             LIMIT -1 OFFSET ?
-        `).all(this._name, options.keep) as any[];
+        `).all(this._name, options.keep) as Pick<KvDataRow, 'id'>[];
 
         for (const row of toRemove) {
             this._removeById(row.id);
@@ -237,7 +238,7 @@ export class Collection {
 
         const toRemove = this._db.prepare(
             'SELECT id FROM kv_data WHERE collection = ? AND created_at < ?'
-        ).all(this._name, cutoff) as any[];
+        ).all(this._name, cutoff) as Pick<KvDataRow, 'id'>[];
 
         for (const row of toRemove) {
             this._removeById(row.id);
@@ -255,7 +256,7 @@ export class Collection {
     clear(): void {
         const rows = this._db.prepare(
             'SELECT id FROM kv_data WHERE collection = ?'
-        ).all(this._name) as any[];
+        ).all(this._name) as Pick<KvDataRow, 'id'>[];
 
         for (const row of rows) {
             this._removeById(row.id);
@@ -288,7 +289,7 @@ export class Collection {
 
         const rows = this._db.prepare(
             `SELECT * FROM kv_data WHERE id IN (${placeholders}) AND collection = ?`
-        ).all(...ids, this._name) as any[];
+        ).all(...ids, this._name) as KvDataRow[];
 
         return rows
             .map(r => ({ ...this._rowToItem(r), score: scoreMap.get(r.id) ?? 0 }))
@@ -309,7 +310,7 @@ export class Collection {
                 WHERE fts_kv MATCH ? AND d.collection = ?
                 ORDER BY score ASC
                 LIMIT ?
-            `).all(ftsQuery, this._name, k) as any[];
+            `).all(ftsQuery, this._name, k) as (KvDataRow & { score: number })[];
 
             return rows
                 .map(r => ({
@@ -322,7 +323,7 @@ export class Collection {
         }
     }
 
-    private _rowToItem(r: any): CollectionItem {
+    private _rowToItem(r: KvDataRow): CollectionItem {
         return {
             id: r.id,
             collection: r.collection,
@@ -347,7 +348,7 @@ export class Collection {
         const now = Math.floor(Date.now() / 1000);
         const expired = this._db.prepare(
             'SELECT id FROM kv_data WHERE collection = ? AND expires_at IS NOT NULL AND expires_at <= ?'
-        ).all(this._name, now) as any[];
+        ).all(this._name, now) as Pick<KvDataRow, 'id'>[];
 
         for (const row of expired) {
             this._removeById(row.id);
