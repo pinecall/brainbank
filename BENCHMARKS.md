@@ -28,14 +28,14 @@ All tests run with **Perplexity Context Embeddings** (`pplx-embed-v1`, 2560d) st
 
 ```bash
 # SciFact (~13 min indexing, ~45s search)
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/beir-eval.ts --dataset scifact
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact
 
 # With Qwen3 reranker (downloads ~640MB model on first run)
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/beir-eval.ts --dataset scifact --reranker
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact --reranker
 
 # Other supported datasets
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/beir-eval.ts --dataset nfcorpus
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/beir-eval.ts --dataset fiqa
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset nfcorpus
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset fiqa
 ```
 
 ---
@@ -82,10 +82,10 @@ Shows the incremental impact of each technique BrainBank adds:
 
 ```bash
 # Custom eval on your own docs
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
 
 # With Qwen3 reranker
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs --reranker
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs --reranker
 ```
 
 ---

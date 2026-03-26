@@ -30,10 +30,10 @@ OPENAI_API_KEY=sk-... PERPLEXITY_API_KEY=pplx-... \
 
 ## RAG Evaluator
 
-Measure retrieval quality over a golden dataset:
+Measure retrieval quality with the benchmarks in [`test/benchmarks/rag/`](../../test/benchmarks/rag/):
 
 ```bash
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
 ```
 
 Output: Recall@3, Recall@5, MRR per category with miss analysis.

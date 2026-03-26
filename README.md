@@ -596,7 +596,7 @@ brainbank kv search conversations "what did we decide about auth"
 
 | Example | Description | Run |
 |---------|-------------|-----|
-| [rag](examples/rag/) | RAG chatbot — docs retrieval + memory + entity graph | `OPENAI_API_KEY=sk-... PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/rag.ts --docs <path>` |
+| [rag](examples/rag/) | RAG chatbot — docs retrieval + generation | `OPENAI_API_KEY=sk-... PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/rag.ts --docs <path>` |
 | [memory](examples/memory/) | Memory chatbot — fact extraction + entity graph | `OPENAI_API_KEY=sk-... npx tsx examples/memory/memory.ts` |
 | [collection](examples/collection/) | Collections, semantic search, tags, metadata linking | `npx tsx examples/collection/collection.ts` |
 
@@ -1252,10 +1252,10 @@ See **[BENCHMARKS.md](./BENCHMARKS.md)** for full pipeline progression, per-tech
 
 ```bash
 # Custom eval on your own docs
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
 
 # BEIR standard benchmark
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/beir-eval.ts --dataset scifact
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact
 ```
 
 ### Running Benchmarks
@@ -1268,7 +1268,7 @@ node test/benchmarks/grammar-support.mjs
 node test/benchmarks/search-quality.mjs
 
 # RAG retrieval quality (requires Perplexity API key + docs folder)
-PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
 ```
 
 ---
