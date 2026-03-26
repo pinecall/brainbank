@@ -82,21 +82,16 @@ brainbank serve
 
 > The agent passes the `repo` parameter per tool call based on the active workspace — no hardcoded paths needed.
 
-## Available Tools
+## Tools (6)
 
 | Tool | Description |
 |------|-------------|
-| `brainbank_hybrid_search` | Best quality: vector + BM25 fused search |
-| `brainbank_search` | Semantic vector search |
-| `brainbank_keyword_search` | Instant BM25 full-text search |
-| `brainbank_context` | Formatted context for system prompt injection |
-| `brainbank_index` | Trigger incremental code/git indexing |
-| `brainbank_stats` | Index statistics (files, commits, chunks) |
+| `brainbank_search` | Unified search — `mode: hybrid` (default), `vector`, or `keyword` |
+| `brainbank_context` | Formatted context block for a task (code + git + co-edits) |
+| `brainbank_index` | Trigger incremental code/git/docs indexing |
+| `brainbank_stats` | Index statistics (files, commits, chunks, collections) |
 | `brainbank_history` | Git history for a specific file |
-| `brainbank_coedits` | Files that frequently change together |
-| `brainbank_collection_add` | Add item to a KV collection |
-| `brainbank_collection_search` | Semantic search within a collection |
-| `brainbank_collection_trim` | Trim a collection to N most recent items |
+| `brainbank_collection` | KV collection ops — `action: add`, `search`, or `trim` |
 
 ## Multi-Workspace
 
@@ -104,10 +99,10 @@ The MCP server maintains a pool of BrainBank instances — one per unique `repo`
 
 ```typescript
 // Agent working in one workspace
-brainbank_hybrid_search({ query: "login form", repo: "/Users/you/project-a" })
+brainbank_search({ query: "login form", repo: "/Users/you/project-a" })
 
 // Agent switches to another project — new instance auto-created
-brainbank_hybrid_search({ query: "API routes", repo: "/Users/you/project-b" })
+brainbank_search({ query: "API routes", repo: "/Users/you/project-b" })
 ```
 
 Instances are cached in memory after first initialization (~480ms), so subsequent queries to the same repo are fast.
@@ -118,7 +113,7 @@ Instances are cached in memory after first initialization (~480ms), so subsequen
 AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→  SQLite
 ```
 
-1. Agent sends an MCP tool call (e.g., `brainbank_hybrid_search`)
+1. Agent sends an MCP tool call (e.g., `brainbank_search`)
 2. Server routes to the correct BrainBank instance (by `repo` path)
 3. BrainBank executes the search against its local SQLite database
 4. Results returned as structured JSON to the agent

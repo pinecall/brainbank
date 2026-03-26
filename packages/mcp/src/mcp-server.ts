@@ -11,24 +11,19 @@
  *   "mcpServers": {
  *     "brainbank": {
  *       "command": "npx",
- *       "args": ["tsx", "/path/to/brainbank/src/integrations/mcp-server.ts"],
+ *       "args": ["tsx", "/path/to/brainbank/packages/mcp/src/mcp-server.ts"],
  *       "env": { "BRAINBANK_REPO": "/path/to/your/repo" }
  *     }
  *   }
  * }
  * 
- * Tools exposed:
- *   brainbank_search         — Semantic search across code, commits
- *   brainbank_hybrid_search  — Best quality: vector + BM25 fused
- *   brainbank_keyword_search — Instant BM25 full-text
- *   brainbank_context        — Get formatted context for a task
- *   brainbank_index          — Trigger code/git indexing
- *   brainbank_stats          — Get index statistics
- *   brainbank_history        — Git history for a specific file
- *   brainbank_coedits        — Files that frequently change together
- *   brainbank_collection_add     — Add item to a dynamic collection
- *   brainbank_collection_search  — Search a dynamic collection
- *   brainbank_collection_trim    — Trim a dynamic collection
+ * Tools (6):
+ *   brainbank_search     — Unified search (hybrid, vector, or keyword mode)
+ *   brainbank_context    — Formatted knowledge context for a task
+ *   brainbank_index      — Trigger code/git/docs indexing
+ *   brainbank_stats      — Index statistics
+ *   brainbank_history    — Git history for a specific file
+ *   brainbank_collection — KV collection operations (add, search, trim)
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -60,7 +55,7 @@ function findRepoRoot(startDir: string): string {
 
 const defaultRepoPath = process.env.BRAINBANK_REPO || undefined;
 
-// ── Reranker (default: qwen3, set BRAINBANK_RERANKER=none to disable) ──
+// ── Reranker (default: none, set BRAINBANK_RERANKER=qwen3 to enable) ──
 
 async function createReranker() {
     const rerankerEnv = process.env.BRAINBANK_RERANKER ?? 'none';
@@ -72,7 +67,7 @@ async function createReranker() {
     return undefined;
 }
 
-// ── Embedding Provider (default: local, set BRAINBANK_EMBEDDING=openai|perplexity|perplexity-context) ──
+// ── Embedding Provider (default: local) ──
 
 async function createEmbeddingProvider() {
     const embeddingEnv = process.env.BRAINBANK_EMBEDDING ?? 'local';
@@ -92,7 +87,6 @@ async function createEmbeddingProvider() {
 }
 
 // ── Multi-Workspace BrainBank Pool ─────────────────────
-// Reranker + embedding provider are shared; each repo gets its own DB.
 
 const MAX_POOL_SIZE = 10;
 
@@ -121,20 +115,17 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
             'or set BRAINBANK_REPO environment variable.'
         );
     }
-    const resolved = rp.replace(/\/+$/, ''); // normalize
+    const resolved = rp.replace(/\/+$/, '');
 
     if (_pool.has(resolved)) {
         const entry = _pool.get(resolved)!;
-        // Evict stale instances: if cached brain has 0 code vectors
-        // but the DB file has since been repopulated (e.g. after re-index)
         try {
             const codeStats = entry.brain.indexer('code')?.stats?.();
             if (codeStats && codeStats.hnswSize === 0) {
                 const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
                 const dbSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
-                if (dbSize > 100_000) { // DB has real data now
+                if (dbSize > 100_000) {
                     evictPool(resolved);
-                    // fall through to re-create below
                 } else {
                     entry.lastAccess = Date.now();
                     return entry.brain;
@@ -151,7 +142,6 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
 
     await ensureShared();
 
-    // LRU eviction: close + remove least recently used entry when at capacity
     if (_pool.size >= MAX_POOL_SIZE) {
         let oldest: string | undefined;
         let oldestTime = Infinity;
@@ -183,16 +173,12 @@ async function _createBrain(resolved: string): Promise<BrainBank> {
     try {
         await brain.initialize();
     } catch (err: any) {
-        // ── Auto-recover from dimension mismatch ──
-        // When DB was re-indexed with different embedding dims,
-        // the HNSW index has stale dimensions. Delete DB and re-init.
         if (err?.message?.includes('Invalid the given array length')) {
             const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
             try { fs.unlinkSync(dbPath); } catch {}
             try { fs.unlinkSync(dbPath + '-wal'); } catch {}
             try { fs.unlinkSync(dbPath + '-shm'); } catch {}
 
-            // Create fresh instance
             const fresh = new BrainBank(opts)
                 .use(code({ repoPath: resolved }))
                 .use(git({ repoPath: resolved }))
@@ -206,7 +192,6 @@ async function _createBrain(resolved: string): Promise<BrainBank> {
     return brain;
 }
 
-/** Evict a repo from the pool (used after re-indexing or LRU). */
 function evictPool(resolved: string) {
     const entry = _pool.get(resolved);
     if (entry) {
@@ -219,43 +204,61 @@ function evictPool(resolved: string) {
 
 const server = new McpServer({
     name: 'brainbank',
-    version: '0.1.0',
+    version: '0.2.0',
 });
 
-// ── Tool: brainbank_search ─────────────────────────────
+// ── Tool: brainbank_search ──────────────────────────
+// Replaces: brainbank_search, brainbank_hybrid_search, brainbank_keyword_search
 
 server.registerTool(
     'brainbank_search',
     {
         title: 'BrainBank Search',
-        description: 'Semantic search across indexed code and git commits. Returns the most relevant results sorted by similarity score.',
+        description:
+            'Search indexed code and git commits. Supports three modes:\n' +
+            '- hybrid (default): vector + BM25 fused with RRF — best quality\n' +
+            '- vector: semantic similarity only\n' +
+            '- keyword: instant BM25 for exact terms, function names, error messages',
         inputSchema: z.object({
-            query: z.string().describe('Natural language search query describing what you are looking for'),
-            codeK: z.number().optional().default(6).describe('Max code results to return'),
-            gitK: z.number().optional().default(5).describe('Max git commit results to return'),
-            minScore: z.number().optional().default(0.25).describe('Minimum similarity score threshold (0-1)'),
-            repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
+            query: z.string().describe('Search query — works with both keywords and natural language'),
+            mode: z.enum(['hybrid', 'vector', 'keyword']).optional().default('hybrid').describe('Search strategy'),
+            codeK: z.number().optional().default(8).describe('Max code results'),
+            gitK: z.number().optional().default(5).describe('Max git results'),
+            minScore: z.number().optional().default(0.25).describe('Minimum similarity score (0-1), only for vector mode'),
+            collections: z.record(z.string(), z.number()).optional().describe(
+                'Max results per source. Reserved: "code", "git", "docs". Any other key = KV collection.'
+            ),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ query, codeK, gitK, minScore, repo }) => {
+    async ({ query, mode, codeK, gitK, minScore, collections, repo }) => {
         const brainbank = await getBrainBank(repo);
-        const results = await brainbank.search(query, { codeK, gitK, minScore });
 
-        if (results.length === 0) {
-            return { content: [{ type: 'text', text: 'No results found for this query.' }] };
+        let results;
+        if (mode === 'keyword') {
+            results = await brainbank.searchBM25(query, { codeK, gitK });
+        } else if (mode === 'vector') {
+            results = await brainbank.search(query, { codeK, gitK, minScore });
+        } else {
+            results = await brainbank.hybridSearch(query, { codeK, gitK, collections });
         }
 
-        return { content: [{ type: 'text', text: formatResults(results, 'Semantic Search') }] };
+        if (results.length === 0) {
+            return { content: [{ type: 'text', text: 'No results found.' }] };
+        }
+
+        const modeLabel = mode === 'keyword' ? 'Keyword (BM25)' : mode === 'vector' ? 'Vector' : 'Hybrid (Vector + BM25 → RRF)';
+        return { content: [{ type: 'text', text: formatResults(results, modeLabel) }] };
     },
 );
 
-// ── Tool: brainbank_context ────────────────────────────
+// ── Tool: brainbank_context ─────────────────────────
 
 server.registerTool(
     'brainbank_context',
     {
         title: 'BrainBank Context',
-        description: 'Get a formatted knowledge context block for a task. Returns relevant code snippets, git history, co-edit patterns as markdown. Perfect for enriching your understanding before working on a task.',
+        description: 'Get a formatted knowledge context block for a task. Returns relevant code, git history, and co-edit patterns as markdown.',
         inputSchema: z.object({
             task: z.string().describe('Description of the task you need context for'),
             affectedFiles: z.array(z.string()).optional().default([]).describe('Files you plan to modify (improves co-edit suggestions)'),
@@ -276,37 +279,36 @@ server.registerTool(
     },
 );
 
-// ── Tool: brainbank_index ──────────────────────────────
+// ── Tool: brainbank_index ───────────────────────────
 
 server.registerTool(
     'brainbank_index',
     {
         title: 'BrainBank Index',
-        description: 'Index (or re-index) the repository code and git history. Run this before searching if the codebase has changed. Indexing is incremental — only changed files are processed.',
+        description: 'Index (or re-index) code, git history, and docs. Incremental — only changed files are processed.',
         inputSchema: z.object({
-            modules: z.array(z.enum(['code', 'git', 'docs'])).optional().describe('Which modules to index. Default: all available (code, git, docs)'),
-            docsPath: z.string().optional().describe('Path to a docs folder to register and index. Creates a doc collection named after the folder.'),
-            forceReindex: z.boolean().optional().default(false).describe('Force re-index of all files, even unchanged ones'),
+            modules: z.array(z.enum(['code', 'git', 'docs'])).optional().describe('Which modules to index (default: all)'),
+            docsPath: z.string().optional().describe('Path to a docs folder to register and index'),
+            forceReindex: z.boolean().optional().default(false).describe('Force re-index of all files'),
             gitDepth: z.number().optional().default(500).describe('Number of git commits to index'),
-            repo: z.string().optional().describe('Repository path to index (default: BRAINBANK_REPO)'),
+            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
     async ({ modules, docsPath, forceReindex, gitDepth, repo }) => {
         const brainbank = await getBrainBank(repo);
 
-        // Auto-register docs collection if docsPath provided
         if (docsPath) {
             const absPath = path.resolve(docsPath);
             const collName = path.basename(absPath);
             try {
-                brainbank.module('docs').addCollection!({
+                brainbank.addCollection({
                     name: collName,
                     path: absPath,
                     pattern: '**/*.md',
                     ignore: ['deprecated/**', 'node_modules/**'],
                 });
             } catch {
-                // docs module not loaded — ignore
+                // docs module not loaded
             }
         }
 
@@ -333,13 +335,13 @@ server.registerTool(
     },
 );
 
-// ── Tool: brainbank_stats ──────────────────────────────
+// ── Tool: brainbank_stats ───────────────────────────
 
 server.registerTool(
     'brainbank_stats',
     {
         title: 'BrainBank Stats',
-        description: 'Get statistics about the indexed knowledge base: file count, code chunks, git commits, HNSW index sizes, and KV collections.',
+        description: 'Get index statistics: file count, code chunks, git commits, HNSW sizes, KV collections.',
         inputSchema: z.object({
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
@@ -348,39 +350,22 @@ server.registerTool(
         const brainbank = await getBrainBank(repo);
         const s = brainbank.stats();
 
-        const lines = [
-            '## BrainBank Knowledge Base Stats',
-            '',
-        ];
+        const lines = ['## BrainBank Stats', ''];
 
         if (s.code) {
-            lines.push('### Code');
-            lines.push(`- Files indexed: ${s.code.files}`);
-            lines.push(`- Code chunks: ${s.code.chunks}`);
-            lines.push(`- HNSW vectors: ${s.code.hnswSize}`);
-            lines.push('');
+            lines.push(`**Code**: ${s.code.files} files, ${s.code.chunks} chunks, ${s.code.hnswSize} vectors`);
         }
-
         if (s.git) {
-            lines.push('### Git History');
-            lines.push(`- Commits indexed: ${s.git.commits}`);
-            lines.push(`- Files tracked: ${s.git.filesTracked}`);
-            lines.push(`- Co-edit pairs: ${s.git.coEdits}`);
-            lines.push(`- HNSW vectors: ${s.git.hnswSize}`);
-            lines.push('');
+            lines.push(`**Git**: ${s.git.commits} commits, ${s.git.filesTracked} files, ${s.git.coEdits} co-edit pairs`);
         }
-
         if (s.documents) {
-            lines.push('### Documents');
-            lines.push(`- Collections: ${s.documents.collections}`);
-            lines.push(`- Documents: ${s.documents.documents}`);
-            lines.push(`- HNSW vectors: ${s.documents.hnswSize}`);
-            lines.push('');
+            lines.push(`**Docs**: ${s.documents.collections} collections, ${s.documents.documents} documents`);
         }
 
         const kvNames = brainbank.listCollectionNames();
         if (kvNames.length > 0) {
-            lines.push('### KV Collections');
+            lines.push('');
+            lines.push('**KV Collections**:');
             for (const name of kvNames) {
                 const coll = brainbank.collection(name);
                 lines.push(`- ${name}: ${coll.count()} items`);
@@ -391,15 +376,15 @@ server.registerTool(
     },
 );
 
-// ── Tool: brainbank_history ────────────────────────────
+// ── Tool: brainbank_history ─────────────────────────
 
 server.registerTool(
     'brainbank_history',
     {
         title: 'BrainBank File History',
-        description: 'Get the git commit history for a specific file. Shows recent changes, authors, and line counts.',
+        description: 'Get git commit history for a file. Shows changes, authors, and line counts.',
         inputSchema: z.object({
-            filePath: z.string().describe('File path (relative or partial match, e.g. "auth.ts" or "src/core/agent.ts")'),
+            filePath: z.string().describe('File path (relative or partial, e.g. "auth.ts")'),
             limit: z.number().optional().default(20).describe('Max commits to return'),
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
@@ -421,189 +406,74 @@ server.registerTool(
     },
 );
 
-// ── Tool: brainbank_coedits ────────────────────────────
+// ── Tool: brainbank_collection ──────────────────────
+// Replaces: brainbank_collection_add, brainbank_collection_search, brainbank_collection_trim
 
 server.registerTool(
-    'brainbank_coedits',
+    'brainbank_collection',
     {
-        title: 'BrainBank Co-Edits',
-        description: 'Find files that historically change together with a given file. Useful for understanding dependencies and ensuring you do not miss related changes.',
+        title: 'BrainBank Collection',
+        description:
+            'Operate on KV collections (auto-created). Actions:\n' +
+            '- add: store content with optional metadata\n' +
+            '- search: hybrid vector + keyword search\n' +
+            '- trim: keep only N most recent items',
         inputSchema: z.object({
-            filePath: z.string().describe('File path to check co-edit relationships for'),
-            limit: z.number().optional().default(5).describe('Max co-edit suggestions'),
+            action: z.enum(['add', 'search', 'trim']).describe('Operation to perform'),
+            collection: z.string().describe('Collection name (e.g. "errors", "decisions")'),
+            content: z.string().optional().describe('Content to store (required for add)'),
+            query: z.string().optional().describe('Search query (required for search)'),
+            metadata: z.record(z.any()).optional().default({}).describe('Metadata for add'),
+            k: z.number().optional().default(5).describe('Max results for search'),
+            keep: z.number().optional().describe('Items to keep for trim'),
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ filePath, limit, repo }) => {
-        const brainbank = await getBrainBank(repo);
-        const suggestions = brainbank.coEdits(filePath, limit);
-
-        if (suggestions.length === 0) {
-            return { content: [{ type: 'text', text: `No co-edit patterns found for "${filePath}"` }] };
-        }
-
-        const lines = [`## Co-Edits for: ${filePath}`, ''];
-        lines.push('Files that frequently change together:');
-        for (const s of suggestions) {
-            lines.push(`- **${s.file}** (changed together ${s.count} times)`);
-        }
-
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
-    },
-);
-
-// ── Tool: brainbank_hybrid_search ─────────────────────
-
-server.registerTool(
-    'brainbank_hybrid_search',
-    {
-        title: 'BrainBank Hybrid Search',
-        description: 'Best quality search: combines semantic vector search + BM25 keyword search using Reciprocal Rank Fusion. Catches both exact keyword matches AND conceptual similarities. Use this by default for all searches.',
-        inputSchema: z.object({
-            query: z.string().describe('Search query — works with both keywords and natural language'),
-            codeK: z.number().optional().default(8).describe('Max code results (shorthand for collections.code)'),
-            gitK: z.number().optional().default(5).describe('Max git results (shorthand for collections.git)'),
-            collections: z.record(z.string(), z.number()).optional().describe(
-                'Max results per source. Reserved keys: "code", "git", "docs" control built-in indexers. ' +
-                'Any other key is a KV collection. Example: { "code": 8, "git": 5, "errors": 3, "slack": 2 }'
-            ),
-            repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
-        }),
-    },
-    async ({ query, codeK, gitK, collections, repo }) => {
-        const t0 = performance.now();
-        const brainbank = await getBrainBank(repo);
-        const t1 = performance.now();
-        const results = await brainbank.hybridSearch(query, { codeK, gitK, collections });
-        const t2 = performance.now();
-
-        const timing = `\n\n⏱ getBrainBank: ${(t1 - t0).toFixed(0)}ms | hybridSearch: ${(t2 - t1).toFixed(0)}ms | total: ${(t2 - t0).toFixed(0)}ms`;
-
-        if (results.length === 0) {
-            return { content: [{ type: 'text', text: 'No results found for this query.' + timing }] };
-        }
-
-        return { content: [{ type: 'text', text: formatResults(results, 'Hybrid Search (Vector + BM25 → RRF)') + timing }] };
-    },
-);
-
-// ── Tool: brainbank_keyword_search ────────────────────
-
-server.registerTool(
-    'brainbank_keyword_search',
-    {
-        title: 'BrainBank Keyword Search',
-        description: 'Instant BM25 keyword search (no embedding computation needed). Best for exact terms, function names, variable names, error messages, and specific identifiers.',
-        inputSchema: z.object({
-            query: z.string().describe('Keywords to search for'),
-            codeK: z.number().optional().default(8).describe('Max code results to return'),
-            gitK: z.number().optional().default(5).describe('Max git commit results to return'),
-            repo: z.string().optional().describe('Repository path to search (default: BRAINBANK_REPO)'),
-        }),
-    },
-    async ({ query, codeK, gitK, repo }) => {
-        const brainbank = await getBrainBank(repo);
-        const results = await brainbank.searchBM25(query, { codeK, gitK });
-
-        if (results.length === 0) {
-            return { content: [{ type: 'text', text: 'No keyword matches found.' }] };
-        }
-
-        return { content: [{ type: 'text', text: formatResults(results, 'Keyword Search (BM25)') }] };
-    },
-);
-
-// ── Tool: brainbank_collection_add ────────────────────
-
-server.registerTool(
-    'brainbank_collection_add',
-    {
-        title: 'BrainBank Collection Add',
-        description: 'Add an item to a dynamic KV collection. Collections are created automatically. Use this to store any structured data: errors, decisions, notes, context, etc.',
-        inputSchema: z.object({
-            collection: z.string().describe('Collection name (e.g. "errors", "decisions", "context")'),
-            content: z.string().describe('Content to store'),
-            metadata: z.record(z.any()).optional().default({}).describe('Optional metadata object'),
-            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
-        }),
-    },
-    async ({ collection, content, metadata, repo }) => {
+    async ({ action, collection, content, query, metadata, k, keep, repo }) => {
         const brainbank = await getBrainBank(repo);
         const coll = brainbank.collection(collection);
-        const id = await coll.add(content, metadata);
 
-        return {
-            content: [{ type: 'text', text: `✓ Item #${id} added to '${collection}' (${coll.count()} total)` }],
-        };
-    },
-);
-
-// ── Tool: brainbank_collection_search ──────────────────
-
-server.registerTool(
-    'brainbank_collection_search',
-    {
-        title: 'BrainBank Collection Search',
-        description: 'Search a dynamic KV collection using hybrid vector + keyword search. Returns semantically similar items.',
-        inputSchema: z.object({
-            collection: z.string().describe('Collection name to search'),
-            query: z.string().describe('Search query'),
-            k: z.number().optional().default(5).describe('Max results'),
-            mode: z.enum(['hybrid', 'vector', 'keyword']).optional().default('hybrid').describe('Search mode'),
-            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
-        }),
-    },
-    async ({ collection, query, k, mode, repo }) => {
-        const brainbank = await getBrainBank(repo);
-        const coll = brainbank.collection(collection);
-        const results = await coll.search(query, { k, mode: mode as any });
-
-        if (results.length === 0) {
-            return { content: [{ type: 'text', text: `No results in '${collection}' for "${query}"` }] };
+        if (action === 'add') {
+            if (!content) throw new Error('BrainBank: content is required for add action.');
+            const id = await coll.add(content, metadata);
+            return {
+                content: [{ type: 'text', text: `✓ Item #${id} added to '${collection}' (${coll.count()} total)` }],
+            };
         }
 
-        const lines = [`## Collection: ${collection} — "${query}"`, ''];
-        for (const r of results) {
-            const score = Math.round((r.score ?? 0) * 100);
-            lines.push(`[${score}%] ${r.content}`);
-            if (Object.keys(r.metadata).length > 0) {
-                lines.push(`  ${JSON.stringify(r.metadata)}`);
+        if (action === 'search') {
+            if (!query) throw new Error('BrainBank: query is required for search action.');
+            const results = await coll.search(query, { k });
+
+            if (results.length === 0) {
+                return { content: [{ type: 'text', text: `No results in '${collection}' for "${query}"` }] };
             }
-            lines.push('');
+
+            const lines = [`## Collection: ${collection}`, ''];
+            for (const r of results) {
+                const score = Math.round((r.score ?? 0) * 100);
+                lines.push(`[${score}%] ${r.content}`);
+                if (Object.keys(r.metadata).length > 0) {
+                    lines.push(`  ${JSON.stringify(r.metadata)}`);
+                }
+                lines.push('');
+            }
+            return { content: [{ type: 'text', text: lines.join('\n') }] };
         }
 
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
+        if (action === 'trim') {
+            if (keep == null) throw new Error('BrainBank: keep is required for trim action.');
+            const result = await coll.trim({ keep });
+            return {
+                content: [{ type: 'text', text: `✓ Trimmed ${result.removed} items from '${collection}' (kept ${keep})` }],
+            };
+        }
+
+        throw new Error(`BrainBank: Unknown action "${action}".`);
     },
 );
 
-// ── Tool: brainbank_collection_trim ────────────────────
-
-server.registerTool(
-    'brainbank_collection_trim',
-    {
-        title: 'BrainBank Collection Trim',
-        description: 'Trim a dynamic collection to keep only the N most recent items. Use this to prevent collections from growing unbounded.',
-        inputSchema: z.object({
-            collection: z.string().describe('Collection name'),
-            keep: z.number().describe('Number of most recent items to keep'),
-            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
-        }),
-    },
-    async ({ collection, keep, repo }) => {
-        const brainbank = await getBrainBank(repo);
-        const coll = brainbank.collection(collection);
-        const result = await coll.trim({ keep });
-
-        return {
-            content: [{
-                type: 'text',
-                text: `✓ Trimmed ${result.removed} items from '${collection}' (kept ${keep})`,
-            }],
-        };
-    },
-);
-
-// ── Shared result formatter ────────────────────────
+// ── Shared result formatter ─────────────────────────
 
 function formatResults(results: any[], mode: string): string {
     const lines: string[] = [`## ${mode}`, ''];
