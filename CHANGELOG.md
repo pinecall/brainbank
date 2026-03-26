@@ -6,10 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-03-26
+
 ### Added
 - HNSW disk persistence — indexes saved to `.brainbank/hnsw-{name}.index`, loaded on startup (skips O(n) rebuild)
 - `vecToBuffer()` helper in `math.ts` for safe Float32Array → Buffer conversion
 - `deleteCollection()` on BrainBank for evicting collections from memory
+- RAG benchmarks moved to `test/benchmarks/rag/` with README (custom dataset eval + BEIR standard)
 
 ### Fixed
 - **Buffer.from byteOffset bug** — 7 callsites stored entire shared buffer instead of vector slice (data corruption)
@@ -19,19 +22,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Watch concurrent flush** — added flushing guard to prevent parallel flush() race conditions
 - **embedBatch shared memory** — `LocalEmbedding.embedBatch` now copies via `.slice()` instead of creating views
 - **Silent FTS catch blocks** — `keyword-search.ts` only swallows FTS5 syntax errors now, other errors propagate
-- **Collection remove order** — DB delete first (can fail), then HNSW+cache (always succeed). Prevents inconsistent state on disk full/lock
+- **Collection remove order** — DB delete first, then HNSW+cache. Prevents inconsistent state on disk full/lock
 - **Dead code** — removed unused `escapeRegex` in `docs-indexer.ts`
+- Fixed stale file paths in `search-quality.mjs` benchmark (4 paths from old architecture)
 
 ### Changed
-- `loadVectors` uses `.iterate()` cursor instead of `.all()` (O(1) vs O(n) memory)
-- Reranking deduplicated — 4 inline copies → single `rerank()` in `rerank.ts`
-- Collection `_searchVector` uses fixed k×10 multiplier (removed COUNT query per search)
-- CLI factory cache uses `NOT_LOADED` sentinel instead of confusing `undefined`/`null` + added `resetFactoryCache()`
+- **MCP server consolidated** — 11 tools → 6: merged 3 search tools into `brainbank_search` (mode param), 3 collection tools into `brainbank_collection` (action param), removed standalone `coedits` (already in `context`)
 - **Indexer interface composition** — stripped 15 optional methods to core contract + 4 composed interfaces (`IndexablePlugin`, `SearchablePlugin`, `WatchablePlugin`, `CollectionPlugin`) with runtime type guards
 - **DocsPlugin split** — search logic extracted to `docs-search.ts` (DocsPlugin 324 → 140 lines)
 - **`_requireDocs` init check** — replaced with type-safe `_docsPlugin()` that includes init + type guard check
 - **Row types** — `db/rows.ts` with typed interfaces for kv_data, code_chunks, etc. Applied to `collection.ts` (10 `as any[]` → typed)
-- **`packages.d.ts`** — added sync warning comment (can't delete until packages are npm-linked)
+- `loadVectors` uses `.iterate()` cursor instead of `.all()` (O(1) vs O(n) memory)
+- Reranking deduplicated — 4 inline copies → single `rerank()` in `rerank.ts`
+- Collection `_searchVector` uses fixed k×10 multiplier (removed COUNT query per search)
+- CLI factory cache uses `NOT_LOADED` sentinel instead of confusing `undefined`/`null`
 
 ## [0.4.1] — 2026-03-26
 
