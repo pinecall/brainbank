@@ -6,13 +6,13 @@
  * whether the retriever understands relationships between concepts.
  *
  * Run:
- *   PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/eval.ts --docs ~/path/to/docs
+ *   PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
  */
 
-import { BrainBank } from '../../src/index.ts';
-import { docs } from '../../src/indexers/docs/docs-plugin.ts';
-import { PerplexityContextEmbedding } from '../../src/providers/embeddings/perplexity-context-embedding.ts';
-import type { SearchResult } from '../../src/types.ts';
+import { BrainBank } from '../../../src/index.ts';
+import { docs } from '../../../src/indexers/docs/docs-plugin.ts';
+import { PerplexityContextEmbedding } from '../../../src/providers/embeddings/perplexity-context-embedding.ts';
+import type { SearchResult } from '../../../src/types.ts';
 
 // ─── ANSI ───────────────────────────────────────────
 
@@ -213,7 +213,7 @@ async function main() {
     // Lazy-load reranker only when requested (downloads ~640MB model on first use)
     let reranker: any;
     if (useReranker) {
-        const { Qwen3Reranker } = await import('../../packages/reranker/src/qwen3-reranker.ts');
+        const { Qwen3Reranker } = await import('../../../packages/reranker/src/qwen3-reranker.ts');
         reranker = new Qwen3Reranker();
     }
 

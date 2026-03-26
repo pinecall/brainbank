@@ -8,16 +8,16 @@
  * Measures NDCG@10, Recall@10, and MRR — same metrics published by all providers.
  *
  * Usage:
- *   PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/beir-eval.ts --dataset scifact
- *   PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/beir-eval.ts --dataset nfcorpus --reranker
+ *   PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact
+ *   PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset nfcorpus --reranker
  *
  * Supported datasets: scifact, nfcorpus, fiqa
  */
 
-import { BrainBank } from '../../src/index.ts';
-import { docs } from '../../src/indexers/docs/docs-plugin.ts';
-import { PerplexityContextEmbedding } from '../../src/providers/embeddings/perplexity-context-embedding.ts';
-import type { SearchResult } from '../../src/types.ts';
+import { BrainBank } from '../../../src/index.ts';
+import { docs } from '../../../src/indexers/docs/docs-plugin.ts';
+import { PerplexityContextEmbedding } from '../../../src/providers/embeddings/perplexity-context-embedding.ts';
+import type { SearchResult } from '../../../src/types.ts';
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -278,7 +278,7 @@ async function main() {
     let reranker: any;
     if (useReranker) {
         console.log(`${c.dim}  Loading Qwen3 reranker...${c.reset}`);
-        const { Qwen3Reranker } = await import('../../packages/reranker/src/qwen3-reranker.ts');
+        const { Qwen3Reranker } = await import('../../../packages/reranker/src/qwen3-reranker.ts');
         reranker = new Qwen3Reranker();
     }
 

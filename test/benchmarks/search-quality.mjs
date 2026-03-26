@@ -119,12 +119,12 @@ async function main() {
 
     // Use BrainBank's own source files (always available in the repo)
     const files = [
-        'src/core/brainbank.ts',
-        'src/indexers/chunker.ts',
+        'src/brainbank.ts',
+        'src/indexers/code/code-chunker.ts',
         'src/core/collection.ts',
-        'src/query/search.ts',
-        'src/cli.ts',
-        'src/indexers/code-indexer.ts',
+        'src/core/search-api.ts',
+        'src/cli/index.ts',
+        'src/indexers/code/code-indexer.ts',
         'src/core/context-builder.ts',
     ];
 
