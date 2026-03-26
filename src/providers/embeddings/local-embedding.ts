@@ -75,10 +75,11 @@ export class LocalEmbedding implements EmbeddingProvider {
             const batch = texts.slice(i, i + BATCH_SIZE);
             const output = await pipe(batch, { pooling: 'mean', normalize: true });
 
-            // output.data is a flat Float32Array of length (batch.length * dims)
+            // output.data is a flat Float32Array — must copy, not view,
+            // because the pipeline may reuse the underlying buffer
             for (let j = 0; j < batch.length; j++) {
                 const start = j * this.dims;
-                results.push(new Float32Array(output.data.buffer, start * 4, this.dims));
+                results.push(output.data.slice(start, start + this.dims) as Float32Array);
             }
         }
 

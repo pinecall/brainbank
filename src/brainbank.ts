@@ -172,6 +172,13 @@ export class BrainBank extends EventEmitter {
             .map(r => r.collection);
     }
 
+    /** Delete a collection's data and evict from cache. */
+    deleteCollection(name: string): void {
+        this._requireInit('deleteCollection');
+        this._db.prepare('DELETE FROM kv_data WHERE collection = ?').run(name);
+        this._collections.delete(name);
+    }
+
     // ── Indexing (delegated to IndexAPI) ─────────────
 
     async index(options: {

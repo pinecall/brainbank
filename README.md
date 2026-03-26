@@ -73,6 +73,7 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 - [Benchmarks](#benchmarks)
   - [Search Quality: AST vs Sliding Window](#search-quality-ast-vs-sliding-window)
   - [Grammar Support](#grammar-support)
+  - [RAG Retrieval Quality](#rag-retrieval-quality) · [Full Results →](./BENCHMARKS.md)
 
 ---
 
