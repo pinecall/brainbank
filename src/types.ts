@@ -209,6 +209,8 @@ export interface DocumentResultMetadata {
     seq?: number;
     path?: string;
     searchType?: string;
+    /** Internal chunk ID used by hybrid search to map fused results. */
+    chunkId?: number;
 }
 
 // Discriminated union
