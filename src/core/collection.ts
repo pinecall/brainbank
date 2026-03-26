@@ -265,12 +265,11 @@ export class Collection {
     // ── Private ──────────────────────────────────────
 
     private _removeById(id: number): void {
-        // Remove from vector cache
-        this._vecs.delete(id);
-        // Mark as deleted in HNSW (prevents ghost entries in search)
-        this._hnsw.remove(id);
-        // Remove from DB (cascades to kv_vectors, FTS trigger handles fts_kv)
+        // DB first — can fail (disk full, lock). If it throws, HNSW+cache stay consistent.
         this._db.prepare('DELETE FROM kv_data WHERE id = ?').run(id);
+        // HNSW + cache after — these always succeed
+        this._hnsw.remove(id);
+        this._vecs.delete(id);
     }
 
     private async _searchVector(query: string, k: number, minScore: number): Promise<CollectionItem[]> {

@@ -30,14 +30,21 @@ const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
 
 // ── Caches ──────────────────────────────────────────
 
-let _configCache: BrainBankCliConfig | null | undefined = undefined;
-let _folderIndexersCache: Indexer[] | undefined = undefined;
+const NOT_LOADED = Symbol('not-loaded');
+let _configCache: BrainBankCliConfig | null | typeof NOT_LOADED = NOT_LOADED;
+let _folderIndexersCache: Indexer[] | typeof NOT_LOADED = NOT_LOADED;
+
+/** Reset factory caches. Useful for tests that import this module multiple times. */
+export function resetFactoryCache(): void {
+    _configCache = NOT_LOADED;
+    _folderIndexersCache = NOT_LOADED;
+}
 
 // ── Config Loader ───────────────────────────────────
 
 /** Load .brainbank/config.ts if present. */
 async function loadConfig(): Promise<BrainBankCliConfig | null> {
-    if (_configCache !== undefined) return _configCache;
+    if (_configCache !== NOT_LOADED) return _configCache;
 
     const repoPath = getFlag('repo') ?? '.';
     const brainbankDir = path.resolve(repoPath, '.brainbank');
@@ -64,7 +71,7 @@ async function loadConfig(): Promise<BrainBankCliConfig | null> {
 
 /** Auto-discover indexers from .brainbank/indexers/ folder. */
 async function discoverFolderIndexers(): Promise<Indexer[]> {
-    if (_folderIndexersCache !== undefined) return _folderIndexersCache;
+    if (_folderIndexersCache !== NOT_LOADED) return _folderIndexersCache;
 
     const repoPath = getFlag('repo') ?? '.';
     const indexersDir = path.resolve(repoPath, '.brainbank', 'indexers');

@@ -43,10 +43,6 @@ const TARGET_CHARS = 3000;       // ~900 tokens
 const WINDOW_CHARS = 600;        // search window before cutoff
 const MIN_CHUNK_CHARS = 200;     // don't create tiny chunks
 
-/** Escape special regex characters so user-provided patterns behave as literals. */
-function escapeRegex(s: string): string {
-    return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /** Ignored output/vendor directories when walking docs. */
 const IGNORED_DOC_DIRS = new Set([

@@ -14,14 +14,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 - **Buffer.from byteOffset bug** — 7 callsites stored entire shared buffer instead of vector slice (data corruption)
 - **Reembed non-atomic** — used temp table swap instead of delete-before-rebuild (ACID guarantee)
+- **Reembed temp table leak** — try/finally ensures temp table is dropped even if embedBatch fails mid-batch
 - **Code-indexer crash window** — wrapped delete + insert in single transaction (prevents orphaned files)
 - **Watch concurrent flush** — added flushing guard to prevent parallel flush() race conditions
 - **embedBatch shared memory** — `LocalEmbedding.embedBatch` now copies via `.slice()` instead of creating views
+- **Collection remove order** — DB delete first (can fail), then HNSW+cache (always succeed). Prevents inconsistent state on disk full/lock
+- **Dead code** — removed unused `escapeRegex` in `docs-indexer.ts`
 
 ### Changed
 - `loadVectors` uses `.iterate()` cursor instead of `.all()` (O(1) vs O(n) memory)
 - Reranking deduplicated — 4 inline copies → single `rerank()` in `rerank.ts`
 - Collection `_searchVector` uses fixed k×10 multiplier (removed COUNT query per search)
+- CLI factory cache uses `NOT_LOADED` sentinel instead of confusing `undefined`/`null` + added `resetFactoryCache()`
 
 ## [0.4.1] — 2026-03-26
 

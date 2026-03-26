@@ -92,6 +92,8 @@ export async function lateInit(
         const kvIndexPath = hnswPath(config.dbPath, 'kv');
         const kvCount = countRows(db, 'kv_vectors');
         if (kvHnsw.tryLoad(kvIndexPath, kvCount)) {
+            // HNSW graph loaded from disk, but vecCache still needs population:
+            // MMR diversity search computes pairwise similarity using raw vectors
             loadVecCache(db, 'kv_vectors', 'data_id', kvVecs);
         } else {
             loadVectors(db, 'kv_vectors', 'data_id', kvHnsw, kvVecs);
@@ -139,7 +141,7 @@ function buildIndexerContext(
             const indexPath = hnswPath(config.dbPath, indexName);
             const rowCount = countRows(db, table);
             if (hnsw.tryLoad(indexPath, rowCount)) {
-                // HNSW loaded from file — still populate vecCache for MMR
+                // HNSW loaded from file — still populate vecCache for MMR diversity search
                 loadVecCache(db, table, idCol, cache);
             } else {
                 loadVectors(db, table, idCol, hnsw, cache);

@@ -204,29 +204,33 @@ async function reembedTable(
     );
 
     let processed = 0;
-    for (let offset = 0; offset < totalCount; offset += batchSize) {
-        const batch = db.prepare(
-            `SELECT * FROM ${table.textTable} LIMIT ? OFFSET ?`
-        ).all(batchSize, offset) as any[];
-        const texts = batch.map((r: any) => table.textBuilder(r));
-        const vectors = await embedding.embedBatch(texts);
+    try {
+        for (let offset = 0; offset < totalCount; offset += batchSize) {
+            const batch = db.prepare(
+                `SELECT * FROM ${table.textTable} LIMIT ? OFFSET ?`
+            ).all(batchSize, offset) as any[];
+            const texts = batch.map((r: any) => table.textBuilder(r));
+            const vectors = await embedding.embedBatch(texts);
 
+            db.transaction(() => {
+                for (let j = 0; j < batch.length; j++) {
+                    insertTemp.run(batch[j][table.idColumn], vecToBuffer(vectors[j]));
+                }
+            });
+
+            processed += batch.length;
+            onProgress?.(table.name, processed, totalCount);
+        }
+
+        // Phase 2: Atomic swap — all or nothing
         db.transaction(() => {
-            for (let j = 0; j < batch.length; j++) {
-                insertTemp.run(batch[j][table.idColumn], vecToBuffer(vectors[j]));
-            }
+            db.exec(`DELETE FROM ${table.vectorTable}`);
+            db.exec(`INSERT INTO ${table.vectorTable} SELECT * FROM ${tempTable}`);
         });
-
-        processed += batch.length;
-        onProgress?.(table.name, processed, totalCount);
+    } finally {
+        // Always clean up temp table — even if embedBatch fails mid-batch
+        db.exec(`DROP TABLE IF EXISTS ${tempTable}`);
     }
-
-    // Phase 2: Atomic swap — all or nothing
-    db.transaction(() => {
-        db.exec(`DELETE FROM ${table.vectorTable}`);
-        db.exec(`INSERT INTO ${table.vectorTable} SELECT * FROM ${tempTable}`);
-    });
-    db.exec(`DROP TABLE ${tempTable}`);
 
     return processed;
 }
