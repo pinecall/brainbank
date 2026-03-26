@@ -13,6 +13,7 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, DocumentCollection, SearchResult, Reranker } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
+import { rerank } from '@/search/vector/rerank.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 import { DocsIndexer } from './docs-indexer.ts';
 
@@ -137,17 +138,10 @@ class DocsPlugin implements Indexer {
         return this._applyReranking(query, deduped);
     }
 
-    /** Apply reranking if a reranker is configured. Same algorithm as search-api.ts. */
+    /** Apply reranking if a reranker is configured. */
     private async _applyReranking(query: string, results: SearchResult[]): Promise<SearchResult[]> {
         if (!this._reranker || results.length <= 1) return results;
-
-        const scores = await this._reranker.rank(query, results.map(r => r.content));
-        return results
-            .map((r, i) => {
-                const w = (i < 3) ? 0.75 : (i < 10) ? 0.60 : 0.40;
-                return { ...r, score: w * r.score + (1 - w) * (scores[i] ?? 0) };
-            })
-            .sort((a, b) => b.score - a.score);
+        return rerank(query, results, this._reranker);
     }
 
     /** Deduplicate results by file path — keep best-scoring chunk per file. */

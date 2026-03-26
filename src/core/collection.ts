@@ -11,9 +11,10 @@
 
 import type { Database } from '@/db/database.ts';
 import { vecToBuffer } from '@/lib/math.ts';
-import type { EmbeddingProvider, Reranker } from '@/types.ts';
+import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
+import { rerank } from '@/search/vector/rerank.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 
 export interface CollectionItem {
@@ -171,12 +172,15 @@ export class Collection {
 
         // Apply re-ranking if available
         if (this._reranker && results.length > 1) {
-            const documents = results.map(r => r.content);
-            const scores = await this._reranker.rank(query, documents);
-            const blended = results.map((r, i) => ({
-                ...r,
-                score: 0.6 * (r.score ?? 0) + 0.4 * (scores[i] ?? 0),
+            const asSearchResults: SearchResult[] = results.map(r => ({
+                type: 'collection' as const,
+                score: r.score ?? 0,
+                content: r.content,
+                metadata: { id: r.id },
             }));
+            const reranked = await rerank(query, asSearchResults, this._reranker);
+            const rerankedById = new Map(reranked.map(r => [(r.metadata as any)?.id as number, r.score]));
+            const blended = results.map(r => ({ ...r, score: rerankedById.get(r.id) ?? r.score ?? 0 }));
             return this._filterByTags(
                 blended.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
                 tags,
@@ -273,14 +277,8 @@ export class Collection {
         if (this._hnsw.size === 0) return [];
 
         const queryVec = await this._embedding.embed(query);
-        // Scale search by HNSW-to-collection ratio to ensure enough candidates
-        // when many collections share the same HNSW index
-        const now = Math.floor(Date.now() / 1000);
-        const collectionCount = (this._db.prepare(
-            'SELECT COUNT(*) as c FROM kv_data WHERE collection = ? AND (expires_at IS NULL OR expires_at > ?)'
-        ).get(this._name, now) as any)?.c ?? 0;
-        const ratio = collectionCount > 0 ? Math.max(3, Math.min(50, Math.ceil(this._hnsw.size / collectionCount))) : 3;
-        const searchK = Math.min(k * ratio, this._hnsw.size);
+        // Over-fetch from shared HNSW to compensate for cross-collection filtering
+        const searchK = Math.min(k * 10, this._hnsw.size);
         const hits = this._hnsw.search(queryVec, searchK);
 
         const ids = hits.map(h => h.id);
