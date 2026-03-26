@@ -823,6 +823,91 @@ const myReranker: Reranker = {
 
 Without a reranker, BrainBank uses pure RRF fusion — which is already production-quality for most use cases.
 
+### Notes
+
+The notes plugin gives your agent **persistent conversation memory** — store structured digests of past sessions and recall them via hybrid search.
+
+```typescript
+import { BrainBank } from 'brainbank';
+import { notes } from 'brainbank/notes';
+
+const brain = new BrainBank({ repoPath: '.' });
+brain.use(notes());
+await brain.initialize();
+
+const notesPlugin = brain.indexer('notes');
+
+// Store a conversation digest
+await notesPlugin.remember({
+  title: 'Refactored auth module',
+  summary: 'Extracted JWT validation into middleware, added refresh token rotation',
+  decisions: ['Use RS256 over HS256', 'Refresh tokens stored in httpOnly cookie'],
+  filesChanged: ['src/auth/jwt.ts', 'src/middleware/auth.ts'],
+  patterns: ['Always validate token expiry before DB lookup'],
+  openQuestions: ['Should we add rate limiting to the refresh endpoint?'],
+  tags: ['auth', 'security'],
+});
+
+// Recall relevant notes
+const relevant = await notesPlugin.recall('JWT token validation', { k: 3 });
+
+// List recent notes
+const recent = notesPlugin.list(10);
+const longTermOnly = notesPlugin.list(10, 'long');
+
+// Consolidate: promote old short-term notes to long-term (keeps last 20 as short)
+const { promoted } = notesPlugin.consolidate(20);
+```
+
+**Memory tiers:**
+- **`short`** (default) — Full digest with all fields, kept for recent sessions
+- **`long`** — Compressed: only title, summary, decisions, and patterns preserved. Files and open questions dropped
+
+Consolidation automatically promotes notes beyond the keep window from `short` → `long`, reducing storage while preserving key learnings.
+
+### Agent Memory (Patterns)
+
+The memory plugin enables **learning from experience** — your agent records what worked (and what didn't) across tasks, then distills patterns into reusable strategies.
+
+```typescript
+import { BrainBank } from 'brainbank';
+import { memory } from 'brainbank/memory';
+
+const brain = new BrainBank({ repoPath: '.' });
+brain.use(memory());
+await brain.initialize();
+
+const mem = brain.indexer('memory');
+
+// Record a learning pattern
+await mem.learn({
+  taskType: 'refactor',
+  task: 'Extract auth logic into middleware',
+  approach: 'Created Express middleware, moved JWT validation from routes',
+  outcome: 'Reduced route handler size by 60%, improved testability',
+  successRate: 0.95,
+  critique: 'Should have added integration tests before refactoring',
+});
+
+// Search for similar patterns before starting a new task
+const patterns = await mem.search('refactor database queries');
+
+// Consolidate: prune old failures + merge duplicates
+const { pruned, deduped } = mem.consolidate();
+
+// Distill top patterns into a strategy
+const strategy = mem.distill('refactor');
+// → "Strategy for 'refactor' (5 patterns, avg success 88%):
+//    • Created middleware, moved validation from routes (95%)
+//      └ Should have added integration tests before refactoring"
+```
+
+**How it works:**
+1. **Learn** — Records task, approach, outcome, and success rate. Embeds for semantic search
+2. **Search** — Finds similar successful patterns (filters by `successRate ≥ 0.5`)
+3. **Consolidate** — Auto-runs every 50 patterns: prunes failures older than 90 days, deduplicates (cosine > 0.95)
+4. **Distill** — Aggregates top patterns per task type into a single strategy text with confidence score
+
 ---
 
 ## Memory
