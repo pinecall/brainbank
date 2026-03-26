@@ -11,6 +11,11 @@ import type { SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 
+/** Check if an error is an FTS5 query syntax error (expected, safe to ignore). */
+function isFTSError(e: unknown): boolean {
+    return e instanceof Error && /fts5|syntax error|parse error/i.test(e.message);
+}
+
 export class KeywordSearch implements SearchStrategy {
     constructor(private _db: Database) {}
 
@@ -52,7 +57,7 @@ export class KeywordSearch implements SearchStrategy {
                 seenIds.add(r.id);
                 results.push(this._toCodeResult(r, normalizeBM25(r.score), 'bm25'));
             }
-        } catch {}
+        } catch (e) { if (!isFTSError(e)) throw e; }
 
         this._searchCodeByPath(rawQuery, seenIds, results);
     }
@@ -75,7 +80,7 @@ export class KeywordSearch implements SearchStrategy {
                     results.push(this._toCodeResult(r, 0.6, 'bm25-path'));
                 }
             }
-        } catch {}
+        } catch (e) { if (!isFTSError(e)) throw e; }
     }
 
     /** FTS5 search across git commits. */
@@ -110,7 +115,7 @@ export class KeywordSearch implements SearchStrategy {
                     },
                 });
             }
-        } catch {}
+        } catch (e) { if (!isFTSError(e)) throw e; }
     }
 
     /** FTS5 search across memory patterns. */
@@ -142,7 +147,7 @@ export class KeywordSearch implements SearchStrategy {
                     },
                 });
             }
-        } catch {}
+        } catch (e) { if (!isFTSError(e)) throw e; }
     }
 
     /** Map a code_chunks row to a CodeResult. */

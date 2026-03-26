@@ -55,7 +55,10 @@ export function reciprocalRankFusion(
         .sort((a, b) => b.rrfScore - a.rrfScore)
         .slice(0, maxResults);
 
-    // Normalize RRF scores to 0..1 range
+    // Normalize RRF scores to 0..1 range.
+    // Note: A single result always normalizes to 1.0. This is correct for RRF —
+    // the score is relative to the result set, not absolute relevance.
+    // Use minScore filters sparingly with RRF.
     const maxRRF = sorted[0]?.rrfScore ?? 1;
     return sorted.map(entry => ({
         ...entry.result,
