@@ -90,6 +90,62 @@ PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to
 
 ---
 
+## Head-to-Head: BrainBank vs QMD
+
+[QMD](https://github.com/tobi/qmd) is a local-first markdown search engine that runs entirely on-device — embedding, query expansion, and reranking all via GGUF models. We benchmarked both engines on the same corpus and queries to compare cloud vs local retrieval quality.
+
+### Setup
+
+| | BrainBank | QMD |
+|---|---|---|
+| **Embeddings** | Perplexity Context (2560d, API) | embeddinggemma-300M (768d, local GGUF) |
+| **Keyword** | FTS5 BM25 | FTS5 BM25 |
+| **Fusion** | RRF (k=60) | RRF + query expansion (fine-tuned 1.7B) |
+| **Reranker** | Qwen3-0.6B (optional) | Qwen3-0.6B (optional) |
+| **Privacy** | Cloud API calls | 100% local |
+
+### Results (69 docs, 20 semantic queries)
+
+| Metric | BrainBank | BB + Reranker | QMD | QMD + Reranker |
+|---|:---:|:---:|:---:|:---:|
+| **R@3** | 55% | 63% | 43% | 53% |
+| **R@5** | 78% | **83%** | 50% | 65% |
+| **MRR** | 0.55 | **0.57** | 0.53 | 0.45 |
+| **Misses** | 2/20 | **1/20** | 4/20 | 6/20 |
+
+### Per-Category R@5
+
+| Category | # | BrainBank + RR | QMD + RR |
+|---|:---:|:---:|:---:|
+| cross-doc | 5 | **70%** | 40% |
+| semantic | 8 | **94%** | 81% |
+| broad | 3 | 83% | **83%** |
+| specific | 4 | **75%** | 50% |
+
+> BrainBank wins overall (+18pp R@5), but QMD with reranker is competitive on semantic (81%) and broad (83%) categories — impressive for a fully local pipeline with no API calls.
+
+### Key Insights
+
+- **Embedding quality is the biggest differentiator** — Perplexity Context (2560d) vs embeddinggemma (768d) explains most of the gap on cross-doc and abstract queries
+- **Query expansion helps but can't compensate** — QMD's fine-tuned 1.7B expansion model generates good `lex:/vec:/hyde:` variations, but the underlying embedding model limits recall
+- **Reranker is the great equalizer** — boosted QMD's broad queries from 17% → 83% and overall R@5 from 50% → 65%
+- **QMD wins on privacy** — zero data leaves the machine, zero API cost
+
+### How to Reproduce
+
+```bash
+# QMD only (no API key needed)
+npx tsx test/benchmarks/rag/benchmark-vs-qmd-aurora.ts --skip-brainbank
+
+# QMD with reranker
+npx tsx test/benchmarks/rag/benchmark-vs-qmd-aurora.ts --skip-brainbank --reranker
+
+# Full head-to-head
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd-aurora.ts --reranker
+```
+
+---
+
 ## Test Environment
 
 - **Embeddings**: Perplexity Context (`pplx-embed-v1`, 2560 dimensions)

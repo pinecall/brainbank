@@ -1237,11 +1237,23 @@ BrainBank's hybrid search pipeline (Vector + BM25 → RRF) with Perplexity Conte
 | Benchmark | Metric | Score |
 |---|---|:---:|
 | **BEIR SciFact** (5,183 docs, 300 queries) | NDCG@10 | **0.761** |
-| **Custom semantic** (127 docs, 20 queries) | R@5 | **83%** |
+| **Custom semantic** (69 docs, 20 queries) | R@5 | **83%** |
 
 The hybrid pipeline improved R@5 by **+26pp over vector-only** retrieval on our custom eval.
 
-See **[BENCHMARKS.md](./BENCHMARKS.md)** for full pipeline progression, per-technique impact, and reproduction instructions.
+#### BrainBank vs QMD (Head-to-Head)
+
+Compared against [QMD](https://github.com/tobi/qmd), a local-first search engine using GGUF models (embeddinggemma-300M + query expansion + reranker) — same corpus, same 20 queries:
+
+| Metric | BrainBank + Reranker | QMD + Reranker |
+|---|:---:|:---:|
+| **R@5** | **83%** | 65% |
+| **MRR** | **0.57** | 0.45 |
+| **Misses** | **1/20** | 6/20 |
+
+> BrainBank wins by +18pp R@5. QMD is competitive on semantic queries (81% vs 94%) and ties on broad queries (83% vs 83%) — impressive for a fully local pipeline with zero API calls.
+
+See **[BENCHMARKS.md](./BENCHMARKS.md)** for full pipeline progression, per-technique impact, QMD comparison details, and reproduction instructions.
 
 #### Running the RAG Eval
 

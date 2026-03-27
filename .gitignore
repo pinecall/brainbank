@@ -6,3 +6,6 @@ dist/
 .DS_Store
 .model-cache/
 *.index
+
+# QMD benchmark scripts (private)
+test/benchmarks/rag/benchmark-vs-qmd*.ts
