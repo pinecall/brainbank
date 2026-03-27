@@ -712,16 +712,26 @@ const brain = new BrainBank({
 
 BrainBank **auto-resolves** the embedding provider. Set it once → it's stored in the DB → every future run uses the same provider automatically.
 
-**Programmatic API** — pass `embeddingProvider` to the constructor:
+**Programmatic API** — pass `embeddingProvider` to the constructor, then chain `.use()` as usual:
 
 ```typescript
 import { BrainBank, OpenAIEmbedding } from 'brainbank';
+import { code } from 'brainbank/code';
+import { git } from 'brainbank/git';
 
 const brain = new BrainBank({
   repoPath: '.',
-  embeddingProvider: new OpenAIEmbedding(),  // stored in DB on first index
-});
+  embeddingProvider: new OpenAIEmbedding(),  // all plugins share this provider
+})
+  .use(code())
+  .use(git());
+
+await brain.index();                           // provider_key stored in DB
+const results = await brain.hybridSearch('auth middleware');
+brain.close();
 ```
+
+> On the next run, `embeddingProvider` can be omitted — BrainBank auto-resolves from the DB.
 
 **CLI** — use the `--embedding` flag on first index:
 
