@@ -18,6 +18,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 - **`bm25!` crash** — non-null assertion replaced with safe `bm25?.search() ?? []` fallback
 
+### Removed
+- **`brainbank/reranker` subpath export** — `Qwen3Reranker` removed from package. The `Reranker` interface stays for custom implementations
+
 ## [0.5.0] — 2026-03-26
 
 ### Added

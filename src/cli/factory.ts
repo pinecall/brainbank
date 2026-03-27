@@ -149,13 +149,8 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     return brain;
 }
 
-/** Configure reranker and embedding provider on brainOpts. */
+/** Configure embedding provider on brainOpts. */
 async function setupProviders(brainOpts: Record<string, any>): Promise<void> {
-    const rerankerFlag = getFlag('reranker');
-    if (rerankerFlag === 'qwen3') {
-        const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');
-        brainOpts.reranker = new Qwen3Reranker();
-    }
 
     if (process.env.BRAINBANK_EMBEDDING === 'openai') {
         const { OpenAIEmbedding } = await import('../providers/embeddings/openai-embedding.ts');

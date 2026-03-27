@@ -32,10 +32,6 @@
         "./memory": {
             "import": "./dist/memory.js",
             "types": "./dist/memory.d.ts"
-        },
-        "./reranker": {
-            "import": "./dist/reranker.js",
-            "types": "./dist/reranker.d.ts"
         }
     },
     "files": [
