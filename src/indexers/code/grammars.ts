@@ -26,13 +26,17 @@ export interface LangGrammar {
 
 // ── Loader ──────────────────────────────────────────
 
-/** Try to require a grammar, return null if not installed. */
-function tryGrammar(pkg: string, nodeTypes: LangGrammar['nodeTypes'], accessor?: string): () => LangGrammar | null {
+/** Load a grammar package. Throws with install instructions if not installed. */
+function tryGrammar(pkg: string, nodeTypes: LangGrammar['nodeTypes'], accessor?: string): () => LangGrammar {
     return () => {
         try {
             const mod = require(pkg);
             return { grammar: accessor ? mod[accessor] : mod, nodeTypes };
-        } catch { return null; }
+        } catch {
+            throw new Error(
+                `BrainBank: Grammar '${pkg}' is not installed. Run: npm install ${pkg}`
+            );
+        }
     };
 }
 

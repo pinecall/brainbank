@@ -51,19 +51,22 @@ export class CodeChunker {
         return this._parser || null;
     }
 
-    /** Load a language grammar (cached). */
+    /** Load a language grammar (cached). Throws if grammar package is not installed. */
     private _loadGrammar(language: string): LangGrammar | null {
         if (this._langCache.has(language)) return this._langCache.get(language)!;
 
         const factory = GRAMMARS[language];
-        const grammar = factory ? factory() : null;
+        if (!factory) return null; // Unknown language — no grammar registered
+
+        const grammar = factory(); // Throws if package not installed
         this._langCache.set(language, grammar);
         return grammar;
     }
 
     /**
      * Split file content into semantic chunks using tree-sitter AST.
-     * Falls back to sliding window if grammar isn't available.
+     * Throws if the language has a grammar but the package isn't installed.
+     * Falls back to sliding window only for truly unsupported languages.
      */
     async chunk(filePath: string, content: string, language: string): Promise<CodeChunk[]> {
         const lines = content.split('\n');
@@ -82,7 +85,7 @@ export class CodeChunker {
 
         // Try tree-sitter AST chunking
         const parser = this._ensureParser();
-        const langConfig = this._loadGrammar(language);
+        const langConfig = this._loadGrammar(language); // throws if pkg missing
 
         if (parser && langConfig) {
             try {
@@ -93,12 +96,14 @@ export class CodeChunker {
                 if (chunks.length > 0) {
                     return chunks.filter(c => c.content.length > 20);
                 }
-            } catch {
-                // Tree-sitter failed — fall through to generic
+            } catch (err: any) {
+                // Re-throw grammar-not-installed errors
+                if (err?.message?.includes('not installed')) throw err;
+                // Tree-sitter parse failed — fall through to generic
             }
         }
 
-        // Fallback to sliding window
+        // Fallback to sliding window (unknown languages only)
         return this._chunkGeneric(filePath, lines, language);
     }
 
