@@ -6,7 +6,7 @@
  */
 
 import * as fs from 'node:fs';
-import { BrainBank } from '../../../src/orchestration/brainbank.ts';
+import { BrainBank } from '../../../src/core/orchestration/brainbank.ts';
 import { docs } from '../../../src/indexers/docs/docs-plugin.ts';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 

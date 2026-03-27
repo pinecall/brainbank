@@ -15,7 +15,7 @@ import { EventEmitter } from 'node:events';
 import { resolveConfig } from '@/config/defaults.ts';
 import { Database } from '@/db/database.ts';
 import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import { Collection } from '@/domain/collection.ts';
+import { Collection } from '@/core/domain/collection.ts';
 import { IndexerRegistry } from './registry.ts';
 import { Initializer } from './initializer.ts';
 import { SearchAPI } from './search-api.ts';

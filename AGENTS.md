@@ -48,7 +48,9 @@ Layer 2 — Domain (depends on Layers 0-1)
 └── services/        ← Reembed, watch
 
 Layer 3 — Orchestration (depends on everything below)
-├── orchestration/   ← BrainBank class, registry, initializer, search-api, index-api
+├── core/
+│   ├── orchestration/   ← BrainBank class, registry, initializer, search-api, index-api
+│   └── domain/          ← Core primitives: collection (KV store), context-builder
 └── cli/             ← CLI commands and factory
 ```
 
@@ -64,10 +66,10 @@ packages/
 ```
 
 ### Key Files
-- `src/orchestration/brainbank.ts` — The main orchestrator. All public API lives here.
+- `src/core/orchestration/brainbank.ts` — The main orchestrator. All public API lives here.
 - `src/indexers/base.ts` — The `Indexer` interface. Read this before writing any plugin.
-- `src/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
-- `src/domain/context-builder.ts` — Builds formatted context blocks from search results.
+- `src/core/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
+- `src/core/domain/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
@@ -121,8 +123,7 @@ import type { SearchResult } from '../../types.ts';
 - Registered via `.use()` builder pattern on BrainBank
 
 - `src/` root only has `index.ts` (barrel) and `types.ts` (shared types)
-- `orchestration/` is internal wiring — never imported by layers 0-2
-- `domain/` holds core primitives (collection, context-builder) — imported by layers 2-3
+- `core/` contains domain primitives and orchestration wiring — never imported by layers 0-2
 - `lib/` contains pure, stateless functions with zero side effects
 - `search/types.ts` defines `SearchStrategy` — all search backends implement it
 - `BrainBank` extends `EventEmitter` for progress/warning events (no callbacks)
@@ -151,7 +152,7 @@ console.log('indexing done');  // WRONG — use this.emit('progress', ...)
 
 // ❌ Importing from a higher layer
 // In lib/ (Layer 0):
-import { BrainBank } from '@/orchestration/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
+import { BrainBank } from '@/core/orchestration/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
 ```
 
 **Size limits:**
