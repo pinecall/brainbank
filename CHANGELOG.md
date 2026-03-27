@@ -6,14 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Embedding auto-resolve** — stores `provider_key` in DB; on startup, auto-resolves the correct provider without env vars. Priority: explicit config > stored DB key > local default
+- **`resolveEmbedding(key)` + `providerKey(provider)`** — exported from barrel for programmatic use
+- **CLI `--embedding` flag** — `brainbank index --embedding openai` (replaces env var)
+
 ### Changed
 - **BREAKING: `Indexer` → `Plugin`** — base interface renamed to `Plugin`, `IndexerContext` → `PluginContext`, `IndexerRegistry` → `PluginRegistry`. No backward compat aliases — clean break
 - **BREAKING: `.indexer()` → `.plugin()`** — accessor renamed, `.indexers` → `.plugins`
+- **BREAKING: `BRAINBANK_EMBEDDING` env var removed** — use `--embedding` flag on first index, then auto-resolves from DB
 - **`app/` → `api/`** — use-case layer renamed for clarity (was ambiguous with UI "app")
 - **File names synced with classes** — `code-indexer.ts` → `code-walker.ts`, `docs-search.ts` → `document-search.ts`, `distiller.ts` → `pattern-distiller.ts`
 - **`reembed.ts` split** — extracted `embedding-meta.ts` (single responsibility: startup metadata vs reembed logic)
 - **Circular dep removed** — `searchDocs` callback replaced with `getDocsPlugin()` accessor in SearchAPI
 - **Internal renames** — `_applyReranking` → `_rerankResults`, `_pushLastChunk` → `_flushRemainder`, `flush` → `processPending`
+- **MCP server simplified** — removed `createEmbeddingProvider()` and `BRAINBANK_EMBEDDING` env var; embedding auto-resolves from DB
 
 ### Fixed
 - **`bm25!` crash** — non-null assertion replaced with safe `bm25?.search() ?? []` fallback

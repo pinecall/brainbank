@@ -157,22 +157,14 @@ async function setupProviders(brainOpts: Record<string, any>): Promise<void> {
         brainOpts.reranker = new Qwen3Reranker();
     }
 
-    if (process.env.BRAINBANK_EMBEDDING === 'openai') {
-        const { OpenAIEmbedding } = await import('../providers/embeddings/openai-embedding.ts');
-        const provider = new OpenAIEmbedding();
-        brainOpts.embeddingProvider = provider;
-        brainOpts.embeddingDims = provider.dims;
-    } else if (process.env.BRAINBANK_EMBEDDING === 'perplexity') {
-        const { PerplexityEmbedding } = await import('../providers/embeddings/perplexity-embedding.ts');
-        const provider = new PerplexityEmbedding();
-        brainOpts.embeddingProvider = provider;
-        brainOpts.embeddingDims = provider.dims;
-    } else if (process.env.BRAINBANK_EMBEDDING === 'perplexity-context') {
-        const { PerplexityContextEmbedding } = await import('../providers/embeddings/perplexity-context-embedding.ts');
-        const provider = new PerplexityContextEmbedding();
+    const embFlag = getFlag('embedding');
+    if (embFlag) {
+        const { resolveEmbedding } = await import('@/providers/embeddings/resolve.ts');
+        const provider = await resolveEmbedding(embFlag);
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;
     }
+    // If no flag → Initializer reads provider_key from DB → falls back to local
 }
 
 /** Register built-in indexers with multi-repo detection. */

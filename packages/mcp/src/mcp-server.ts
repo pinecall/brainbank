@@ -61,29 +61,10 @@ async function createReranker() {
     const rerankerEnv = process.env.BRAINBANK_RERANKER ?? 'none';
     if (rerankerEnv === 'none') return undefined;
     if (rerankerEnv === 'qwen3') {
-        const { Qwen3Reranker } = await import('brainbank/reranker');
+        const { Qwen3Reranker } = await import('brainbank');
         return new Qwen3Reranker();
     }
     return undefined;
-}
-
-// ── Embedding Provider (default: local) ──
-
-async function createEmbeddingProvider() {
-    const embeddingEnv = process.env.BRAINBANK_EMBEDDING ?? 'local';
-    if (embeddingEnv === 'openai') {
-        const { OpenAIEmbedding } = await import('brainbank');
-        return new OpenAIEmbedding();
-    }
-    if (embeddingEnv === 'perplexity') {
-        const { PerplexityEmbedding } = await import('brainbank');
-        return new PerplexityEmbedding();
-    }
-    if (embeddingEnv === 'perplexity-context') {
-        const { PerplexityContextEmbedding } = await import('brainbank');
-        return new PerplexityContextEmbedding();
-    }
-    return undefined; // BrainBank defaults to local WASM
 }
 
 // ── Multi-Workspace BrainBank Pool ─────────────────────
@@ -97,13 +78,11 @@ interface PoolEntry {
 
 const _pool = new Map<string, PoolEntry>();
 let _sharedReranker: any = undefined;
-let _sharedEmbedding: any = undefined;
 let _sharedReady = false;
 
 async function ensureShared() {
     if (_sharedReady) return;
     _sharedReranker = await createReranker();
-    _sharedEmbedding = await createEmbeddingProvider();
     _sharedReady = true;
 }
 
@@ -160,11 +139,8 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
 }
 
 async function _createBrain(resolved: string): Promise<BrainBank> {
+    // Embedding provider auto-resolves from stored DB config (no env var needed)
     const opts: Record<string, any> = { repoPath: resolved, reranker: _sharedReranker };
-    if (_sharedEmbedding) {
-        opts.embeddingProvider = _sharedEmbedding;
-        opts.embeddingDims = _sharedEmbedding.dims;
-    }
     const brain = new BrainBank(opts)
         .use(code({ repoPath: resolved }))
         .use(git({ repoPath: resolved }))

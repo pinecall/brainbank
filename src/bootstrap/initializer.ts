@@ -11,11 +11,11 @@
 import { dirname, join } from 'node:path';
 import { Database } from '@/db/database.ts';
 import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import { LocalEmbedding } from '@/providers/embeddings/local-embedding.ts';
+import { resolveEmbedding } from '@/providers/embeddings/resolve.ts';
 import { VectorSearch } from '@/search/vector/vector-search.ts';
 import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
-import { setEmbeddingMeta, detectProviderMismatch } from '@/services/embedding-meta.ts';
+import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from '@/services/embedding-meta.ts';
 import type { PluginRegistry } from './registry.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
@@ -55,7 +55,7 @@ export class Initializer {
     async early(options: { force?: boolean } = {}): Promise<EarlyInit> {
         const { _config: config } = this;
         const db = new Database(config.dbPath);
-        const embedding: EmbeddingProvider = config.embeddingProvider ?? new LocalEmbedding();
+        const embedding = await this._resolveEmbedding(db);
 
         const mismatch = detectProviderMismatch(db, embedding);
 
@@ -202,6 +202,17 @@ export class Initializer {
         const contextBuilder = new ContextBuilder(search, firstGit?.coEdits);
 
         return { search, bm25, contextBuilder };
+    }
+
+    /** Resolve embedding: explicit config > stored DB key > local default. */
+    private async _resolveEmbedding(db: Database): Promise<EmbeddingProvider> {
+        if (this._config.embeddingProvider) return this._config.embeddingProvider;
+        const meta = getEmbeddingMeta(db);
+        if (meta?.providerKey && meta.providerKey !== 'local') {
+            this._emit('progress', `Embedding: auto-resolved '${meta.providerKey}' from DB`);
+            return resolveEmbedding(meta.providerKey);
+        }
+        return resolveEmbedding('local');
     }
 }
 

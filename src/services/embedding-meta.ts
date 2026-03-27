@@ -8,9 +8,18 @@
 
 import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider } from '@/types.ts';
+import { providerKey } from '@/providers/embeddings/resolve.ts';
+
+/** Stored embedding metadata shape. */
+export interface EmbeddingMeta {
+    provider: string;
+    dims: number;
+    /** Stable key for auto-resolving provider on startup (e.g. 'openai', 'local'). */
+    providerKey: string;
+}
 
 /** Get stored embedding metadata. Returns null if not set. */
-export function getEmbeddingMeta(db: Database): { provider: string; dims: number } | null {
+export function getEmbeddingMeta(db: Database): EmbeddingMeta | null {
     try {
         const provider = db.prepare(
             "SELECT value FROM embedding_meta WHERE key = 'provider'"
@@ -18,9 +27,16 @@ export function getEmbeddingMeta(db: Database): { provider: string; dims: number
         const dims = db.prepare(
             "SELECT value FROM embedding_meta WHERE key = 'dims'"
         ).get() as any;
+        const key = db.prepare(
+            "SELECT value FROM embedding_meta WHERE key = 'provider_key'"
+        ).get() as any;
 
         if (!provider || !dims) return null;
-        return { provider: provider.value, dims: Number(dims.value) };
+        return {
+            provider: provider.value,
+            dims: Number(dims.value),
+            providerKey: key?.value ?? 'local',
+        };
     } catch {
         return null;
     }
@@ -33,6 +49,7 @@ export function setEmbeddingMeta(db: Database, embedding: EmbeddingProvider): vo
     );
     upsert.run('provider', embedding.constructor?.name ?? 'unknown');
     upsert.run('dims', String(embedding.dims));
+    upsert.run('provider_key', providerKey(embedding));
     upsert.run('indexed_at', new Date().toISOString());
 }
 

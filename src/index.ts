@@ -74,6 +74,10 @@ export { cosineSimilarity, normalize } from './lib/math.ts';
 export { Qwen3Reranker } from './providers/rerankers/qwen3-reranker.ts';
 export type { Qwen3RerankerOptions } from './providers/rerankers/qwen3-reranker.ts';
 
+// Embedding resolver
+export { resolveEmbedding, providerKey } from './providers/embeddings/resolve.ts';
+export type { EmbeddingKey } from './providers/embeddings/resolve.ts';
+
 // Config
 export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 
