@@ -87,13 +87,8 @@ async function ensureShared() {
 }
 
 async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
-    const rp = targetRepo ?? defaultRepoPath;
-    if (!rp) {
-        throw new Error(
-            'No repository specified. Pass the `repo` parameter with the workspace path, ' +
-            'or set BRAINBANK_REPO environment variable.'
-        );
-    }
+    // Priority: explicit param > BRAINBANK_REPO env > auto-detect from cwd
+    const rp = targetRepo ?? defaultRepoPath ?? findRepoRoot(process.cwd());
     const resolved = rp.replace(/\/+$/, '');
 
     if (_pool.has(resolved)) {

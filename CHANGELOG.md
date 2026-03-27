@@ -21,6 +21,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Circular dep removed** — `searchDocs` callback replaced with `getDocsPlugin()` accessor in SearchAPI
 - **Internal renames** — `_applyReranking` → `_rerankResults`, `_pushLastChunk` → `_flushRemainder`, `flush` → `processPending`
 - **MCP server simplified** — removed `createEmbeddingProvider()` and `BRAINBANK_EMBEDDING` env var; embedding auto-resolves from DB
+- **MCP repo auto-detect** — `BRAINBANK_REPO` env var is now optional; falls back to `findRepoRoot(cwd)`
 
 ### Fixed
 - **`bm25!` crash** — non-null assertion replaced with safe `bm25?.search() ?? []` fallback
