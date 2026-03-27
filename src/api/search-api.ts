@@ -67,8 +67,8 @@ export class SearchAPI {
         collections?: Record<string, number>;
     }): Promise<SearchResult[]> {
         const cols  = options?.collections ?? {};
-        const codeK = cols.code ?? options?.codeK ?? 6;
-        const gitK  = cols.git  ?? options?.gitK  ?? 5;
+        const codeK = cols.code ?? options?.codeK ?? 20;
+        const gitK  = cols.git  ?? options?.gitK  ?? 8;
         const docsK = cols.docs ?? 8;
 
         const resultLists: SearchResult[][] = [];

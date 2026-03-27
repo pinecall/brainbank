@@ -60,13 +60,15 @@ export function stripFlags(argv: string[]): string[] {
 
 // ── Result Printer ──────────────────────────────────
 
-export function printResults(results: any[]): void {
-    if (results.length === 0) {
-        console.log(c.yellow('  No results found.'));
+export function printResults(results: any[], minScore = 0.70): void {
+    const filtered = results.filter(r => r.score >= minScore).slice(0, 20);
+
+    if (filtered.length === 0) {
+        console.log(c.yellow(`  No results above ${Math.round(minScore * 100)}% score.`));
         return;
     }
 
-    for (const r of results) {
+    for (const r of filtered) {
         const score = Math.round(r.score * 100);
 
         if (r.type === 'code') {
