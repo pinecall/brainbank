@@ -278,7 +278,7 @@ async function main() {
     let reranker: any;
     if (useReranker) {
         console.log(`${c.dim}  Loading Qwen3 reranker...${c.reset}`);
-        const { Qwen3Reranker } = await import('../../../src/search/vector/qwen3-reranker.ts');
+        const { Qwen3Reranker } = await import('../../../src/providers/rerankers/qwen3-reranker.ts');
         reranker = new Qwen3Reranker();
     }
 

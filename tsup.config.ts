@@ -8,7 +8,7 @@ export default defineConfig({
         'docs': 'src/indexers/docs/docs-plugin.ts',
         'notes': 'src/indexers/notes/notes-plugin.ts',
         'memory': 'src/indexers/memory/memory-plugin.ts',
-        'reranker': 'src/search/vector/qwen3-reranker.ts',
+        'reranker': 'src/providers/rerankers/qwen3-reranker.ts',
         'cli': 'src/cli/index.ts',
     },
     tsconfig: 'tsconfig.build.json',

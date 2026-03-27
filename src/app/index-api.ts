@@ -5,7 +5,7 @@
  * BrainBank delegates here after auto-initialization.
  */
 
-import type { IndexerRegistry } from './registry.ts';
+import type { IndexerRegistry } from '@/bootstrap/registry.ts';
 import type { IndexResult, StageProgressCallback, ProgressCallback } from '@/types.ts';
 import { isIndexable, isCollectionPlugin } from '@/indexers/base.ts';
 

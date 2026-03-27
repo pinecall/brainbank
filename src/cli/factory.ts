@@ -7,7 +7,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { BrainBank } from '@/core/orchestration/brainbank.ts';
+import { BrainBank } from '@/brainbank.ts';
 import { code } from '@/indexers/code/code-plugin.ts';
 import { git } from '@/indexers/git/git-plugin.ts';
 import { docs } from '@/indexers/docs/docs-plugin.ts';
@@ -153,7 +153,7 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
 async function setupProviders(brainOpts: Record<string, any>): Promise<void> {
     const rerankerFlag = getFlag('reranker');
     if (rerankerFlag === 'qwen3') {
-        const { Qwen3Reranker } = await import('@/search/vector/qwen3-reranker.ts');
+        const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');
         brainOpts.reranker = new Qwen3Reranker();
     }
 

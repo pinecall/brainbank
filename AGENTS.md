@@ -38,19 +38,19 @@ Layer 0 — Foundation (no deps, imported by everyone)
 └── db/              ← SQLite schema, database wrapper
 
 Layer 1 — Infrastructure (depends on Layer 0 only)
-├── providers/       ← Embeddings (local WASM, OpenAI), vector (HNSW)
-└── search/          ← SearchStrategy implementations: vector/, keyword/
+├── providers/       ← Embeddings (local WASM, OpenAI), vector (HNSW), rerankers
+└── search/          ← SearchStrategy implementations: vector/, keyword/, context-builder
 
 Layer 2 — Domain (depends on Layers 0-1)
-├── domain/          ← Core primitives: collection (KV store), context-builder
+├── domain/          ← Core primitives: collection (KV store)
 ├── indexers/        ← Plugins: code/, git/, docs/, memory/, notes/
 │   └── base.ts      ← Indexer interface (the plugin contract)
 └── services/        ← Reembed, watch
 
-Layer 3 — Orchestration (depends on everything below)
-├── core/
-│   ├── orchestration/   ← BrainBank class, registry, initializer, search-api, index-api
-│   └── domain/          ← Core primitives: collection (KV store), context-builder
+Layer 3 — Application (depends on everything below)
+├── brainbank.ts     ← The main orchestrator, sole root-level file
+├── bootstrap/       ← System wiring: initializer, registry
+├── app/             ← Use cases: search-api, index-api
 └── cli/             ← CLI commands and factory
 ```
 
@@ -66,11 +66,13 @@ packages/
 ```
 
 ### Key Files
-- `src/core/orchestration/brainbank.ts` — The main orchestrator. All public API lives here.
+- `src/brainbank.ts` — The main orchestrator. All public API lives here.
 - `src/indexers/base.ts` — The `Indexer` interface. Read this before writing any plugin.
-- `src/core/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
-- `src/core/domain/context-builder.ts` — Builds formatted context blocks from search results.
+- `src/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
+- `src/search/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
+- `src/bootstrap/initializer.ts` — Two-phase system initialization (Initializer class).
+- `src/app/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
 ## Code Conventions
@@ -122,8 +124,9 @@ import type { SearchResult } from '../../types.ts';
 - All plugins implement the `Indexer` interface from `src/indexers/base.ts`
 - Registered via `.use()` builder pattern on BrainBank
 
-- `src/` root only has `index.ts` (barrel) and `types.ts` (shared types)
-- `core/` contains domain primitives and orchestration wiring — never imported by layers 0-2
+- `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts` and `index.ts`)
+- `bootstrap/` handles system wiring — never imported by layers 0-2
+- `app/` defines use cases (search-api, index-api) — never imported by layers 0-2
 - `lib/` contains pure, stateless functions with zero side effects
 - `search/types.ts` defines `SearchStrategy` — all search backends implement it
 - `BrainBank` extends `EventEmitter` for progress/warning events (no callbacks)
@@ -152,7 +155,7 @@ console.log('indexing done');  // WRONG — use this.emit('progress', ...)
 
 // ❌ Importing from a higher layer
 // In lib/ (Layer 0):
-import { BrainBank } from '@/core/orchestration/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
+import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
 ```
 
 **Size limits:**

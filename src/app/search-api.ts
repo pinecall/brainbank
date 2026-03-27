@@ -8,9 +8,9 @@
  */
 
 import type { SearchStrategy } from '@/search/types.ts';
-import type { ContextBuilder } from '@/core/domain/context-builder.ts';
-import type { Collection } from '@/core/domain/collection.ts';
-import type { IndexerRegistry } from './registry.ts';
+import type { ContextBuilder } from '@/search/context-builder.ts';
+import type { Collection } from '@/domain/collection.ts';
+import type { IndexerRegistry } from '@/bootstrap/registry.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { rerank } from '@/search/vector/rerank.ts';

@@ -121,11 +121,11 @@ async function main() {
     const files = [
         'src/brainbank.ts',
         'src/indexers/code/code-chunker.ts',
-        'src/core/domain/collection.ts',
-        'src/orchestration/search-api.ts',
+        'src/domain/collection.ts',
+        'src/app/search-api.ts',
         'src/cli/index.ts',
         'src/indexers/code/code-indexer.ts',
-        'src/core/domain/context-builder.ts',
+        'src/app/context-builder.ts',
     ];
 
     // Step 1: Chunk
