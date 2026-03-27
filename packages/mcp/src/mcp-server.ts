@@ -61,7 +61,7 @@ async function createReranker() {
     const rerankerEnv = process.env.BRAINBANK_RERANKER ?? 'none';
     if (rerankerEnv === 'none') return undefined;
     if (rerankerEnv === 'qwen3') {
-        const { Qwen3Reranker } = await import('@brainbank/reranker');
+        const { Qwen3Reranker } = await import('brainbank/reranker');
         return new Qwen3Reranker();
     }
     return undefined;

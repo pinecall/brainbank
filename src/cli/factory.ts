@@ -153,7 +153,7 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
 async function setupProviders(brainOpts: Record<string, any>): Promise<void> {
     const rerankerFlag = getFlag('reranker');
     if (rerankerFlag === 'qwen3') {
-        const { Qwen3Reranker } = await import('@brainbank/reranker');
+        const { Qwen3Reranker } = await import('@/search/vector/qwen3-reranker.ts');
         brainOpts.reranker = new Qwen3Reranker();
     }
 

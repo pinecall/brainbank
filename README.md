@@ -11,7 +11,8 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 - **Pluggable embeddings** — local WASM (free), OpenAI, or Perplexity (standard & contextualized)
 - **Multi-repo** — index multiple repositories into one shared database
 - **Portable** — single `.brainbank/brainbank.db` file
-- **Optional packages** — [`@brainbank/memory`](#memory) (fact extraction + entity graph), [`@brainbank/reranker`](#reranker) (Qwen3 cross-encoder), [`@brainbank/mcp`](#mcp-server) (MCP server)
+- **Optional packages** — [`@brainbank/memory`](#memory) (fact extraction + entity graph), [`@brainbank/mcp`](#mcp-server) (MCP server)
+- **Built-in reranker** — `brainbank/reranker` (Qwen3-0.6B cross-encoder, opt-in)
 
 ![BrainBank Architecture](assets/architecture.png)
 
@@ -88,15 +89,14 @@ npm install brainbank
 | Package | When to install |
 |---------|----------------|
 | `@brainbank/memory` | Deterministic memory extraction + entity graph for LLM conversations |
-| `@brainbank/reranker` | Cross-encoder reranker (Qwen3-0.6B, ~640MB model) |
 | `@brainbank/mcp` | MCP server for AI tool integration |
 
 ```bash
 # Memory — automatic fact extraction & dedup for chatbots/agents
 npm install @brainbank/memory
 
-# Reranker — improves search ranking with local neural inference
-npm install @brainbank/reranker node-llama-cpp
+# Reranker — built-in, just install the runtime dependency
+npm install node-llama-cpp
 
 # MCP server — for Antigravity, Claude Desktop, etc.
 npm install @brainbank/mcp
@@ -668,7 +668,7 @@ The agent passes the `repo` parameter on each tool call based on the active work
 
 ```typescript
 import { BrainBank, OpenAIEmbedding } from 'brainbank';
-import { Qwen3Reranker } from '@brainbank/reranker';  // separate package
+import { Qwen3Reranker } from 'brainbank/reranker';  // built-in, requires node-llama-cpp
 
 const brain = new BrainBank({
   repoPath: '.',
@@ -777,7 +777,7 @@ The reranker runs local neural inference on every search result, which improves 
 
 ```typescript
 import { BrainBank } from 'brainbank';
-import { Qwen3Reranker } from '@brainbank/reranker';
+import { Qwen3Reranker } from 'brainbank/reranker';
 
 const brain = new BrainBank({
   reranker: new Qwen3Reranker(),  // ~640MB model, auto-downloaded on first use

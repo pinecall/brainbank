@@ -11,7 +11,7 @@
  * - Tokenizer-based truncation for oversized documents
  */
 
-import type { Reranker } from 'brainbank';
+import type { Reranker } from '@/types.ts';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -62,8 +62,10 @@ export class Qwen3Reranker implements Reranker {
 
         this._loadPromise = (async () => {
             try {
-                // Dynamic import — node-llama-cpp is an optional dependency
-                const { getLlama, resolveModelFile } = await import('node-llama-cpp');
+                // Dynamic import — node-llama-cpp is an optional peer dependency.
+                // String indirection prevents DTS from resolving the specifier at build time.
+                const llamaModule = 'node-llama-cpp';
+                const { getLlama, resolveModelFile } = await import(/* webpackIgnore: true */ llamaModule);
 
                 // Ensure cache directory exists
                 if (!existsSync(this._cacheDir)) {

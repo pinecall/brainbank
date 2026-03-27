@@ -8,8 +8,7 @@ export default defineConfig({
     sourcemap: true,
     clean: true,
     external: [
-        'brainbank', 'brainbank/code', 'brainbank/git', 'brainbank/docs',
-        '@brainbank/reranker',
+        'brainbank', 'brainbank/code', 'brainbank/git', 'brainbank/docs', 'brainbank/reranker',
         '@modelcontextprotocol/sdk', 'zod',
     ],
     esbuildOptions(options) { options.keepNames = true; },

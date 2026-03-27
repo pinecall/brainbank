@@ -213,7 +213,7 @@ async function main() {
     // Lazy-load reranker only when requested (downloads ~640MB model on first use)
     let reranker: any;
     if (useReranker) {
-        const { Qwen3Reranker } = await import('../../../packages/reranker/src/qwen3-reranker.ts');
+        const { Qwen3Reranker } = await import('../../../src/search/vector/qwen3-reranker.ts');
         reranker = new Qwen3Reranker();
     }
 

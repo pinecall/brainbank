@@ -2,27 +2,12 @@
  * Type declarations for separate @brainbank packages (dynamic imports).
  * 
  * IMPORTANT: These are manually maintained. If you change the public API
- * of @brainbank/memory, @brainbank/reranker, or @brainbank/mcp, update
- * the corresponding declarations here. The canonical source is each
- * package's own src/index.ts.
+ * of @brainbank/memory or @brainbank/mcp, update the corresponding
+ * declarations here. The canonical source is each package's own src/index.ts.
  * 
  * This file exists because these packages are not npm-linked during development.
  * Once they are published and installed as real dependencies, this file can be deleted.
  */
-
-declare module '@brainbank/reranker' {
-    export interface Qwen3RerankerOptions {
-        modelUri?: string;
-        cacheDir?: string;
-        contextSize?: number;
-    }
-    
-    export class Qwen3Reranker {
-        constructor(options?: Qwen3RerankerOptions);
-        rank(query: string, documents: string[]): Promise<number[]>;
-        close(): Promise<void>;
-    }
-}
 
 declare module '@brainbank/mcp' {
     // MCP server auto-starts on import — no exports needed
