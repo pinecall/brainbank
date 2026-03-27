@@ -70,6 +70,10 @@ export type { ReembedResult, ReembedOptions } from './services/reembed.ts';
 export type { WatchOptions, Watcher } from './services/watch.ts';
 export { cosineSimilarity, normalize } from './lib/math.ts';
 
+// Reranker
+export { Qwen3Reranker } from './providers/rerankers/qwen3-reranker.ts';
+export type { Qwen3RerankerOptions } from './providers/rerankers/qwen3-reranker.ts';
+
 // Config
 export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 

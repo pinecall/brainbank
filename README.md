@@ -5,14 +5,14 @@
 BrainBank gives LLMs a long-term memory that persists between sessions.
 
 - **All-in-one** — core + code + git + docs + CLI in a single `brainbank` package
-- **Pluggable indexers** — `.use()` only what you need (code, git, docs, or custom)
+- **Pluggable plugins** — `.use()` only what you need (code, git, docs, or custom)
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 - **Pluggable embeddings** — local WASM (free), OpenAI, or Perplexity (standard & contextualized)
 - **Multi-repo** — index multiple repositories into one shared database
 - **Portable** — single `.brainbank/brainbank.db` file
 - **Optional packages** — [`@brainbank/memory`](#memory) (fact extraction + entity graph), [`@brainbank/mcp`](#mcp-server) (MCP server)
-- **Built-in reranker** — `brainbank/reranker` (Qwen3-0.6B cross-encoder, opt-in)
+- **Optional reranker** — Qwen3-0.6B cross-encoder via `Qwen3Reranker` (opt-in)
 
 ![BrainBank Architecture](assets/architecture.png)
 
@@ -29,7 +29,7 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 | Infrastructure | **SQLite file** | Vector DB + cloud | Neo4j + cloud | LangGraph Platform |
 | LLM required to write | **No**¹ | Yes | Yes | Yes |
 | Code-aware | **19 AST-parsed languages (tree-sitter), git, co-edits** | ✗ | ✗ | ✗ |
-| Custom indexers | **`.use()` plugin system** | ✗ | ✗ | ✗ |
+| Custom plugins | **`.use()` plugin system** | ✗ | ✗ | ✗ |
 | Search | **Vector + BM25 + RRF** | Vector + graph² | Vector + BM25 + graph | Vector only |
 | Framework lock-in | **None** | Optional | Zep cloud | LangChain |
 | Portable | **Copy one file** | Tied to DB | Tied to cloud | Tied to platform |
@@ -51,12 +51,12 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 - [Quick Start](#quick-start)
 - [CLI](#cli)
 - [Programmatic API](#programmatic-api)
-  - [Indexers](#indexers)
+  - [Plugins](#plugins)
   - [Collections](#collections)
   - [Search](#search)
   - [Document Collections](#document-collections)
   - [Context Generation](#context-generation)
-  - [Custom Indexers](#custom-indexers)
+  - [Custom Plugins](#custom-plugins)
   - [AI Agent Integration](#ai-agent-integration)
   - [Examples](#examples)
   - [Watch Mode](#watch-mode)
@@ -95,7 +95,7 @@ npm install brainbank
 # Memory — automatic fact extraction & dedup for chatbots/agents
 npm install @brainbank/memory
 
-# Reranker — built-in, just install the runtime dependency
+# Reranker — built-in, install the runtime dependency to enable
 npm install node-llama-cpp
 
 # MCP server — for Antigravity, Claude Desktop, etc.
@@ -178,10 +178,10 @@ brainbank watch                             # Watch repo, auto re-index on save
 #   Watching /path/to/repo for changes...
 #   14:30:02 ✓ code: src/api.ts
 #   14:30:05 ✓ code: src/routes.ts
-#   14:30:08 ✓ csv: data/metrics.csv       ← custom indexer
+#   14:30:08 ✓ csv: data/metrics.csv       ← custom plugin
 ```
 
-> Watch mode monitors **code files** by default. [Custom indexers](#custom-indexers) that implement `watchPatterns()` and `onFileChange()` are automatically picked up — their name appears in the console output alongside the built-in `code` indexer. Git history and document collections are not affected by file-system changes and must be re-indexed explicitly with `brainbank index` / `brainbank docs`.
+> Watch mode monitors **code files** by default. [Custom plugins](#custom-plugins) that implement `watchPatterns()` and `onFileChange()` are automatically picked up — their name appears in the console output alongside the built-in `code` plugin. Git history and document collections are not affected by file-system changes and must be re-indexed explicitly with `brainbank index` / `brainbank docs`.
 
 ### Document Collections
 
@@ -235,11 +235,11 @@ brainbank serve                             # Start MCP server (stdio)
 
 Use BrainBank as a library in your TypeScript/Node.js project.
 
-### Indexers
+### Plugins
 
-BrainBank uses pluggable indexers. Register only what you need with `.use()`:
+BrainBank uses pluggable plugins. Register only what you need with `.use()`:
 
-| Indexer | Import | Description |
+| Plugin | Import | Description |
 |---------|--------|-------------|
 | `code` | `brainbank/code` | AST-aware code chunking via tree-sitter (19 languages) |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
@@ -251,7 +251,7 @@ import { code } from 'brainbank/code';
 import { git } from 'brainbank/git';
 import { docs } from 'brainbank/docs';
 
-// Pick only the indexers you need
+// Pick only the plugins you need
 const brain = new BrainBank({ repoPath: '.' })
   .use(code())
   .use(git())
@@ -302,7 +302,7 @@ Auto-re-index when files change:
 // API
 const watcher = brain.watch({
   debounceMs: 2000,
-  onIndex: (file, indexer) => console.log(`${indexer}: ${file}`),
+  onIndex: (file, plugin) => console.log(`${plugin}: ${file}`),
   onError: (err) => console.error(err.message),
 });
 
@@ -318,15 +318,15 @@ brainbank watch
 # 14:30:05 ✓ code: src/routes.ts
 ```
 
-#### Custom Indexer Watch
+#### Custom Plugin Watch
 
-Custom indexers can hook into watch mode by implementing `onFileChange` and `watchPatterns`:
+Custom plugins can hook into watch mode by implementing `onFileChange` and `watchPatterns`:
 
 ```typescript
-import type { Indexer, IndexerContext } from 'brainbank';
+import type { Plugin, PluginContext } from 'brainbank';
 
-function csvIndexer(): Indexer {
-  let ctx: IndexerContext;
+function csvPlugin(): Plugin {
+  let ctx: PluginContext;
 
   return {
     name: 'csv',
@@ -335,7 +335,7 @@ function csvIndexer(): Indexer {
       ctx = context;
     },
 
-    // Tell watch which files this indexer cares about
+    // Tell watch which files this plugin cares about
     watchPatterns() {
       return ['**/*.csv', '**/*.tsv'];
     },
@@ -357,7 +357,7 @@ function csvIndexer(): Indexer {
 
 const brain = new BrainBank({ dbPath: './brain.db' })
   .use(code())
-  .use(csvIndexer());
+  .use(csvPlugin());
 
 await brain.initialize();
 brain.watch(); // Now watches .ts, .py, etc. AND .csv, .tsv
@@ -424,16 +424,16 @@ const context = await brain.getContext('add rate limiting to the API', {
 // Returns: ## Relevant Code, ## Git History, ## Relevant Documents
 ```
 
-### Custom Indexers
+### Custom Plugins
 
-Implement the `Indexer` interface to build your own:
+Implement the `Plugin` interface to build your own:
 
 ```typescript
-import type { Indexer, IndexerContext } from 'brainbank';
+import type { Plugin, PluginContext } from 'brainbank';
 
-const myIndexer: Indexer = {
+const myPlugin: Plugin = {
   name: 'custom',
-  async initialize(ctx: IndexerContext) {
+  async initialize(ctx: PluginContext) {
     // ctx.db            — shared SQLite database
     // ctx.embedding     — shared embedding provider
     // ctx.collection()  — create dynamic collections
@@ -442,10 +442,10 @@ const myIndexer: Indexer = {
   },
 };
 
-brain.use(myIndexer);
+brain.use(myPlugin);
 ```
 
-#### Using custom indexers with the CLI
+#### Using custom plugins with the CLI
 
 Drop `.ts` files into `.brainbank/indexers/` — the CLI auto-discovers them:
 
@@ -457,11 +457,11 @@ Drop `.ts` files into `.brainbank/indexers/` — the CLI auto-discovers them:
     └── jira.ts
 ```
 
-Each file exports a default `Indexer`:
+Each file exports a default `Plugin`:
 
 ```typescript
 // .brainbank/indexers/slack.ts
-import type { Indexer } from 'brainbank';
+import type { Plugin } from 'brainbank';
 
 export default {
   name: 'slack',
@@ -469,14 +469,14 @@ export default {
     const msgs = ctx.collection('slack_messages');
     // ... fetch and index slack messages
   },
-} satisfies Indexer;
+} satisfies Plugin;
 ```
 
-That's it — all CLI commands automatically pick up your indexers:
+That's it — all CLI commands automatically pick up your plugins:
 
 ```bash
 brainbank index                             # runs code + git + docs + slack + jira
-brainbank stats                             # shows all indexers
+brainbank stats                             # shows all plugins
 brainbank kv search slack_messages "deploy"  # search slack data
 ```
 
@@ -494,18 +494,18 @@ export default {
 };
 ```
 
-Everything lives in `.brainbank/` — DB, config, and custom indexers:
+Everything lives in `.brainbank/` — DB, config, and custom plugins:
 
 ```
 .brainbank/
 ├── brainbank.db        # SQLite database (auto-created)
 ├── config.ts           # Optional project config
-└── indexers/           # Optional custom indexer files
+└── indexers/           # Optional custom plugin files
     ├── slack.ts
     └── jira.ts
 ```
 
-No folder and no config file? The CLI uses the built-in indexers (`code`, `git`, `docs`).
+No folder and no config file? The CLI uses the built-in plugins (`code`, `git`, `docs`).
 
 ---
 
@@ -556,19 +556,19 @@ Teach your AI coding agent to use BrainBank as persistent memory. Add an `AGENTS
 | **Cursor** | Add rules in `.cursor/rules` |
 | **MCP** (any agent) | See [MCP Server](#mcp-server) config below |
 
-#### Custom Indexer: Auto-Ingest Conversation Logs
+#### Custom Plugin: Auto-Ingest Conversation Logs
 
 For agents that produce structured logs (e.g. Antigravity's `brain/` directory), auto-index them:
 
 ```typescript
 // .brainbank/indexers/conversations.ts
-import type { Indexer, IndexerContext } from 'brainbank';
+import type { Plugin, PluginContext } from 'brainbank';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 export default {
   name: 'conversations',
-  async initialize(ctx: IndexerContext) {
+  async initialize(ctx: PluginContext) {
     const conversations = ctx.collection('conversations');
     const logsDir = path.join(ctx.config.repoPath, '.gemini/antigravity/brain');
     if (!fs.existsSync(logsDir)) return;
@@ -584,7 +584,7 @@ export default {
       });
     }
   },
-} satisfies Indexer;
+} satisfies Plugin;
 ```
 
 ```bash
@@ -663,7 +663,7 @@ The agent passes the `repo` parameter on each tool call based on the active work
 
 ```typescript
 import { BrainBank, OpenAIEmbedding } from 'brainbank';
-import { Qwen3Reranker } from 'brainbank/reranker';  // built-in, requires node-llama-cpp
+import { Qwen3Reranker } from 'brainbank';  // built-in, requires node-llama-cpp
 
 const brain = new BrainBank({
   repoPath: '.',
@@ -777,7 +777,7 @@ The reranker runs local neural inference on every search result, which improves 
 
 ```typescript
 import { BrainBank } from 'brainbank';
-import { Qwen3Reranker } from 'brainbank/reranker';
+import { Qwen3Reranker } from 'brainbank';
 
 const brain = new BrainBank({
   reranker: new Qwen3Reranker(),  // ~640MB model, auto-downloaded on first use
@@ -837,7 +837,7 @@ const brain = new BrainBank({ repoPath: '.' });
 brain.use(notes());
 await brain.initialize();
 
-const notesPlugin = brain.indexer('notes');
+const notesPlugin = brain.plugin('notes');
 
 // Store a conversation digest
 await notesPlugin.remember({
@@ -879,7 +879,7 @@ const brain = new BrainBank({ repoPath: '.' });
 brain.use(memory());
 await brain.initialize();
 
-const mem = brain.indexer('memory');
+const mem = brain.plugin('memory');
 
 // Record a learning pattern
 await mem.learn({
@@ -987,7 +987,7 @@ BrainBank can index multiple repositories into a **single shared database**. Thi
 
 ### How It Works
 
-When you point BrainBank at a directory that contains multiple Git repositories (subdirectories with `.git/`), the CLI **auto-detects** them and creates namespaced indexers:
+When you point BrainBank at a directory that contains multiple Git repositories (subdirectories with `.git/`), the CLI **auto-detects** them and creates namespaced plugins:
 
 ```bash
 ~/projects/
@@ -1021,9 +1021,9 @@ brainbank hsearch "cancel job confirmation" --repo ~/projects
 #   and shared utilities — all in one search.
 ```
 
-### Namespaced Indexers
+### Namespaced Plugins
 
-Each sub-repository gets its own namespaced indexer instances (e.g., `code:frontend`, `git:backend`). Same-type indexers share a single HNSW vector index for efficient memory usage and unified search.
+Each sub-repository gets its own namespaced plugin instances (e.g., `code:frontend`, `git:backend`). Same-type plugins share a single HNSW vector index for efficient memory usage and unified search.
 
 ### Programmatic API
 
@@ -1086,7 +1086,7 @@ For large classes (>80 lines), the chunker descends into the class body and extr
 
 All indexing is **incremental by default** — only new or changed content is processed:
 
-| Indexer | How it detects changes | What gets skipped |
+| Plugin | How it detects changes | What gets skipped |
 |---------|----------------------|-------------------|
 | **Code** | FNV-1a hash of file content | Unchanged files |
 | **Git** | Unique commit hash | Already-indexed commits |
@@ -1287,7 +1287,7 @@ PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to
 │                                                      │
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────────┐│
 │  │  Code   │ │   Git   │ │  Docs   │ │ Collection ││
-│  │ Indexer │ │ Indexer │ │ Indexer │ │ (dynamic)  ││
+│  │ Plugin  │ │ Indexer │ │ Indexer │ │ (dynamic)  ││
 │  └────┬────┘ └────┬────┘ └────┬────┘ └─────┬──────┘│
 │       │           │           │             │        │
 │  ┌────▼────┐ ┌────▼────┐ ┌────▼────┐ ┌─────▼──────┐│
@@ -1337,7 +1337,7 @@ Final results (sorted by blended score)
 
 ### Data Flow
 
-1. **Index** — Indexers parse files into chunks (tree-sitter AST for code, heading-based for docs)
+1. **Index** — Plugins parse files into chunks (tree-sitter AST for code, heading-based for docs)
 2. **Embed** — Each chunk gets a vector (local WASM or OpenAI)
 3. **Store** — Chunks + vectors → SQLite, vectors → HNSW index
 4. **Search** — Query → HNSW k-NN + BM25 keyword → RRF fusion → optional reranker
