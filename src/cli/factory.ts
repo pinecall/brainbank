@@ -11,14 +11,14 @@ import { BrainBank } from '@/brainbank.ts';
 import { code } from '@/indexers/code/code-plugin.ts';
 import { git } from '@/indexers/git/git-plugin.ts';
 import { docs } from '@/indexers/docs/docs-plugin.ts';
-import type { Indexer } from '@/indexers/base.ts';
+import type { Plugin } from '@/indexers/base.ts';
 import { c, getFlag } from './utils.ts';
 
 // ── Types ───────────────────────────────────────────
 
 interface BrainBankCliConfig {
     /** Custom indexers to register alongside built-in ones. */
-    indexers?: Indexer[];
+    indexers?: Plugin[];
     /** Override which built-in indexers to load. Default: ['code', 'git', 'docs'] */
     builtins?: ('code' | 'git' | 'docs')[];
     /** BrainBank constructor options. */
@@ -32,12 +32,12 @@ const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
 
 const NOT_LOADED = Symbol('not-loaded');
 let _configCache: BrainBankCliConfig | null | typeof NOT_LOADED = NOT_LOADED;
-let _folderIndexersCache: Indexer[] | typeof NOT_LOADED = NOT_LOADED;
+let _folderPluginsCache: Plugin[] | typeof NOT_LOADED = NOT_LOADED;
 
 /** Reset factory caches. Useful for tests that import this module multiple times. */
 export function resetFactoryCache(): void {
     _configCache = NOT_LOADED;
-    _folderIndexersCache = NOT_LOADED;
+    _folderPluginsCache = NOT_LOADED;
 }
 
 // ── Config Loader ───────────────────────────────────
@@ -67,17 +67,17 @@ async function loadConfig(): Promise<BrainBankCliConfig | null> {
     return null;
 }
 
-// ── Indexer Discovery ───────────────────────────────
+// ── Plugin Discovery ───────────────────────────────
 
 /** Auto-discover indexers from .brainbank/indexers/ folder. */
-async function discoverFolderIndexers(): Promise<Indexer[]> {
-    if (_folderIndexersCache !== NOT_LOADED) return _folderIndexersCache;
+async function discoverFolderPlugins(): Promise<Plugin[]> {
+    if (_folderPluginsCache !== NOT_LOADED) return _folderPluginsCache;
 
     const repoPath = getFlag('repo') ?? '.';
     const indexersDir = path.resolve(repoPath, '.brainbank', 'indexers');
 
     if (!fs.existsSync(indexersDir)) {
-        _folderIndexersCache = [];
+        _folderPluginsCache = [];
         return [];
     }
 
@@ -85,7 +85,7 @@ async function discoverFolderIndexers(): Promise<Indexer[]> {
         .filter(f => INDEXER_EXTENSIONS.some(ext => f.endsWith(ext)))
         .sort();
 
-    const indexers: Indexer[] = [];
+    const indexers: Plugin[] = [];
 
     for (const file of files) {
         const filePath = path.join(indexersDir, file);
@@ -94,16 +94,16 @@ async function discoverFolderIndexers(): Promise<Indexer[]> {
             const indexer = mod.default ?? mod;
 
             if (indexer && typeof indexer === 'object' && indexer.name) {
-                indexers.push(indexer as Indexer);
+                indexers.push(indexer as Plugin);
             } else {
-                console.error(c.yellow(`⚠ ${file}: must export a default Indexer with a 'name' property, skipping`));
+                console.error(c.yellow(`⚠ ${file}: must export a default Plugin with a 'name' property, skipping`));
             }
         } catch (err: any) {
             console.error(c.red(`Error loading indexer ${file}: ${err.message}`));
         }
     }
 
-    _folderIndexersCache = indexers;
+    _folderPluginsCache = indexers;
     return indexers;
 }
 
@@ -132,7 +132,7 @@ function detectGitSubdirs(parentPath: string): { name: string; path: string }[] 
 export async function createBrain(repoPath?: string): Promise<BrainBank> {
     const rp = repoPath ?? getFlag('repo') ?? '.';
     const config = await loadConfig();
-    const folderIndexers = await discoverFolderIndexers();
+    const folderIndexers = await discoverFolderPlugins();
 
     const brainOpts: Record<string, any> = { repoPath: rp, ...(config?.brainbank ?? {}) };
     await setupProviders(brainOpts);

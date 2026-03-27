@@ -5,12 +5,12 @@
  * BrainBank delegates here after auto-initialization.
  */
 
-import type { IndexerRegistry } from '@/bootstrap/registry.ts';
+import type { PluginRegistry } from '@/bootstrap/registry.ts';
 import type { IndexResult, StageProgressCallback, ProgressCallback } from '@/types.ts';
 import { isIndexable, isCollectionPlugin } from '@/indexers/base.ts';
 
 export interface IndexAPIDeps {
-    registry: IndexerRegistry;
+    registry: PluginRegistry;
     gitDepth: number;
     emit: (event: string, data: any) => void;
 }

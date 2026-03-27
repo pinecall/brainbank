@@ -8,14 +8,14 @@
  *   brain.use(docs());
  */
 
-import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { Plugin, PluginContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, DocumentCollection, SearchResult } from '@/types.ts';
 import { DocsIndexer } from './docs-indexer.ts';
 import { DocumentSearch } from './document-search.ts';
 
-class DocsPlugin implements Indexer {
+class DocsPlugin implements Plugin {
     readonly name = 'docs';
     hnsw!: HNSWIndex;
     indexer!: DocsIndexer;
@@ -23,7 +23,7 @@ class DocsPlugin implements Indexer {
     private _db!: Database;
     private _search!: DocumentSearch;
 
-    async initialize(ctx: IndexerContext): Promise<void> {
+    async initialize(ctx: PluginContext): Promise<void> {
         this._db = ctx.db;
         this.hnsw = await ctx.createHnsw();
         ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
@@ -135,6 +135,6 @@ class DocsPlugin implements Indexer {
 }
 
 /** Create a document collections plugin. */
-export function docs(): Indexer {
+export function docs(): Plugin {
     return new DocsPlugin();
 }

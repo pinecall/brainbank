@@ -14,7 +14,7 @@
  *     .use(code({ repoPath: './backend',  name: 'code:backend' }));
  */
 
-import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { Plugin, PluginContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { CodeWalker } from './code-walker.ts';
@@ -29,7 +29,7 @@ export interface CodePluginOptions {
     name?: string;
 }
 
-class CodePlugin implements Indexer {
+class CodePlugin implements Plugin {
     readonly name: string;
     private db!: Database;
     hnsw!: HNSWIndex;
@@ -40,7 +40,7 @@ class CodePlugin implements Indexer {
         this.name = opts.name ?? 'code';
     }
 
-    async initialize(ctx: IndexerContext): Promise<void> {
+    async initialize(ctx: PluginContext): Promise<void> {
         this.db = ctx.db;
         // Use shared HNSW so all code indexers (code, code:frontend, etc.) share one index
         const shared = await ctx.getOrCreateSharedHnsw('code');
@@ -78,6 +78,6 @@ class CodePlugin implements Indexer {
 }
 
 /** Create a code indexing plugin. */
-export function code(opts?: CodePluginOptions): Indexer {
+export function code(opts?: CodePluginOptions): Plugin {
     return new CodePlugin(opts);
 }

@@ -12,7 +12,7 @@
  *     .use(git({ repoPath: './backend',  name: 'git:backend' }));
  */
 
-import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { Plugin, PluginContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { GitIndexer } from './git-indexer.ts';
@@ -30,7 +30,7 @@ export interface GitPluginOptions {
     name?: string;
 }
 
-class GitPlugin implements Indexer {
+class GitPlugin implements Plugin {
     readonly name: string;
     private db!: Database;
     hnsw!: HNSWIndex;
@@ -42,7 +42,7 @@ class GitPlugin implements Indexer {
         this.name = opts.name ?? 'git';
     }
 
-    async initialize(ctx: IndexerContext): Promise<void> {
+    async initialize(ctx: PluginContext): Promise<void> {
         this.db = ctx.db;
         // Use shared HNSW so all git indexers share one index
         const shared = await ctx.getOrCreateSharedHnsw('git', 500_000);
@@ -97,6 +97,6 @@ class GitPlugin implements Indexer {
 }
 
 /** Create a git history plugin. */
-export function git(opts?: GitPluginOptions): Indexer {
+export function git(opts?: GitPluginOptions): Plugin {
     return new GitPlugin(opts);
 }

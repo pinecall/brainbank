@@ -1,10 +1,10 @@
 /**
- * BrainBank — Indexer System
+ * BrainBank — Plugin System
  * 
- * Indexers are pluggable strategies that scan external data sources
- * and push content into BrainBank. Built-in indexers handle code,
+ * Plugins are pluggable strategies that scan external data sources
+ * and push content into BrainBank. Built-in plugins handle code,
  * git, and docs. Third-party frameworks (LangChain, etc.)
- * can implement custom indexers.
+ * can implement custom plugins.
  * 
  *   import { BrainBank } from 'brainbank';
  *   import { code } from 'brainbank/indexers/code';
@@ -19,11 +19,11 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { ResolvedConfig, DocumentCollection } from '@/types.ts';
 import type { Collection } from '@/domain/collection.ts';
 
-// ── Indexer Context ────────────────────────────────
-// Provided to each indexer during initialization.
+// ── Plugin Context ────────────────────────────────
+// Provided to each plugin during initialization.
 
-export interface IndexerContext {
-    /** SQLite database (shared across all indexers). */
+export interface PluginContext {
+    /** SQLite database (shared across all plugins). */
     db: Database;
     /** Embedding provider (shared). */
     embedding: EmbeddingProvider;
@@ -39,43 +39,43 @@ export interface IndexerContext {
     collection(name: string): Collection;
 }
 
-// ── Core Indexer Interface ─────────────────────────
+// ── Core Plugin Interface ─────────────────────────
 // Minimal contract: name + initialize. All capabilities are expressed
 // via composed interfaces below.
 
-export interface Indexer {
-    /** Unique indexer name (e.g. 'code', 'git', 'docs'). */
+export interface Plugin {
+    /** Unique plugin name (e.g. 'code', 'git', 'docs'). */
     readonly name: string;
-    /** Initialize the indexer (create HNSW, load vectors, etc.). */
-    initialize(ctx: IndexerContext): Promise<void>;
-    /** Return stats for this indexer. */
+    /** Initialize the plugin (create HNSW, load vectors, etc.). */
+    initialize(ctx: PluginContext): Promise<void>;
+    /** Return stats for this plugin. */
     stats?(): Record<string, any>;
     /** Clean up resources. */
     close?(): void;
 }
 
 // ── Capability Interfaces ──────────────────────────
-// Implemented by indexers that support specific capabilities.
+// Implemented by plugins that support specific capabilities.
 // Use type guards below to check at runtime.
 
-/** Indexers that can scan and index content (code, git). */
-export interface IndexablePlugin extends Indexer {
+/** Plugins that can scan and index content (code, git). */
+export interface IndexablePlugin extends Plugin {
     index(options?: any): Promise<any>;
 }
 
-/** Indexers that can search indexed content (docs). */
-export interface SearchablePlugin extends Indexer {
+/** Plugins that can search indexed content (docs). */
+export interface SearchablePlugin extends Plugin {
     search(query: string, options?: any): Promise<SearchResult[]>;
 }
 
-/** Indexers that support file watch mode. */
-export interface WatchablePlugin extends Indexer {
+/** Plugins that support file watch mode. */
+export interface WatchablePlugin extends Plugin {
     onFileChange(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
     watchPatterns(): string[];
 }
 
-/** Indexers that manage document collections. */
-export interface CollectionPlugin extends Indexer {
+/** Plugins that manage document collections. */
+export interface CollectionPlugin extends Plugin {
     addCollection(collection: DocumentCollection): void;
     removeCollection(name: string): void;
     listCollections(): DocumentCollection[];
@@ -88,24 +88,30 @@ export interface CollectionPlugin extends Indexer {
 
 // ── Type Guards ────────────────────────────────────
 
-/** Check if an indexer can scan/index content. */
-export function isIndexable(i: Indexer): i is IndexablePlugin {
+/** Check if a plugin can scan/index content. */
+export function isIndexable(i: Plugin): i is IndexablePlugin {
     return typeof (i as IndexablePlugin).index === 'function';
 }
 
-/** Check if an indexer can search content. */
-export function isSearchable(i: Indexer): i is SearchablePlugin {
+/** Check if a plugin can search content. */
+export function isSearchable(i: Plugin): i is SearchablePlugin {
     return typeof (i as SearchablePlugin).search === 'function';
 }
 
-/** Check if an indexer supports file watch mode. */
-export function isWatchable(i: Indexer): i is WatchablePlugin {
+/** Check if a plugin supports file watch mode. */
+export function isWatchable(i: Plugin): i is WatchablePlugin {
     return typeof (i as WatchablePlugin).onFileChange === 'function'
         && typeof (i as WatchablePlugin).watchPatterns === 'function';
 }
 
-/** Check if an indexer manages document collections. */
-export function isCollectionPlugin(i: Indexer): i is CollectionPlugin {
+/** Check if a plugin manages document collections. */
+export function isCollectionPlugin(i: Plugin): i is CollectionPlugin {
     return typeof (i as CollectionPlugin).addCollection === 'function'
         && typeof (i as CollectionPlugin).listCollections === 'function';
 }
+
+// ── Deprecated Aliases (backward compat) ──────────
+/** @deprecated Use `Plugin` instead. */
+export type Indexer = Plugin;
+/** @deprecated Use `PluginContext` instead. */
+export type IndexerContext = PluginContext;

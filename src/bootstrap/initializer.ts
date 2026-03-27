@@ -16,10 +16,10 @@ import { VectorSearch } from '@/search/vector/vector-search.ts';
 import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
 import { setEmbeddingMeta, detectProviderMismatch } from '@/services/embedding-meta.ts';
-import type { IndexerRegistry } from './registry.ts';
+import type { PluginRegistry } from './registry.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
-import type { IndexerContext } from '@/indexers/base.ts';
+import type { PluginContext } from '@/indexers/base.ts';
 
 // ── Result types ─────────────────────────────────────
 
@@ -86,7 +86,7 @@ export class Initializer {
     /** Phase 2: load vectors, run indexers, build search layer. */
     async late(
         earlyResult: EarlyInit,
-        registry: IndexerRegistry,
+        registry: PluginRegistry,
         sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
         kvVecs: Map<number, Float32Array>,
         getCollection: (name: string) => Collection,
@@ -104,7 +104,7 @@ export class Initializer {
             }
         }
 
-        const ctx = this._buildIndexerContext(db, embedding, sharedHnsw, skipVectorLoad, getCollection);
+        const ctx = this._buildPluginContext(db, embedding, sharedHnsw, skipVectorLoad, getCollection);
 
         for (const mod of registry.all) {
             await mod.initialize(ctx);
@@ -115,14 +115,14 @@ export class Initializer {
         return this._buildSearchLayer(db, embedding, registry, sharedHnsw);
     }
 
-    /** Build the IndexerContext passed to each plugin's initialize(). */
-    private _buildIndexerContext(
+    /** Build the PluginContext passed to each plugin's initialize(). */
+    private _buildPluginContext(
         db: Database,
         embedding: EmbeddingProvider,
         sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
         skipVectorLoad: boolean,
         getCollection: (name: string) => Collection,
-    ): IndexerContext {
+    ): PluginContext {
         const { _config: config } = this;
         return {
             db,
@@ -175,7 +175,7 @@ export class Initializer {
     private _buildSearchLayer(
         db: Database,
         embedding: EmbeddingProvider,
-        registry: IndexerRegistry,
+        registry: PluginRegistry,
         sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
     ): LateInit {
         const { _config: config } = this;

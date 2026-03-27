@@ -67,7 +67,7 @@ packages/
 
 ### Key Files
 - `src/brainbank.ts` — The main orchestrator. All public API lives here.
-- `src/indexers/base.ts` — The `Indexer` interface. Read this before writing any plugin.
+- `src/indexers/base.ts` — The `Plugin` interface. Read this before writing any plugin.
 - `src/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
 - `src/search/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
@@ -108,7 +108,7 @@ import { reciprocalRankFusion } from '@/lib/rrf.ts';
 
 // ✅ Correct — same directory with ./
 import { ContextBuilder } from './context-builder.ts';
-import type { IndexerRegistry } from './registry.ts';
+import type { PluginRegistry } from './registry.ts';
 
 // ❌ WRONG — never use ../
 import { Database } from '../db/database.ts';
@@ -120,8 +120,8 @@ import type { SearchResult } from '../../types.ts';
 - Example: `BrainBank: Not initialized. Call await brain.initialize() before search().`
 
 ### Plugin Pattern
-- Factory function exports: `export function code(opts): Indexer`
-- All plugins implement the `Indexer` interface from `src/indexers/base.ts`
+- Factory function exports: `export function code(opts): Plugin`
+- All plugins implement the `Plugin` interface from `src/indexers/base.ts`
 - Registered via `.use()` builder pattern on BrainBank
 
 - `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts` and `index.ts`)

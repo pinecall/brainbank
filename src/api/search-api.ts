@@ -10,7 +10,7 @@
 import type { SearchStrategy } from '@/search/types.ts';
 import type { ContextBuilder } from '@/search/context-builder.ts';
 import type { Collection } from '@/domain/collection.ts';
-import type { IndexerRegistry } from '@/bootstrap/registry.ts';
+import type { PluginRegistry } from '@/bootstrap/registry.ts';
 import type { CollectionPlugin } from '@/indexers/base.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
@@ -20,7 +20,7 @@ export interface SearchAPIDeps {
     search?:         SearchStrategy;
     bm25?:           SearchStrategy;
     contextBuilder?: ContextBuilder;
-    registry:        IndexerRegistry;
+    registry:        PluginRegistry;
     config:          ResolvedConfig;
     getDocsPlugin(): CollectionPlugin | undefined;
     collection(name: string): Collection;

@@ -20,7 +20,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isSupported, isIgnoredDir, isIgnoredFile } from '@/indexers/languages.ts';
-import type { Indexer } from '@/indexers/base.ts';
+import type { Plugin } from '@/indexers/base.ts';
 import { isWatchable } from '@/indexers/base.ts';
 
 // ── Types ───────────────────────────────────────────
@@ -55,7 +55,7 @@ export interface Watcher {
  */
 export function createWatcher(
     reindexFn: () => Promise<void>,
-    indexers: Map<string, Indexer>,
+    indexers: Map<string, Plugin>,
     repoPath: string,
     options: WatchOptions = {},
 ): Watcher {
@@ -72,7 +72,7 @@ export function createWatcher(
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     // Collect custom watch patterns from indexers
-    const customPatterns: { indexer: Indexer; patterns: string[] }[] = [];
+    const customPatterns: { indexer: Plugin; patterns: string[] }[] = [];
     for (const indexer of indexers.values()) {
         if (isWatchable(indexer)) {
             customPatterns.push({ indexer, patterns: indexer.watchPatterns() });
@@ -80,7 +80,7 @@ export function createWatcher(
     }
 
     // Check if a file matches any custom indexer pattern
-    function matchCustomIndexer(filePath: string): Indexer | null {
+    function matchCustomPlugin(filePath: string): Plugin | null {
         const rel = path.relative(repoPath, filePath);
         for (const { indexer, patterns } of customPatterns) {
             for (const pattern of patterns) {
@@ -124,7 +124,7 @@ export function createWatcher(
                 const absPath = path.resolve(repoPath, filePath);
 
                 // Try custom indexers first
-                const customIndexer = matchCustomIndexer(absPath);
+                const customIndexer = matchCustomPlugin(absPath);
                 if (customIndexer && isWatchable(customIndexer)) {
                     try {
                         const handled = await customIndexer.onFileChange(absPath, detectEvent(absPath));
@@ -187,7 +187,7 @@ export function createWatcher(
         if (isSupported(filename)) return true;
 
         // Accept files matching custom indexer patterns
-        if (matchCustomIndexer(path.resolve(repoPath, filename))) return true;
+        if (matchCustomPlugin(path.resolve(repoPath, filename))) return true;
 
         return false;
     }

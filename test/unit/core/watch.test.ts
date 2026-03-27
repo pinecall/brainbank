@@ -11,7 +11,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createWatcher } from '../../../src/services/watch.ts';
-import type { Indexer, WatchablePlugin } from '../../../src/indexers/base.ts';
+import type { Plugin, WatchablePlugin } from '../../../src/indexers/base.ts';
 
 export const name = 'Watch Mode';
 
@@ -41,7 +41,7 @@ export const tests = {
         const indexedFiles: string[] = [];
 
         // Custom indexer that watches .csv files
-        const csvIndexer: WatchablePlugin = {
+        const csvPlugin: WatchablePlugin = {
             name: 'csv',
             async initialize() {},
             watchPatterns() { return ['**/*.csv']; },
@@ -51,7 +51,7 @@ export const tests = {
             },
         };
 
-        const indexers = new Map<string, Indexer>([['csv', csvIndexer]]);
+        const indexers = new Map<string, Plugin>([['csv', csvPlugin]]);
         let reindexCalled = false;
 
         const watcher = createWatcher(
@@ -206,7 +206,7 @@ export const tests = {
         const dir = tmpWatchDir('reindex');
         const indexed: { path: string; event: string }[] = [];
 
-        const customIndexer: WatchablePlugin = {
+        const customPlugin: WatchablePlugin = {
             name: 'json-data',
             async initialize() {},
             watchPatterns() { return ['**/*.json']; },
@@ -216,7 +216,7 @@ export const tests = {
             },
         };
 
-        const indexers = new Map<string, Indexer>([['json-data', customIndexer]]);
+        const indexers = new Map<string, Plugin>([['json-data', customPlugin]]);
 
         const watcher = createWatcher(
             async () => {},

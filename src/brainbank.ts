@@ -2,7 +2,7 @@
  * BrainBank — Main Orchestrator
  *
  * Thin facade that composes four services:
- *   IndexerRegistry  — registration + lookup
+ *   PluginRegistry   — registration + lookup
  *   Initializer      — two-phase startup (earlyInit / lateInit)
  *   SearchAPI        — all search + context logic
  *   IndexAPI         — code / git / docs indexing orchestration
@@ -16,14 +16,14 @@ import { resolveConfig } from '@/config/defaults.ts';
 import { Database } from '@/db/database.ts';
 import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { Collection } from '@/domain/collection.ts';
-import { IndexerRegistry } from '@/bootstrap/registry.ts';
+import { PluginRegistry } from '@/bootstrap/registry.ts';
 import { Initializer } from '@/bootstrap/initializer.ts';
 import { SearchAPI } from '@/api/search-api.ts';
 import { IndexAPI } from '@/api/index-api.ts';
 import { reembedAll } from '@/services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
-import type { Indexer, CollectionPlugin } from '@/indexers/base.ts';
+import type { Plugin, CollectionPlugin } from '@/indexers/base.ts';
 import { isCollectionPlugin } from '@/indexers/base.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
@@ -37,7 +37,7 @@ export class BrainBank extends EventEmitter {
     private _config: ResolvedConfig;
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
-    private _registry   = new IndexerRegistry();
+    private _registry   = new PluginRegistry();
     private _searchAPI?: SearchAPI;
     private _indexAPI?:  IndexAPI;
     private _initialized  = false;
@@ -57,28 +57,34 @@ export class BrainBank extends EventEmitter {
         this._config = resolveConfig(config);
     }
 
-    // ── Indexer registration ─────────────────────────
+    // ── Plugin registration ──────────────────────────
 
     /**
-     * Register an indexer. Chainable.
+     * Register a plugin. Chainable.
      *
      *   brain.use(code({ repoPath: '.' })).use(docs());
      */
-    use(indexer: Indexer): this {
+    use(plugin: Plugin): this {
         if (this._initialized)
-            throw new Error(`BrainBank: Cannot add indexer '${indexer.name}' after initialization. Call .use() before any operations.`);
-        this._registry.register(indexer);
+            throw new Error(`BrainBank: Cannot add plugin '${plugin.name}' after initialization. Call .use() before any operations.`);
+        this._registry.register(plugin);
         return this;
     }
 
-    /** Get the list of registered indexer names. */
+    /** Get the list of registered plugin names. */
+    get plugins(): string[]                    { return this._registry.names; }
+
+    /** @deprecated Use `plugins` instead. */
     get indexers(): string[]                   { return this._registry.names; }
 
-    /** Check if an indexer is loaded. Also matches type prefix (e.g. 'code' matches 'code:frontend'). */
+    /** Check if a plugin is loaded. Also matches type prefix (e.g. 'code' matches 'code:frontend'). */
     has(name: string): boolean                 { return this._registry.has(name); }
 
-    /** Get an indexer instance. Throws if not loaded. */
-    indexer<T extends Indexer = Indexer>(n: string): T { return this._registry.get<T>(n); }
+    /** Get a plugin instance. Throws if not loaded. */
+    plugin<T extends Plugin = Plugin>(n: string): T { return this._registry.get<T>(n); }
+
+    /** @deprecated Use `plugin()` instead. */
+    indexer<T extends Plugin = Plugin>(n: string): T { return this.plugin<T>(n); }
 
     // ── Initialization ───────────────────────────────
 
@@ -325,14 +331,14 @@ export class BrainBank extends EventEmitter {
     /** Get git history for a specific file. */
     async fileHistory(filePath: string, limit = 20): Promise<Record<string, unknown>[]> {
         await this.initialize();
-        const gitPlugin = this.indexer('git') as Indexer & { fileHistory(f: string, l: number): Record<string, unknown>[] };
+        const gitPlugin = this.plugin('git') as Plugin & { fileHistory(f: string, l: number): Record<string, unknown>[] };
         return gitPlugin.fileHistory(filePath, limit);
     }
 
     /** Get co-edit suggestions for a file. */
     coEdits(filePath: string, limit = 5): CoEditSuggestion[] {
         this._requireInit('coEdits');
-        const gitPlugin = this.indexer('git') as Indexer & { suggestCoEdits(f: string, l: number): CoEditSuggestion[] };
+        const gitPlugin = this.plugin('git') as Plugin & { suggestCoEdits(f: string, l: number): CoEditSuggestion[] };
         return gitPlugin.suggestCoEdits(filePath, limit);
     }
 

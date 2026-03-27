@@ -8,7 +8,7 @@
  *   brain.use(memory());
  */
 
-import type { Indexer, IndexerContext } from '@/indexers/base.ts';
+import type { Plugin, PluginContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { PatternStore } from './pattern-store.ts';
@@ -16,7 +16,7 @@ import { Consolidator } from './consolidator.ts';
 import { PatternDistiller } from './pattern-distiller.ts';
 import type { LearningPattern, DistilledStrategy } from '@/types.ts';
 
-class MemoryPlugin implements Indexer {
+class MemoryPlugin implements Plugin {
     readonly name = 'memory';
     hnsw!: HNSWIndex;
     patternStore!: PatternStore;
@@ -25,7 +25,7 @@ class MemoryPlugin implements Indexer {
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
 
-    async initialize(ctx: IndexerContext): Promise<void> {
+    async initialize(ctx: PluginContext): Promise<void> {
         this._db = ctx.db;
         this.hnsw = await ctx.createHnsw(100_000);
         ctx.loadVectors('memory_vectors', 'pattern_id', this.hnsw, this.vecCache);
@@ -78,6 +78,6 @@ class MemoryPlugin implements Indexer {
 }
 
 /** Create an agent memory plugin. */
-export function memory(): Indexer {
+export function memory(): Plugin {
     return new MemoryPlugin();
 }
