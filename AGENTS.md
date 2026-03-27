@@ -48,7 +48,7 @@ Layer 2 — Domain (depends on Layers 0-1)
 
 Layer 3 — Orchestration (depends on everything below)
 ├── brainbank.ts     ← THE main orchestrator, sole root-level file
-├── core/            ← Internal orchestration: collection, search-api,
+├── orchestration/   ← Internal orchestration: collection, search-api,
 │                      context-builder, initializer, index-api, registry
 └── cli/             ← CLI commands and factory
 ```
@@ -63,7 +63,7 @@ packages/
 ### Key Files
 - `src/brainbank.ts` — The main orchestrator. All public API lives here.
 - `src/indexers/base.ts` — The `Indexer` interface. Read this before writing any plugin.
-- `src/core/collection.ts` — Universal KV store with hybrid search. Core primitive.
+- `src/orchestration/collection.ts` — Universal KV store with hybrid search. Core primitive.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `src/packages.d.ts` — Type declarations for `@brainbank/*` packages (reranker, memory, mcp).
 
@@ -118,7 +118,7 @@ import type { SearchResult } from '../../types.ts';
 
 ### Architecture Rules
 - `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts`, `index.ts`, `packages.d.ts`)
-- `core/` is internal orchestration — never imported by layers 0-2
+- `orchestration/` is internal orchestration — never imported by layers 0-2
 - `lib/` contains pure, stateless functions with zero side effects
 - `search/types.ts` defines `SearchStrategy` — all search backends implement it
 - `BrainBank` extends `EventEmitter` for progress/warning events (no callbacks)

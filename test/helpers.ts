@@ -13,7 +13,7 @@ import { NoteStore } from '../src/indexers/notes/note-store.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai-embedding.ts';
 import { PerplexityEmbedding, decodeBase64Int8 } from '../src/providers/embeddings/perplexity-embedding.ts';
 import { PerplexityContextEmbedding } from '../src/providers/embeddings/perplexity-context-embedding.ts';
-import { Collection } from '../src/core/collection.ts';
+import { Collection } from '../src/orchestration/collection.ts';
 import { CodeChunker } from '../src/indexers/code/code-chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';

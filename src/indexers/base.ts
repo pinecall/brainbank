@@ -17,7 +17,7 @@ import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { ResolvedConfig, DocumentCollection } from '@/types.ts';
-import type { Collection } from '@/core/collection.ts';
+import type { Collection } from '@/orchestration/collection.ts';
 
 // ── Indexer Context ────────────────────────────────
 // Provided to each indexer during initialization.
