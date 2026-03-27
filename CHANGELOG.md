@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-03-27
+
 ### Added
 - **Embedding auto-resolve** — stores `provider_key` in DB; on startup, auto-resolves the correct provider without env vars. Priority: explicit config > stored DB key > local default
 - **`resolveEmbedding(key)` + `providerKey(provider)`** — exported from barrel for programmatic use
