@@ -22,20 +22,15 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 
 BrainBank is a **code-aware knowledge engine** — not just a memory layer. It parses your codebase with tree-sitter ASTs, indexes git history and co-edit patterns, and makes everything searchable with hybrid vector + keyword retrieval. Optional packages add conversational memory (`@brainbank/memory`) and MCP integration (`@brainbank/mcp`).
 
-Existing tools solve only a piece of the puzzle:
-
-| | **BrainBank** | **LangChain Retrievers** | **Cursor/GitHub Copilot** | **mem0 / Zep** |
+| | **BrainBank** | **QMD** | **mem0 / Zep** | **LangChain** |
 |---|:---:|:---:|:---:|:---:|
-| Code-aware (AST) | **19 languages via tree-sitter** | ✗ | ✗ (heuristic) | ✗ |
-| Git history + co-edits | **Yes** | ✗ | ✗ | ✗ |
-| Hybrid search (vector + BM25) | **RRF fusion** | Vector only | Proprietary | Vector + graph |
-| Custom plugins | **`.use()` builder pattern** | ✗ | ✗ | ✗ |
-| Conversational memory | **`@brainbank/memory`** (opt-in) | ✗ | ✗ | **Core feature** |
-| Infrastructure | **SQLite file** | Vector DB required | SaaS | Vector DB + cloud |
-| Framework lock-in | **None** | LangChain | IDE-specific | Optional |
-| Portable | **Copy one file** | Tied to DB | Tied to IDE | Tied to cloud |
+| Code-aware (AST) | **19 languages** (tree-sitter) | ✗ | ✗ | ✗ |
+| Git + co-edits | ✓ | ✗ | ✗ | ✗ |
+| Search | **Vector + BM25 + RRF** | Vector + reranker | Vector + graph | Vector only |
+| Infra | **SQLite file** | Local GGUF | Vector DB + cloud | Vector DB |
+| Plugins | **`.use()` builder** | ✗ | ✗ | ✗ |
 
-> mem0 and Zep are great at **conversational memory** — LLM-powered fact extraction and dedup. BrainBank's `@brainbank/memory` package does the same thing, but BrainBank itself goes far beyond memory: **AST-parsed code indexing, git history, co-edit analysis, document collections, and a plugin system**.
+> BrainBank [outperforms QMD by +18pp R@5](./BENCHMARKS.md) on retrieval quality. mem0/Zep focus on **conversational memory** — BrainBank's `@brainbank/memory` covers that too, but the core engine adds code indexing, git history, co-edits, and a plugin system on top.
 
 **In short:**
 - **Code-first** — the only knowledge layer that understands code structure (tree-sitter), git history, and file co-edit relationships
