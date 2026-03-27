@@ -650,17 +650,12 @@ The agent passes the `repo` parameter on each tool call based on the active work
 
 | Tool | Description |
 |------|-------------|
-| `brainbank_hybrid_search` | Best quality: vector + BM25 + reranker |
-| `brainbank_search` | Semantic vector search |
-| `brainbank_keyword_search` | Instant BM25 full-text |
-| `brainbank_context` | Formatted context for a task |
-| `brainbank_index` | Trigger code/git indexing |
-| `brainbank_stats` | Index statistics |
-| `brainbank_history` | Git history for a file |
-| `brainbank_coedits` | Files that change together |
-| `brainbank_collection_add` | Add item to a KV collection |
-| `brainbank_collection_search` | Search a KV collection |
-| `brainbank_collection_trim` | Trim a KV collection |
+| `brainbank_search` | Unified search — `mode: hybrid` (default), `vector`, or `keyword` |
+| `brainbank_context` | Formatted context block for a task (code + git + co-edits) |
+| `brainbank_index` | Trigger incremental code/git/docs indexing |
+| `brainbank_stats` | Index statistics (files, commits, chunks, collections) |
+| `brainbank_history` | Git history for a specific file |
+| `brainbank_collection` | KV collection ops — `action: add`, `search`, or `trim` |
 
 ---
 
@@ -754,7 +749,12 @@ Real benchmarks on a production NestJS backend (1052 code chunks + git history):
 
 ### Reranker
 
-BrainBank includes an optional cross-encoder reranker using **Qwen3-Reranker-0.6B** via `node-llama-cpp`. It runs 100% locally — no API keys needed. The reranker is **disabled by default**.
+BrainBank ships with an optional cross-encoder reranker using **Qwen3-Reranker-0.6B** via `node-llama-cpp`. It runs 100% locally — no API keys needed. The reranker is **disabled by default**.
+
+```bash
+# Only requirement — the LLM runtime (model auto-downloads on first use)
+npm install node-llama-cpp
+```
 
 #### When to Use It
 
