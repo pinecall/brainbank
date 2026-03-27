@@ -102,6 +102,35 @@ npm install node-llama-cpp
 npm install @brainbank/mcp
 ```
 
+### Tree-Sitter Grammars
+
+BrainBank uses [tree-sitter](https://tree-sitter.github.io/) for AST-aware code chunking. **JavaScript and TypeScript grammars are included by default.** Other languages require installing the corresponding grammar package:
+
+```bash
+# Install only the grammars you need
+npm install tree-sitter-python tree-sitter-go tree-sitter-rust
+```
+
+If you index a file whose grammar isn't installed, BrainBank will throw a clear error:
+
+```
+BrainBank: Grammar 'tree-sitter-python' is not installed. Run: npm install tree-sitter-python
+```
+
+<details>
+<summary>All available grammars (19 languages)</summary>
+
+| Category | Packages |
+|----------|----------|
+| **Included** | `tree-sitter-javascript`, `tree-sitter-typescript` |
+| Web | `tree-sitter-html`, `tree-sitter-css` |
+| Systems | `tree-sitter-go`, `tree-sitter-rust`, `tree-sitter-c`, `tree-sitter-cpp`, `tree-sitter-swift` |
+| JVM | `tree-sitter-java`, `tree-sitter-kotlin`, `tree-sitter-scala` |
+| Scripting | `tree-sitter-python`, `tree-sitter-ruby`, `tree-sitter-php`, `tree-sitter-lua`, `tree-sitter-bash`, `tree-sitter-elixir` |
+| .NET | `tree-sitter-c-sharp` |
+
+</details>
+
 ---
 
 ## Quick Start
