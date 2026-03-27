@@ -19,10 +19,7 @@ Add to `~/.gemini/antigravity/mcp_config.json`:
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"],
-      "env": {
-        "BRAINBANK_EMBEDDING": "openai"
-      }
+      "args": ["-y", "@brainbank/mcp"]
     }
   }
 }
@@ -37,11 +34,7 @@ Add to Claude Desktop settings → Developer → MCP Servers:
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"],
-      "env": {
-        "BRAINBANK_EMBEDDING": "openai",
-        "OPENAI_API_KEY": "sk-..."
-      }
+      "args": ["-y", "@brainbank/mcp"]
     }
   }
 }
@@ -56,10 +49,7 @@ Add to `.cursor/mcp.json` in your project:
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"],
-      "env": {
-        "BRAINBANK_EMBEDDING": "openai"
-      }
+      "args": ["-y", "@brainbank/mcp"]
     }
   }
 }
@@ -71,16 +61,31 @@ Add to `.cursor/mcp.json` in your project:
 brainbank serve
 ```
 
+## Zero-Config
+
+The MCP server auto-detects everything:
+
+- **Repo path** — from `repo` tool param > `BRAINBANK_REPO` env > `findRepoRoot(cwd)`
+- **Embedding provider** — from `provider_key` stored in DB (set during `brainbank index --embedding openai`)
+
+Index your repo once with the CLI to set up the embedding provider:
+
+```bash
+brainbank index . --embedding openai   # stores provider_key=openai in DB
+```
+
+After that, the MCP server auto-resolves the correct provider — no env vars needed.
+
 ## Environment Variables
+
+All optional — the server works without any env vars.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BRAINBANK_REPO` | Default repo path (fallback if `repo` param not provided) | — |
-| `BRAINBANK_EMBEDDING` | Embedding provider: `local`, `openai`, `perplexity`, `perplexity-context` | `local` |
-| `OPENAI_API_KEY` | Required when using `openai` embeddings | — |
-| `PERPLEXITY_API_KEY` | Required when using `perplexity` or `perplexity-context` embeddings | — |
-
-> The agent passes the `repo` parameter per tool call based on the active workspace — no hardcoded paths needed.
+| `BRAINBANK_REPO` | Fallback repo path (if `repo` param not provided and no `.git/` found) | auto-detect from cwd |
+| `BRAINBANK_RERANKER` | Reranker: `none`, `qwen3` | `none` |
+| `OPENAI_API_KEY` | Required when embedding provider is `openai` | — |
+| `PERPLEXITY_API_KEY` | Required when embedding provider is `perplexity` or `perplexity-context` | — |
 
 ## Tools (6)
 

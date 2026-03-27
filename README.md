@@ -619,32 +619,25 @@ Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Deskto
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"],
-      "env": {
-        "BRAINBANK_EMBEDDING": "openai"
-      }
+      "args": ["-y", "@brainbank/mcp"]
     }
   }
 }
 ```
 
-The agent passes the `repo` parameter on each tool call based on the active workspace — no hardcoded paths needed.
+**Zero-config.** The MCP server auto-detects:
+- **Repo path** — from `repo` tool param > `BRAINBANK_REPO` env > `findRepoRoot(cwd)`
+- **Embedding provider** — from `provider_key` stored in the DB (set during `brainbank index --embedding openai`)
 
-> Set `BRAINBANK_EMBEDDING` to `openai`, `perplexity`, or `perplexity-context` for higher quality search. Omit to use the free local WASM embeddings.
+> [!TIP]
+> Index your repo once with the CLI to set up the embedding provider:
+> ```bash
+> brainbank index . --embedding openai   # stores provider_key=openai in DB
+> ```
+> After that, the MCP server (and any future CLI runs) auto-resolve the correct provider from the DB — no env vars needed.
 
-> Optionally set `BRAINBANK_REPO` as a default fallback repo. If omitted, every tool call must include the `repo` parameter (recommended for multi-workspace setups).
-
-> [!CAUTION]
-> **Embedding Provider Consistency is Critical**
->
-> The embedding provider used by the MCP server **must match** the one used during indexing. Mismatched dimensions cause `initialize()` to throw or search to return empty results.
->
-> **Common failure scenario:**
-> 1. You index via CLI with `BRAINBANK_EMBEDDING=openai` (1536 dims)
-> 2. MCP server starts without `BRAINBANK_EMBEDDING` env var → defaults to local (384 dims)
-> 3. **Result:** BrainBank throws `Embedding dimension mismatch` on every search
->
-> **Fix:** Always set `BRAINBANK_EMBEDDING` consistently in your MCP config, CLI, and API usage. If you indexed with OpenAI, your MCP config **must** include `"BRAINBANK_EMBEDDING": "openai"`. Same for `perplexity` or `perplexity-context`. If you switch providers, run `brainbank reembed` to regenerate all vectors.
+> [!NOTE]
+> If you switch embedding providers (e.g. local → OpenAI), run `brainbank reembed` to regenerate all vectors. BrainBank auto-detects dimension mismatches and warns you.
 
 ### Available Tools
 
@@ -974,10 +967,12 @@ The `LLMProvider` interface works with any framework:
 | Variable | Description |
 |----------|-------------|
 | `BRAINBANK_REPO` | Default repository path (optional — auto-detected from `.git/` or passed per tool call) |
-| `BRAINBANK_EMBEDDING` | Embedding provider: `local` (default), `openai`, `perplexity`, `perplexity-context` |
+| `BRAINBANK_RERANKER` | Reranker: `none` (default), `qwen3` |
 | `BRAINBANK_DEBUG` | Show full stack traces |
-| `OPENAI_API_KEY` | Required when using `BRAINBANK_EMBEDDING=openai` |
-| `PERPLEXITY_API_KEY` | Required when using `BRAINBANK_EMBEDDING=perplexity` or `perplexity-context` |
+| `OPENAI_API_KEY` | Required when using `--embedding openai` |
+| `PERPLEXITY_API_KEY` | Required when using `--embedding perplexity` or `perplexity-context` |
+
+> **Note:** `BRAINBANK_EMBEDDING` env var has been removed. Use `brainbank index --embedding <provider>` on first index — the provider is stored in the DB and auto-resolved on subsequent runs.
 
 ---
 
@@ -1348,8 +1343,8 @@ Final results (sorted by blended score)
 ## Testing
 
 ```bash
-npm test                    # Unit tests (129 tests)
-npm test -- --integration   # Full suite (211 tests, includes real models + all domains)
+npm test                    # Unit tests (172 tests)
+npm test -- --integration   # Full suite (includes real models + all domains)
 npm test -- --filter code   # Filter by test name
 npm test -- --verbose       # Show assertion details
 ```
