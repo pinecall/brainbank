@@ -20,28 +20,27 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 
 ## Why BrainBank?
 
-Built for a multi-repo codebase that needed unified AI context. Zero infrastructure, zero ongoing cost.
+BrainBank is a **code-aware knowledge engine** — not just a memory layer. It parses your codebase with tree-sitter ASTs, indexes git history and co-edit patterns, and makes everything searchable with hybrid vector + keyword retrieval. Optional packages add conversational memory (`@brainbank/memory`) and MCP integration (`@brainbank/mcp`).
 
-Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external databases, or LLM calls just to store a memory. BrainBank takes a different approach:
+Existing tools solve only a piece of the puzzle:
 
-| | **BrainBank** | **mem0** | **Zep** | **LangMem** |
+| | **BrainBank** | **LangChain Retrievers** | **Cursor/GitHub Copilot** | **mem0 / Zep** |
 |---|:---:|:---:|:---:|:---:|
-| Infrastructure | **SQLite file** | Vector DB + cloud | Neo4j + cloud | LangGraph Platform |
-| LLM required to write | **No**¹ | Yes | Yes | Yes |
-| Code-aware | **19 AST-parsed languages (tree-sitter), git, co-edits** | ✗ | ✗ | ✗ |
-| Custom plugins | **`.use()` plugin system** | ✗ | ✗ | ✗ |
-| Search | **Vector + BM25 + RRF** | Vector + graph² | Vector + BM25 + graph | Vector only |
-| Framework lock-in | **None** | Optional | Zep cloud | LangChain |
-| Portable | **Copy one file** | Tied to DB | Tied to cloud | Tied to platform |
+| Code-aware (AST) | **19 languages via tree-sitter** | ✗ | ✗ (heuristic) | ✗ |
+| Git history + co-edits | **Yes** | ✗ | ✗ | ✗ |
+| Hybrid search (vector + BM25) | **RRF fusion** | Vector only | Proprietary | Vector + graph |
+| Custom plugins | **`.use()` builder pattern** | ✗ | ✗ | ✗ |
+| Conversational memory | **`@brainbank/memory`** (opt-in) | ✗ | ✗ | **Core feature** |
+| Infrastructure | **SQLite file** | Vector DB required | SaaS | Vector DB + cloud |
+| Framework lock-in | **None** | LangChain | IDE-specific | Optional |
+| Portable | **Copy one file** | Tied to DB | Tied to IDE | Tied to cloud |
 
-> ¹ mem0 and Zep use LLMs to auto-extract memories from raw text. BrainBank is explicit — you decide what gets stored. Less magic, more control.
->
-> ² mem0's graph store (mem0g) is available in the paid platform version.
+> mem0 and Zep are great at **conversational memory** — LLM-powered fact extraction and dedup. BrainBank's `@brainbank/memory` package does the same thing, but BrainBank itself goes far beyond memory: **AST-parsed code indexing, git history, co-edit analysis, document collections, and a plugin system**.
 
 **In short:**
-- **Code-first** — the only memory layer that understands code structure, git history, and file co-edit relationships
-- **Framework-agnostic** — plain TypeScript, works with any agent framework (LangChain, Vercel AI SDK, custom) or none at all. Unopinionated — doesn't force you into a specific pattern
-- **$0 memory bill** — no LLM calls to extract/consolidate. You store what you want, BrainBank embeds deterministically
+- **Code-first** — the only knowledge layer that understands code structure (tree-sitter), git history, and file co-edit relationships
+- **Framework-agnostic** — plain TypeScript, works with any agent framework or none at all
+- **$0 infrastructure** — SQLite file, no cloud, no vector DB. Local WASM embeddings are free
 - **Truly portable** — `.brainbank/brainbank.db` is a normal file. Copy it, back it up, `git lfs` it
 
 ### Table of Contents
@@ -75,7 +74,8 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
 - [Benchmarks](#benchmarks)
   - [Search Quality: AST vs Sliding Window](#search-quality-ast-vs-sliding-window)
   - [Grammar Support](#grammar-support)
-  - [RAG Retrieval Quality](#rag-retrieval-quality) · [Full Results →](./BENCHMARKS.md)
+  - [RAG Retrieval Quality](#rag-retrieval-quality)
+    · [Full Results →](./BENCHMARKS.md)
 
 ---
 
@@ -276,23 +276,33 @@ BrainBank uses pluggable plugins. Register only what you need with `.use()`:
 | `docs` | `brainbank/docs` | Document collections (markdown, wikis) |
 
 ```typescript
-import { BrainBank } from 'brainbank';
+import { BrainBank, OpenAIEmbedding } from 'brainbank';
 import { code } from 'brainbank/code';
 import { git } from 'brainbank/git';
 import { docs } from 'brainbank/docs';
 
-// Pick only the plugins you need
-const brain = new BrainBank({ repoPath: '.' })
-  .use(code())
-  .use(git())
-  .use(docs());
+// Each plugin can use a different embedding provider
+const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384d, free)
+  .use(code({ embeddingProvider: new OpenAIEmbedding() }))  // code: OpenAI (1536d)
+  .use(git())                                               // git: local (384d)
+  .use(docs());                                             // docs: local (384d)
 
 // Index code + git (incremental — only processes changes)
 await brain.index();
 
-// Index document collections
+// Register and index document collections
 await brain.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
 await brain.indexDocs();
+
+// Dynamic collections — store anything
+const decisions = brain.collection('decisions');
+await decisions.add(
+  'Use SQLite with WAL mode instead of PostgreSQL. Portable, zero infra.',
+  { tags: ['architecture'] }
+);
+const hits = await decisions.search('why not postgres');
+
+brain.close();
 ```
 
 ### Collections
