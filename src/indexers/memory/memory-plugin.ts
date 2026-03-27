@@ -13,7 +13,7 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { PatternStore } from './pattern-store.ts';
 import { Consolidator } from './consolidator.ts';
-import { PatternDistiller } from './distiller.ts';
+import { PatternDistiller } from './pattern-distiller.ts';
 import type { LearningPattern, DistilledStrategy } from '@/types.ts';
 
 class MemoryPlugin implements Indexer {

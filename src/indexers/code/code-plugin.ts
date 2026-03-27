@@ -17,7 +17,7 @@
 import type { Indexer, IndexerContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
-import { CodeWalker } from './code-indexer.ts';
+import { CodeWalker } from './code-walker.ts';
 import type { IndexResult, ProgressCallback } from '@/types.ts';
 
 export interface CodePluginOptions {

@@ -15,7 +15,7 @@ import { LocalEmbedding } from '@/providers/embeddings/local-embedding.ts';
 import { VectorSearch } from '@/search/vector/vector-search.ts';
 import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
-import { setEmbeddingMeta, detectProviderMismatch } from '@/services/reembed.ts';
+import { setEmbeddingMeta, detectProviderMismatch } from '@/services/embedding-meta.ts';
 import type { IndexerRegistry } from './registry.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';

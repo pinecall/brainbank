@@ -11,6 +11,7 @@ import type { SearchStrategy } from '@/search/types.ts';
 import type { ContextBuilder } from '@/search/context-builder.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { IndexerRegistry } from '@/bootstrap/registry.ts';
+import type { CollectionPlugin } from '@/indexers/base.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { rerank } from '@/search/vector/rerank.ts';
@@ -21,7 +22,7 @@ export interface SearchAPIDeps {
     contextBuilder?: ContextBuilder;
     registry:        IndexerRegistry;
     config:          ResolvedConfig;
-    searchDocs(query: string, options?: { collection?: string; k?: number; minScore?: number }): Promise<SearchResult[]>;
+    getDocsPlugin(): CollectionPlugin | undefined;
     collection(name: string): Collection;
 }
 
@@ -36,7 +37,7 @@ export class SearchAPI {
     }): Promise<SearchResult[]> {
         if (!this._d.search) {
             return this._d.registry.has('docs')
-                ? this._d.searchDocs(query, { k: 8 })
+                ? await this._searchDocs(query, { k: 8 })
                 : [];
         }
         return this._d.search.search(query, options);
@@ -75,13 +76,13 @@ export class SearchAPI {
         if (this._d.search) {
             const [vec, kw] = await Promise.all([
                 this._d.search.search(query, { ...options, codeK, gitK }),
-                Promise.resolve(this._d.bm25!.search(query, { codeK, gitK })),
+                Promise.resolve(this._d.bm25?.search(query, { codeK, gitK }) ?? []),
             ]);
             resultLists.push(vec, kw);
         }
 
         if (this._d.registry.has('docs')) {
-            const docs = await this._d.searchDocs(query, { k: docsK });
+            const docs = await this._searchDocs(query, { k: docsK });
             if (docs.length > 0) resultLists.push(docs);
         }
 
@@ -117,6 +118,15 @@ export class SearchAPI {
         return rerank(query, fused, this._d.config.reranker);
     }
 
+    /** Search docs directly via the plugin — no circular callback. */
+    private async _searchDocs(
+        query: string, options?: { collection?: string; k?: number; minScore?: number },
+    ): Promise<SearchResult[]> {
+        const plugin = this._d.getDocsPlugin();
+        if (!plugin) return [];
+        return plugin.search(query, options);
+    }
+
     // ── Keyword ─────────────────────────────────────
 
     async searchBM25(query: string, options?: { codeK?: number; gitK?: number; patternK?: number }): Promise<SearchResult[]> {
@@ -136,7 +146,7 @@ export class SearchAPI {
         }
 
         if (this._d.registry.has('docs')) {
-            const docs = await this._d.searchDocs(task, { k: options.codeResults ?? 4 });
+            const docs = await this._searchDocs(task, { k: options.codeResults ?? 4 });
             if (docs.length > 0) {
                 const body = docs.map(r => {
                     const m = r.metadata as Record<string, any>;

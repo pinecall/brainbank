@@ -81,7 +81,7 @@ export { searchMMR } from './search/vector/mmr.ts';
 
 // Indexer implementations
 export { CodeChunker } from './indexers/code/code-chunker.ts';
-export { CodeWalker } from './indexers/code/code-indexer.ts';
+export { CodeWalker } from './indexers/code/code-walker.ts';
 export { GitIndexer } from './indexers/git/git-indexer.ts';
 export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';

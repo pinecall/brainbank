@@ -13,7 +13,7 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, DocumentCollection, SearchResult } from '@/types.ts';
 import { DocsIndexer } from './docs-indexer.ts';
-import { DocumentSearch } from './docs-search.ts';
+import { DocumentSearch } from './document-search.ts';
 
 class DocsPlugin implements Indexer {
     readonly name = 'docs';

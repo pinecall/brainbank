@@ -134,7 +134,10 @@ export class BrainBank extends EventEmitter {
             ...late,
             registry:   this._registry,
             config:     this._config,
-            searchDocs: (q, o) => this.searchDocs(q, o),
+            getDocsPlugin: () => {
+                const docs = this._registry.get('docs');
+                return docs && isCollectionPlugin(docs) ? docs : undefined;
+            },
             collection: (n)    => this.collection(n),
         });
 
