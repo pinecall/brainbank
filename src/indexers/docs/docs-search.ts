@@ -12,7 +12,7 @@ import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { rerank } from '@/search/vector/rerank.ts';
 import { normalizeBM25 } from '@/lib/fts.ts';
 
-export interface DocsSearchDeps {
+export interface DocumentSearchDeps {
     db: Database;
     embedding: EmbeddingProvider;
     hnsw: HNSWIndex;
@@ -20,8 +20,8 @@ export interface DocsSearchDeps {
     reranker?: Reranker;
 }
 
-export class DocsSearch {
-    constructor(private _d: DocsSearchDeps) {}
+export class DocumentSearch {
+    constructor(private _d: DocumentSearchDeps) {}
 
     /** Hybrid search (vector + BM25 → RRF), with dedup and optional reranking. */
     async search(query: string, options?: {
@@ -67,11 +67,11 @@ export class DocsSearch {
         }
 
         const deduped = this._dedup(results, k);
-        return this._applyReranking(query, deduped);
+        return this._rerankResults(query, deduped);
     }
 
     /** Apply reranking if a reranker is configured. */
-    private async _applyReranking(query: string, results: SearchResult[]): Promise<SearchResult[]> {
+    private async _rerankResults(query: string, results: SearchResult[]): Promise<SearchResult[]> {
         if (!this._d.reranker || results.length <= 1) return results;
         return rerank(query, results, this._d.reranker);
     }

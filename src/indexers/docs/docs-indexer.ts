@@ -245,7 +245,7 @@ export class DocsIndexer {
         while (chunkStart < text.length) {
             const remaining = text.length - chunkStart;
             if (remaining <= TARGET_CHARS + WINDOW_CHARS) {
-                this._pushLastChunk(text, chunkStart, chunks);
+                this._flushRemainder(text, chunkStart, chunks);
                 break;
             }
 
@@ -261,7 +261,7 @@ export class DocsIndexer {
     }
 
     /** Handle the last chunk: merge if too small, otherwise push. */
-    private _pushLastChunk(
+    private _flushRemainder(
         text: string, chunkStart: number, chunks: { text: string; pos: number }[],
     ): void {
         const lastText = text.slice(chunkStart).trim();

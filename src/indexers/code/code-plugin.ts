@@ -17,7 +17,7 @@
 import type { Indexer, IndexerContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
-import { CodeIndexer } from './code-indexer.ts';
+import { CodeWalker } from './code-indexer.ts';
 import type { IndexResult, ProgressCallback } from '@/types.ts';
 
 export interface CodePluginOptions {
@@ -33,7 +33,7 @@ class CodePlugin implements Indexer {
     readonly name: string;
     private db!: Database;
     hnsw!: HNSWIndex;
-    indexer!: CodeIndexer;
+    indexer!: CodeWalker;
     vecCache = new Map<number, Float32Array>();
 
     constructor(private opts: CodePluginOptions = {}) {
@@ -53,7 +53,7 @@ class CodePlugin implements Indexer {
         }
 
         const repoPath = this.opts.repoPath ?? ctx.config.repoPath;
-        this.indexer = new CodeIndexer(repoPath, {
+        this.indexer = new CodeWalker(repoPath, {
             db: ctx.db,
             hnsw: this.hnsw,
             vectorCache: this.vecCache,

@@ -109,7 +109,7 @@ export function createWatcher(
     // Process pending file changes (serialized — no concurrent flushes)
     let flushing = false;
 
-    async function flush() {
+    async function processPending() {
         if (flushing || pending.size === 0) return;
         flushing = true;
 
@@ -156,7 +156,7 @@ export function createWatcher(
             flushing = false;
             // Process any changes that arrived during this flush
             if (pending.size > 0) {
-                timer = setTimeout(() => flush(), debounceMs);
+                timer = setTimeout(() => processPending(), debounceMs);
             }
         }
     }
@@ -206,7 +206,7 @@ export function createWatcher(
 
                 // Debounce
                 if (timer) clearTimeout(timer);
-                timer = setTimeout(() => flush(), debounceMs);
+                timer = setTimeout(() => processPending(), debounceMs);
             });
 
             watcher.on('error', (err) => {

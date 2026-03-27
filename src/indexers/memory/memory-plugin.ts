@@ -13,7 +13,7 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { PatternStore } from './pattern-store.ts';
 import { Consolidator } from './consolidator.ts';
-import { StrategyDistiller } from './distiller.ts';
+import { PatternDistiller } from './distiller.ts';
 import type { LearningPattern, DistilledStrategy } from '@/types.ts';
 
 class MemoryPlugin implements Indexer {
@@ -21,7 +21,7 @@ class MemoryPlugin implements Indexer {
     hnsw!: HNSWIndex;
     patternStore!: PatternStore;
     consolidator!: Consolidator;
-    distiller!: StrategyDistiller;
+    distiller!: PatternDistiller;
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
 
@@ -38,7 +38,7 @@ class MemoryPlugin implements Indexer {
         });
 
         this.consolidator = new Consolidator(ctx.db, this.vecCache);
-        this.distiller = new StrategyDistiller(ctx.db);
+        this.distiller = new PatternDistiller(ctx.db);
     }
 
     /** Store a learned pattern. */

@@ -234,7 +234,7 @@ function saveAllHnsw(
     }
 }
 
-export function loadVectors(
+function loadVectors(
     db: Database,
     table: string,
     idCol: string,

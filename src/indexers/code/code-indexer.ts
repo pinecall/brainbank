@@ -15,7 +15,7 @@ import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, ProgressCallback, IndexResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 
-export interface CodeIndexerDeps {
+export interface CodeWalkerDeps {
     db: Database;
     hnsw: HNSWIndex;
     vectorCache: Map<number, Float32Array>;
@@ -27,13 +27,13 @@ export interface CodeIndexOptions {
     onProgress?: ProgressCallback;
 }
 
-export class CodeIndexer {
+export class CodeWalker {
     private _chunker = new CodeChunker();
-    private _deps: CodeIndexerDeps;
+    private _deps: CodeWalkerDeps;
     private _repoPath: string;
     private _maxFileSize: number;
 
-    constructor(repoPath: string, deps: CodeIndexerDeps, maxFileSize: number = 512_000) {
+    constructor(repoPath: string, deps: CodeWalkerDeps, maxFileSize: number = 512_000) {
         this._deps = deps;
         this._repoPath = repoPath;
         this._maxFileSize = maxFileSize;

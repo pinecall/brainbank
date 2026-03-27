@@ -89,7 +89,7 @@ export class SearchAPI {
         if (resultLists.length === 0) return [];
 
         const fused = reciprocalRankFusion(resultLists);
-        return this._applyReranking(query, fused);
+        return this._rerankResults(query, fused);
     }
 
     /** Search non-reserved KV collections and push results. */
@@ -112,7 +112,7 @@ export class SearchAPI {
     }
 
     /** Apply reranking if a reranker is configured. */
-    private async _applyReranking(query: string, fused: SearchResult[]): Promise<SearchResult[]> {
+    private async _rerankResults(query: string, fused: SearchResult[]): Promise<SearchResult[]> {
         if (!this._d.config.reranker || fused.length <= 1) return fused;
         return rerank(query, fused, this._d.config.reranker);
     }

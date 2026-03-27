@@ -8,7 +8,7 @@
 import type { Database } from '@/db/database.ts';
 import type { DistilledStrategy } from '@/types.ts';
 
-export class StrategyDistiller {
+export class PatternDistiller {
     constructor(private _db: Database) {}
 
     /**

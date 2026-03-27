@@ -13,7 +13,7 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import type { EmbeddingProvider, DocumentCollection, SearchResult } from '@/types.ts';
 import { DocsIndexer } from './docs-indexer.ts';
-import { DocsSearch } from './docs-search.ts';
+import { DocumentSearch } from './docs-search.ts';
 
 class DocsPlugin implements Indexer {
     readonly name = 'docs';
@@ -21,14 +21,14 @@ class DocsPlugin implements Indexer {
     indexer!: DocsIndexer;
     vecCache = new Map<number, Float32Array>();
     private _db!: Database;
-    private _search!: DocsSearch;
+    private _search!: DocumentSearch;
 
     async initialize(ctx: IndexerContext): Promise<void> {
         this._db = ctx.db;
         this.hnsw = await ctx.createHnsw();
         ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
         this.indexer = new DocsIndexer(ctx.db, ctx.embedding, this.hnsw, this.vecCache);
-        this._search = new DocsSearch({
+        this._search = new DocumentSearch({
             db: ctx.db,
             embedding: ctx.embedding,
             hnsw: this.hnsw,
