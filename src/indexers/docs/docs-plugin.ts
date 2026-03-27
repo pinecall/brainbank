@@ -23,14 +23,18 @@ class DocsPlugin implements Plugin {
     private _db!: Database;
     private _search!: DocumentSearch;
 
+    constructor(private opts: { embeddingProvider?: EmbeddingProvider } = {}) {}
+
     async initialize(ctx: PluginContext): Promise<void> {
         this._db = ctx.db;
-        this.hnsw = await ctx.createHnsw();
+        const embedding = this.opts.embeddingProvider ?? ctx.embedding;
+
+        this.hnsw = await ctx.createHnsw(undefined, embedding.dims);
         ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
-        this.indexer = new DocsIndexer(ctx.db, ctx.embedding, this.hnsw, this.vecCache);
+        this.indexer = new DocsIndexer(ctx.db, embedding, this.hnsw, this.vecCache);
         this._search = new DocumentSearch({
             db: ctx.db,
-            embedding: ctx.embedding,
+            embedding,
             hnsw: this.hnsw,
             vecCache: this.vecCache,
             reranker: ctx.config.reranker,
@@ -134,7 +138,12 @@ class DocsPlugin implements Plugin {
     }
 }
 
+export interface DocsPluginOptions {
+    /** Per-plugin embedding provider. Default: global embedding from BrainBank config. */
+    embeddingProvider?: EmbeddingProvider;
+}
+
 /** Create a document collections plugin. */
-export function docs(): Plugin {
-    return new DocsPlugin();
+export function docs(opts?: DocsPluginOptions): Plugin {
+    return new DocsPlugin(opts);
 }

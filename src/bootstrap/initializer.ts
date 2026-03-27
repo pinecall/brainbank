@@ -129,9 +129,9 @@ export class Initializer {
             embedding,
             config,
 
-            createHnsw: (maxElements?: number) =>
+            createHnsw: (maxElements?: number, dims?: number) =>
                 new HNSWIndex(
-                    config.embeddingDims,
+                    dims ?? config.embeddingDims,
                     maxElements ?? config.maxElements,
                     config.hnswM,
                     config.hnswEfConstruction,
@@ -150,12 +150,13 @@ export class Initializer {
                 }
             },
 
-            getOrCreateSharedHnsw: async (type, maxElements) => {
+            getOrCreateSharedHnsw: async (type, maxElements, dims) => {
                 const existing = sharedHnsw.get(type);
                 if (existing) return { ...existing, isNew: false };
 
+                const hnswDims = dims ?? config.embeddingDims;
                 const hnsw = await new HNSWIndex(
-                    config.embeddingDims,
+                    hnswDims,
                     maxElements ?? config.maxElements,
                     config.hnswM,
                     config.hnswEfConstruction,

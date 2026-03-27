@@ -18,7 +18,7 @@ import type { Plugin, PluginContext } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { CodeWalker } from './code-walker.ts';
-import type { IndexResult, ProgressCallback } from '@/types.ts';
+import type { EmbeddingProvider, IndexResult, ProgressCallback } from '@/types.ts';
 
 export interface CodePluginOptions {
     /** Repository path to index. Default: '.' */
@@ -27,6 +27,8 @@ export interface CodePluginOptions {
     maxFileSize?: number;
     /** Custom indexer name for multi-repo (e.g. 'code:frontend'). Default: 'code' */
     name?: string;
+    /** Per-plugin embedding provider. Default: global embedding from BrainBank config. */
+    embeddingProvider?: EmbeddingProvider;
 }
 
 class CodePlugin implements Plugin {
@@ -42,8 +44,10 @@ class CodePlugin implements Plugin {
 
     async initialize(ctx: PluginContext): Promise<void> {
         this.db = ctx.db;
+        const embedding = this.opts.embeddingProvider ?? ctx.embedding;
+
         // Use shared HNSW so all code indexers (code, code:frontend, etc.) share one index
-        const shared = await ctx.getOrCreateSharedHnsw('code');
+        const shared = await ctx.getOrCreateSharedHnsw('code', undefined, embedding.dims);
         this.hnsw = shared.hnsw;
         this.vecCache = shared.vecCache;
 
@@ -57,7 +61,7 @@ class CodePlugin implements Plugin {
             db: ctx.db,
             hnsw: this.hnsw,
             vectorCache: this.vecCache,
-            embedding: ctx.embedding,
+            embedding,
         }, this.opts.maxFileSize ?? ctx.config.maxFileSize);
     }
 

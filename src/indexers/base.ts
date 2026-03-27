@@ -29,12 +29,12 @@ export interface PluginContext {
     embedding: EmbeddingProvider;
     /** Resolved BrainBank config. */
     config: ResolvedConfig;
-    /** Create and initialize an HNSW index. */
-    createHnsw(maxElements?: number): Promise<HNSWIndex>;
+    /** Create and initialize an HNSW index. Optionally override dims for per-plugin embeddings. */
+    createHnsw(maxElements?: number, dims?: number): Promise<HNSWIndex>;
     /** Load existing vectors from a SQLite vectors table into an HNSW index + cache. */
     loadVectors(table: string, idCol: string, hnsw: HNSWIndex, cache: Map<number, Float32Array>): void;
-    /** Get or create a shared HNSW index by type (e.g. 'code', 'git'). For multi-repo support. */
-    getOrCreateSharedHnsw(type: string, maxElements?: number): Promise<{ hnsw: HNSWIndex; vecCache: Map<number, Float32Array>; isNew: boolean }>;
+    /** Get or create a shared HNSW index by type (e.g. 'code', 'git'). Optionally override dims for per-plugin embeddings. */
+    getOrCreateSharedHnsw(type: string, maxElements?: number, dims?: number): Promise<{ hnsw: HNSWIndex; vecCache: Map<number, Float32Array>; isNew: boolean }>;
     /** Get or create a dynamic collection. */
     collection(name: string): Collection;
 }

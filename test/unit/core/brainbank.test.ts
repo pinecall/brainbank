@@ -360,4 +360,55 @@ export const tests = {
         brain.close();
         cleanup(db);
     },
+
+    async 'per-plugin embeddingProvider override works'(assert: any) {
+        const db = makeDB();
+
+        // Different-dimension mock (32d instead of 16d)
+        class Mock32 implements EmbeddingProvider {
+            readonly dims = 32;
+            async embed(text: string): Promise<Float32Array> {
+                const v = new Float32Array(32);
+                for (let i = 0; i < 32; i++) {
+                    v[i] = Math.sin((text.charCodeAt(i % text.length) || 0) * (i + 1));
+                }
+                let norm = 0;
+                for (let i = 0; i < v.length; i++) norm += v[i] * v[i];
+                norm = Math.sqrt(norm);
+                if (norm > 0) for (let i = 0; i < v.length; i++) v[i] /= norm;
+                return v;
+            }
+            async embedBatch(texts: string[]): Promise<Float32Array[]> {
+                return Promise.all(texts.map(t => this.embed(t)));
+            }
+            async close(): Promise<void> {}
+        }
+
+        const perPluginEmbed = new Mock32();
+        const brain = new BrainBank({
+            dbPath: db,
+            embeddingProvider: new MockEmbedding(),  // global: 16d
+            embeddingDims: 16,
+        }).use(docs({ embeddingProvider: perPluginEmbed })); // docs: 32d
+
+        await brain.initialize();
+
+        // Create temp docs
+        const docsDir = `/tmp/brainbank-perplugin-${Date.now()}`;
+        fs.mkdirSync(docsDir, { recursive: true });
+        fs.writeFileSync(`${docsDir}/test.md`, '# Per-Plugin Test\n\nThis document tests per-plugin embedding overrides with different dimensions.');
+
+        await brain.addCollection({ name: 'test', path: docsDir, pattern: '**/*.md' });
+        const result = await brain.indexDocs();
+        assert.ok(result.test, 'should have indexed test collection');
+        assert.equal(result.test.indexed, 1);
+
+        // Search should work through the per-plugin 32d embedding
+        const hits = await brain.searchDocs('per-plugin embedding');
+        assert.gt(hits.length, 0, 'should find results with per-plugin embedding');
+
+        brain.close();
+        cleanup(db);
+        fs.rmSync(docsDir, { recursive: true });
+    },
 };

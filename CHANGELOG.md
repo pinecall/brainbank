@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Per-plugin embedding overrides** — each plugin (`code`, `git`, `docs`) now accepts an `embeddingProvider` option. Different plugins can use different providers (and dimensions). HNSW indices are created with the correct dimensions automatically.
+
 ## [0.6.0] — 2026-03-27
 
 ### Added

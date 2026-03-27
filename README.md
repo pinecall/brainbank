@@ -712,26 +712,16 @@ const brain = new BrainBank({
 
 BrainBank **auto-resolves** the embedding provider. Set it once → it's stored in the DB → every future run uses the same provider automatically.
 
-**Programmatic API** — pass `embeddingProvider` to the constructor, then chain `.use()` as usual:
+**Programmatic API** — pass `embeddingProvider` to the constructor:
 
 ```typescript
 import { BrainBank, OpenAIEmbedding } from 'brainbank';
-import { code } from 'brainbank/code';
-import { git } from 'brainbank/git';
 
 const brain = new BrainBank({
   repoPath: '.',
-  embeddingProvider: new OpenAIEmbedding(),  // all plugins share this provider
-})
-  .use(code())
-  .use(git());
-
-await brain.index();                           // provider_key stored in DB
-const results = await brain.hybridSearch('auth middleware');
-brain.close();
+  embeddingProvider: new OpenAIEmbedding(),  // stored in DB on first index
+});
 ```
-
-> On the next run, `embeddingProvider` can be omitted — BrainBank auto-resolves from the DB.
 
 **CLI** — use the `--embedding` flag on first index:
 
@@ -744,6 +734,23 @@ brainbank hsearch "auth middleware"           # uses the same provider
 **MCP** — zero-config. Reads the provider from the DB automatically.
 
 > The provider key is persisted in the `embedding_meta` table. Priority on startup: explicit `embeddingProvider` in config > stored `provider_key` in DB > local WASM (default).
+
+**Per-plugin override** — each plugin can use a different embedding provider:
+
+```typescript
+import { BrainBank, OpenAIEmbedding } from 'brainbank';
+import { PerplexityContextEmbedding } from 'brainbank';
+import { code } from 'brainbank/code';
+import { git } from 'brainbank/git';
+import { docs } from 'brainbank/docs';
+
+const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384d)
+  .use(code({ embeddingProvider: new OpenAIEmbedding() }))              // code: OpenAI (1536d)
+  .use(git())                                                           // git: local (384d)
+  .use(docs({ embeddingProvider: new PerplexityContextEmbedding() }));  // docs: Perplexity (2560d)
+```
+
+> Each plugin creates its own HNSW index with the correct dimensions. The global `embeddingProvider` (or local default) is used for any plugin that doesn't specify one.
 
 #### OpenAI
 

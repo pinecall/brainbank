@@ -17,7 +17,7 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { GitIndexer } from './git-indexer.ts';
 import { CoEditAnalyzer } from './co-edit-analyzer.ts';
-import type { IndexResult, ProgressCallback, CoEditSuggestion } from '@/types.ts';
+import type { EmbeddingProvider, IndexResult, ProgressCallback, CoEditSuggestion } from '@/types.ts';
 
 export interface GitPluginOptions {
     /** Repository path. Default: from config */
@@ -28,6 +28,8 @@ export interface GitPluginOptions {
     maxDiffBytes?: number;
     /** Custom indexer name for multi-repo (e.g. 'git:frontend'). Default: 'git' */
     name?: string;
+    /** Per-plugin embedding provider. Default: global embedding from BrainBank config. */
+    embeddingProvider?: EmbeddingProvider;
 }
 
 class GitPlugin implements Plugin {
@@ -44,8 +46,10 @@ class GitPlugin implements Plugin {
 
     async initialize(ctx: PluginContext): Promise<void> {
         this.db = ctx.db;
+        const embedding = this.opts.embeddingProvider ?? ctx.embedding;
+
         // Use shared HNSW so all git indexers share one index
-        const shared = await ctx.getOrCreateSharedHnsw('git', 500_000);
+        const shared = await ctx.getOrCreateSharedHnsw('git', 500_000, embedding.dims);
         this.hnsw = shared.hnsw;
         this.vecCache = shared.vecCache;
 
@@ -58,7 +62,7 @@ class GitPlugin implements Plugin {
             db: ctx.db,
             hnsw: this.hnsw,
             vectorCache: this.vecCache,
-            embedding: ctx.embedding,
+            embedding,
         }, this.opts.maxDiffBytes ?? ctx.config.maxDiffBytes);
 
         this.coEdits = new CoEditAnalyzer(ctx.db);
