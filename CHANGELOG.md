@@ -6,9 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-03-27
+
 ### Added
-- **Per-plugin embedding overrides** — each plugin (`code`, `git`, `docs`) now accepts an `embeddingProvider` option. Different plugins can use different providers (and dimensions). HNSW indices are created with the correct dimensions automatically.
-- **Project config file** (`.brainbank/config.json`) — declarative config for plugins, per-plugin embedding keys, docs collections, git depth, reranker. Auto-read by `brainbank index`. CLI flags override config.
+- **Per-plugin embedding overrides** — each plugin (`code`, `git`, `docs`) accepts an `embeddingProvider` option. Different plugins can use different providers and dimensions. HNSW indices are created with the correct dimensions automatically
+- **Project config file** (`.brainbank/config.json`) — declarative config for plugins, per-plugin embedding keys, docs collections, git depth, reranker. Auto-read by `brainbank index`. CLI flags override config
+- **`tree-sitter-python` included by default** — Python grammar is now a hard dependency alongside JavaScript and TypeScript
+
+### Changed
+- **README rewritten** — repositioned as a code-aware knowledge engine; comparison table includes QMD, mem0/Zep, LangChain; Programmatic API example shows per-plugin embeddings and collections upfront
 
 ## [0.6.0] — 2026-03-27
 
