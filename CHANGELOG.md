@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Embedding auto-resolve** — stores `provider_key` in DB; on startup, auto-resolves the correct provider without env vars. Priority: explicit config > stored DB key > local default
 - **`resolveEmbedding(key)` + `providerKey(provider)`** — exported from barrel for programmatic use
 - **CLI `--embedding` flag** — `brainbank index --embedding openai` (replaces env var)
+- **Optional tree-sitter grammars** — 17 language grammars moved to `optionalDependencies`; install only what you need (JS + TS remain as hard deps)
 
 ### Changed
 - **BREAKING: `Indexer` → `Plugin`** — base interface renamed to `Plugin`, `IndexerContext` → `PluginContext`, `IndexerRegistry` → `PluginRegistry`. No backward compat aliases — clean break
