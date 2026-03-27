@@ -93,30 +93,18 @@ npm install @brainbank/mcp
 
 ### Tree-Sitter Grammars
 
-BrainBank uses [tree-sitter](https://tree-sitter.github.io/) for AST-aware code chunking. **JavaScript, TypeScript, and Python grammars are included by default.** Other languages require installing the corresponding grammar package:
-
-```bash
-# Install only the grammars you need
-npm install tree-sitter-go tree-sitter-rust tree-sitter-ruby
-```
-
-If you index a file whose grammar isn't installed, BrainBank will throw a clear error:
-
-```
-BrainBank: Grammar 'tree-sitter-go' is not installed. Run: npm install tree-sitter-go
-```
+BrainBank uses [tree-sitter](https://tree-sitter.github.io/) for AST-aware code chunking. **All 19 language grammars ship with BrainBank** — no extra installation needed.
 
 <details>
-<summary>All available grammars (19 languages)</summary>
+<summary>Supported languages (19)</summary>
 
-| Category | Packages |
-|----------|----------|
-| **Included** | `tree-sitter-javascript`, `tree-sitter-typescript`, `tree-sitter-python` |
-| Web | `tree-sitter-html`, `tree-sitter-css` |
-| Systems | `tree-sitter-go`, `tree-sitter-rust`, `tree-sitter-c`, `tree-sitter-cpp`, `tree-sitter-swift` |
-| JVM | `tree-sitter-java`, `tree-sitter-kotlin`, `tree-sitter-scala` |
-| Scripting | `tree-sitter-ruby`, `tree-sitter-php`, `tree-sitter-lua`, `tree-sitter-bash`, `tree-sitter-elixir` |
-| .NET | `tree-sitter-c-sharp` |
+| Category | Languages |
+|----------|-----------|
+| Web | JavaScript, TypeScript, HTML, CSS |
+| Systems | Go, Rust, C, C++, Swift |
+| JVM | Java, Kotlin, Scala |
+| Scripting | Python, Ruby, PHP, Lua, Bash, Elixir |
+| .NET | C# |
 
 </details>
 

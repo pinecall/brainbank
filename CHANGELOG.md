@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- **All 19 tree-sitter grammars bundled** — moved from `optionalDependencies` to `dependencies`. No extra install needed for Go, Ruby, Rust, etc.
+- **Async grammar loading** — `tryGrammar` now supports ESM-only packages (e.g. `tree-sitter-css@0.25`) via `import()` fallback
+- **Graceful fallback for missing grammars** — files with unavailable grammars fall back to sliding window chunking instead of crashing the index
+
 ## [0.7.0] — 2026-03-27
 
 ### Added

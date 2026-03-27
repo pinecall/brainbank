@@ -52,21 +52,21 @@ export class CodeChunker {
     }
 
     /** Load a language grammar (cached). Throws if grammar package is not installed. */
-    private _loadGrammar(language: string): LangGrammar | null {
+    private async _loadGrammar(language: string): Promise<LangGrammar | null> {
         if (this._langCache.has(language)) return this._langCache.get(language)!;
 
         const factory = GRAMMARS[language];
         if (!factory) return null; // Unknown language — no grammar registered
 
-        const grammar = factory(); // Throws if package not installed
-        this._langCache.set(language, grammar);
+        const grammar = await factory(); // Throws if package not installed
+        if (grammar) this._langCache.set(language, grammar);
         return grammar;
     }
 
     /**
      * Split file content into semantic chunks using tree-sitter AST.
-     * Throws if the language has a grammar but the package isn't installed.
-     * Falls back to sliding window only for truly unsupported languages.
+     * Falls back to sliding window if grammar package is not installed
+     * or language is unsupported.
      */
     async chunk(filePath: string, content: string, language: string): Promise<CodeChunk[]> {
         const lines = content.split('\n');
@@ -85,7 +85,13 @@ export class CodeChunker {
 
         // Try tree-sitter AST chunking
         const parser = this._ensureParser();
-        const langConfig = this._loadGrammar(language); // throws if pkg missing
+        let langConfig: LangGrammar | null = null;
+
+        try {
+            langConfig = await this._loadGrammar(language);
+        } catch {
+            // Grammar package not installed — fall through to sliding window
+        }
 
         if (parser && langConfig) {
             try {
@@ -96,14 +102,12 @@ export class CodeChunker {
                 if (chunks.length > 0) {
                     return chunks.filter(c => c.content.length > 20);
                 }
-            } catch (err: any) {
-                // Re-throw grammar-not-installed errors
-                if (err?.message?.includes('not installed')) throw err;
+            } catch {
                 // Tree-sitter parse failed — fall through to generic
             }
         }
 
-        // Fallback to sliding window (unknown languages only)
+        // Fallback to sliding window (unsupported or missing grammar)
         return this._chunkGeneric(filePath, lines, language);
     }
 

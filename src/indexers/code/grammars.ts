@@ -27,12 +27,19 @@ export interface LangGrammar {
 // ── Loader ──────────────────────────────────────────
 
 /** Load a grammar package. Throws with install instructions if not installed. */
-function tryGrammar(pkg: string, nodeTypes: LangGrammar['nodeTypes'], accessor?: string): () => LangGrammar {
-    return () => {
+function tryGrammar(pkg: string, nodeTypes: LangGrammar['nodeTypes'], accessor?: string): () => Promise<LangGrammar> {
+    return async () => {
         try {
+            // Try CJS require first (fast, synchronous)
             const mod = require(pkg);
             return { grammar: accessor ? mod[accessor] : mod, nodeTypes };
-        } catch {
+        } catch (err: any) {
+            // ESM-only package (e.g. tree-sitter-css@0.25 uses top-level await)
+            if (err?.code === 'ERR_REQUIRE_ASYNC_MODULE' || err?.code === 'ERR_REQUIRE_ESM') {
+                const mod = await import(pkg);
+                const resolved = mod.default ?? mod;
+                return { grammar: accessor ? resolved[accessor] : resolved, nodeTypes };
+            }
             throw new Error(
                 `BrainBank: Grammar '${pkg}' is not installed. Run: npm install ${pkg}`
             );
@@ -42,7 +49,7 @@ function tryGrammar(pkg: string, nodeTypes: LangGrammar['nodeTypes'], accessor?:
 
 // ── Grammar Table ───────────────────────────────────
 
-export const GRAMMARS: Record<string, () => LangGrammar | null> = {
+export const GRAMMARS: Record<string, () => Promise<LangGrammar | null>> = {
     // ── Web ──────────────────────────────────────────
     typescript: tryGrammar('tree-sitter-typescript', {
         class: ['class_declaration'],
