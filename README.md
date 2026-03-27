@@ -29,14 +29,7 @@ BrainBank is a **code-aware knowledge engine** — not just a memory layer. It p
 | Search | **Vector + BM25 + RRF** | Vector + reranker | Vector + graph | Vector only |
 | Infra | **SQLite file** | Local GGUF | Vector DB + cloud | Vector DB |
 | Plugins | **`.use()` builder** | ✗ | ✗ | ✗ |
-
-> BrainBank [outperforms QMD by +18pp R@5](./BENCHMARKS.md) on retrieval quality. mem0/Zep focus on **conversational memory** — BrainBank's `@brainbank/memory` covers that too, but the core engine adds code indexing, git history, co-edits, and a plugin system on top.
-
-**In short:**
-- **Code-first** — the only knowledge layer that understands code structure (tree-sitter), git history, and file co-edit relationships
-- **Framework-agnostic** — plain TypeScript, works with any agent framework or none at all
-- **$0 infrastructure** — SQLite file, no cloud, no vector DB. Local WASM embeddings are free
-- **Truly portable** — `.brainbank/brainbank.db` is a normal file. Copy it, back it up, `git lfs` it
+| Memory | **`@brainbank/memory`** (opt-in) | ✗ | **Core feature** | ✗ |
 
 ### Table of Contents
 
@@ -1360,19 +1353,7 @@ BrainBank's hybrid search pipeline (Vector + BM25 → RRF) with Perplexity Conte
 
 The hybrid pipeline improved R@5 by **+26pp over vector-only** retrieval on our custom eval.
 
-#### BrainBank vs QMD (Head-to-Head)
-
-Compared against [QMD](https://github.com/tobi/qmd), a local-first search engine using GGUF models (embeddinggemma-300M + query expansion + reranker) — same corpus, same 20 queries:
-
-| Metric | BrainBank + Reranker | QMD + Reranker |
-|---|:---:|:---:|
-| **R@5** | **83%** | 65% |
-| **MRR** | **0.57** | 0.45 |
-| **Misses** | **1/20** | 6/20 |
-
-> BrainBank wins by +18pp R@5. QMD is competitive on semantic queries (81% vs 94%) and ties on broad queries (83% vs 83%) — impressive for a fully local pipeline with zero API calls.
-
-See **[BENCHMARKS.md](./BENCHMARKS.md)** for full pipeline progression, per-technique impact, QMD comparison details, and reproduction instructions.
+See **[BENCHMARKS.md](./BENCHMARKS.md)** for full pipeline progression, per-technique impact, and reproduction instructions.
 
 #### Running the RAG Eval
 
