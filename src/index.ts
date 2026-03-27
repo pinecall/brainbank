@@ -29,8 +29,6 @@ export { notes } from './indexers/notes/notes-plugin.ts';
 
 // Plugin types
 export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
-/** @deprecated Use `Plugin` instead. */
-export type { Indexer, IndexerContext } from './indexers/base.ts';
 
 // Collections
 export { Collection } from './domain/collection.ts';

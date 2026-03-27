@@ -135,7 +135,7 @@ tests['register: add two document collections'] = async () => {
     await brain.addCollection({ name: 'project-docs', path: docsDir, pattern: '**/*.md' });
     await brain.addCollection({ name: 'meeting-notes', path: notesDir, pattern: '**/*.md' });
 
-    const docsMod = brain.indexer('docs') as any;
+    const docsMod = brain.plugin('docs') as any;
     const collections = docsMod.listCollections();
     assert.equal(collections.length, 2, 'two collections registered');
 };
@@ -216,7 +216,7 @@ tests['context: remove context'] = async () => {
 };
 
 tests['remove: removeCollection clears all data'] = async () => {
-    const docsMod = brain.indexer('docs') as any;
+    const docsMod = brain.plugin('docs') as any;
 
     docsMod.removeCollection('meeting-notes');
     const collections = docsMod.listCollections();

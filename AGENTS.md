@@ -123,6 +123,11 @@ import type { SearchResult } from '../../types.ts';
 - Factory function exports: `export function code(opts): Plugin`
 - All plugins implement the `Plugin` interface from `src/indexers/base.ts`
 - Registered via `.use()` builder pattern on BrainBank
+- Access: `brain.plugin('code')` — returns a typed plugin instance
+- List: `brain.plugins` — returns all registered plugin names
+
+> **Breaking change (v0.6):** `Indexer` → `Plugin`, `IndexerContext` → `PluginContext`, `IndexerRegistry` → `PluginRegistry`.
+> `.indexer()` → `.plugin()`, `.indexers` → `.plugins`. No backward compat aliases — clean break.
 
 - `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts` and `index.ts`)
 - `bootstrap/` handles system wiring — never imported by layers 0-2

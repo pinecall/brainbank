@@ -190,7 +190,7 @@ export const tests = {
         const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
             .use(docs());
 
-        assert.deepEqual(brain.indexers.sort(), ['docs']);
+        assert.deepEqual(brain.plugins.sort(), ['docs']);
 
         await brain.initialize();
         brain.close();
@@ -219,7 +219,7 @@ export const tests = {
         await brain.initialize();
         assert.ok(brain.isInitialized);
         assert.ok(fs.existsSync(db));
-        assert.deepEqual(brain.indexers, []);
+        assert.deepEqual(brain.plugins, []);
         brain.close();
         cleanup(db);
     },
@@ -231,10 +231,10 @@ export const tests = {
         await brain.initialize();
 
         // .indexers returns registered names
-        assert.deepEqual(brain.indexers, ['docs']);
-        // .has() and .indexer() work
+        assert.deepEqual(brain.plugins, ['docs']);
+        // .has() and .plugin() work
         assert.ok(brain.has('docs'));
-        assert.ok(brain.indexer('docs'));
+        assert.ok(brain.plugin('docs'));
 
         brain.close();
         cleanup(db);

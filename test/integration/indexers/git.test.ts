@@ -99,7 +99,7 @@ tests['index: skips already indexed commits'] = async () => {
 };
 
 tests['search: HNSW finds commits by message content'] = async () => {
-    const gitMod = brain.indexer('git') as any;
+    const gitMod = brain.plugin('git') as any;
     const queryVec = await emb.embed('authentication JWT token');
     const hits = gitMod.hnsw.search(queryVec, 5);
 
@@ -107,7 +107,7 @@ tests['search: HNSW finds commits by message content'] = async () => {
 };
 
 tests['search: HNSW finds security-related commits'] = async () => {
-    const gitMod = brain.indexer('git') as any;
+    const gitMod = brain.plugin('git') as any;
     const queryVec = await emb.embed('injection attack security fix');
     const hits = gitMod.hnsw.search(queryVec, 5);
 
@@ -115,7 +115,7 @@ tests['search: HNSW finds security-related commits'] = async () => {
 };
 
 tests['search: HNSW finds refactoring commits'] = async () => {
-    const gitMod = brain.indexer('git') as any;
+    const gitMod = brain.plugin('git') as any;
     const queryVec = await emb.embed('database class refactoring');
     const hits = gitMod.hnsw.search(queryVec, 5);
 
@@ -123,7 +123,7 @@ tests['search: HNSW finds refactoring commits'] = async () => {
 };
 
 tests['co-edits: suggest returns related files'] = async () => {
-    const gitMod = brain.indexer('git') as any;
+    const gitMod = brain.plugin('git') as any;
     const suggestions = gitMod.suggestCoEdits('src/auth.ts', 5);
 
     assert.ok(Array.isArray(suggestions), 'returns array');

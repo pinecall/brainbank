@@ -57,7 +57,7 @@ tests['setup: brain with code + git + docs + memory'] = async () => {
     await brain.addCollection({ name: 'guide', path: docsDir, pattern: '**/*.md' });
     await brain.indexDocs();
 
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     await mem.learn({ task: 'Fix auth bug', taskType: 'debug', approach: 'Check token flow', outcome: 'Fixed', successRate: 0.9 });
 
     assert.ok(brain);
@@ -68,7 +68,7 @@ tests['brain.search(): returns code + commit + pattern'] = async () => {
     assert.ok((stats.code?.chunks ?? 0) > 0, `code chunks indexed: ${stats.code?.chunks}`);
     assert.ok((stats.git?.commits ?? 0) > 0, `git commits indexed: ${stats.git?.commits}`);
 
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const patternResults = await mem.search('auth bug');
     assert.ok(patternResults.length > 0, `patterns found: ${patternResults.length}`);
 
@@ -111,7 +111,7 @@ tests['brain.search(): commit results have hash + author'] = async () => {
 };
 
 tests['brain.search(): memory patterns have approach'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const results = await mem.search('auth bug fix');
 
     assert.ok(results.length > 0, 'has patterns');

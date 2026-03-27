@@ -74,17 +74,11 @@ export class BrainBank extends EventEmitter {
     /** Get the list of registered plugin names. */
     get plugins(): string[]                    { return this._registry.names; }
 
-    /** @deprecated Use `plugins` instead. */
-    get indexers(): string[]                   { return this._registry.names; }
-
     /** Check if a plugin is loaded. Also matches type prefix (e.g. 'code' matches 'code:frontend'). */
     has(name: string): boolean                 { return this._registry.has(name); }
 
     /** Get a plugin instance. Throws if not loaded. */
     plugin<T extends Plugin = Plugin>(n: string): T { return this._registry.get<T>(n); }
-
-    /** @deprecated Use `plugin()` instead. */
-    indexer<T extends Plugin = Plugin>(n: string): T { return this.plugin<T>(n); }
 
     // ── Initialization ───────────────────────────────
 
@@ -154,7 +148,7 @@ export class BrainBank extends EventEmitter {
         });
 
         this._initialized = true;
-        this.emit('initialized', { indexers: this.indexers });
+        this.emit('initialized', { plugins: this.plugins });
     }
 
     // ── Collections (KV) ────────────────────────────

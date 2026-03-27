@@ -110,8 +110,3 @@ export function isCollectionPlugin(i: Plugin): i is CollectionPlugin {
         && typeof (i as CollectionPlugin).listCollections === 'function';
 }
 
-// ── Deprecated Aliases (backward compat) ──────────
-/** @deprecated Use `Plugin` instead. */
-export type Indexer = Plugin;
-/** @deprecated Use `PluginContext` instead. */
-export type IndexerContext = PluginContext;

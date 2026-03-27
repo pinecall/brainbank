@@ -28,7 +28,7 @@ tests['setup: create brain with memory module'] = async () => {
 };
 
 tests['learn: stores debugging patterns'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
 
     const id1 = await mem.learn({
         task: 'Fix null pointer in user service',
@@ -57,7 +57,7 @@ tests['learn: stores debugging patterns'] = async () => {
 };
 
 tests['learn: stores performance patterns'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
 
     await mem.learn({
         task: 'Optimize slow SQL query on users table',
@@ -81,7 +81,7 @@ tests['learn: stores performance patterns'] = async () => {
 };
 
 tests['search: finds debugging patterns by similarity'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const results = await mem.search('null pointer exception fix', 4);
 
     assert.ok(results.length > 0, `found ${results.length} patterns`);
@@ -91,14 +91,14 @@ tests['search: finds debugging patterns by similarity'] = async () => {
 };
 
 tests['search: finds performance patterns'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const results = await mem.search('slow database query optimization');
 
     assert.ok(results.length > 0, 'found performance patterns');
 };
 
 tests['search: returns scored results sorted by relevance'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const results = await mem.search('fix bug', 5);
 
     assert.ok(results.length > 1, 'multiple results');
@@ -108,7 +108,7 @@ tests['search: returns scored results sorted by relevance'] = async () => {
 };
 
 tests['consolidate: prunes and deduplicates patterns'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const result = mem.consolidate();
 
     assert.ok(typeof result.pruned === 'number', 'reports pruned count');
@@ -116,7 +116,7 @@ tests['consolidate: prunes and deduplicates patterns'] = async () => {
 };
 
 tests['distill: extracts strategy from task type'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const strategy = mem.distill('debugging');
 
     // Strategy may be null if not enough patterns, but shouldn't throw
@@ -124,7 +124,7 @@ tests['distill: extracts strategy from task type'] = async () => {
 };
 
 tests['stats: reports pattern count and avg success rate'] = async () => {
-    const mem = brain.indexer('memory') as any;
+    const mem = brain.plugin('memory') as any;
     const stats = mem.stats();
 
     assert.equal(stats.patterns, 5, '5 patterns');

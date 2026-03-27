@@ -296,7 +296,7 @@ async function main() {
     brain.use(docs());
     await brain.initialize();
 
-    const docsPlugin = brain.indexer('docs') as any;
+    const docsPlugin = brain.plugin('docs') as any;
     docsPlugin.addCollection({
         name: `beir-${datasetKey}`,
         path: tempDocsDir,

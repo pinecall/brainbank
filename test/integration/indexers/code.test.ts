@@ -184,7 +184,7 @@ tests['index: detects changed file and re-indexes only it'] = async () => {
 };
 
 tests['search: HNSW finds code by semantic query'] = async () => {
-    const codeMod = brain.indexer('code') as any;
+    const codeMod = brain.plugin('code') as any;
     const queryVec = await emb.embed('user authentication login token');
     const hits = codeMod.hnsw.search(queryVec, 5);
 
@@ -193,7 +193,7 @@ tests['search: HNSW finds code by semantic query'] = async () => {
 };
 
 tests['search: finds Python functions'] = async () => {
-    const codeMod = brain.indexer('code') as any;
+    const codeMod = brain.plugin('code') as any;
     const queryVec = await emb.embed('parse CSV data processing');
     const hits = codeMod.hnsw.search(queryVec, 5);
 
@@ -201,7 +201,7 @@ tests['search: finds Python functions'] = async () => {
 };
 
 tests['search: finds class definitions'] = async () => {
-    const codeMod = brain.indexer('code') as any;
+    const codeMod = brain.plugin('code') as any;
     const queryVec = await emb.embed('database connection pool');
     const hits = codeMod.hnsw.search(queryVec, 5);
 
@@ -209,7 +209,7 @@ tests['search: finds class definitions'] = async () => {
 };
 
 tests['search: finds router/middleware patterns'] = async () => {
-    const codeMod = brain.indexer('code') as any;
+    const codeMod = brain.plugin('code') as any;
     const queryVec = await emb.embed('HTTP route handler middleware');
     const hits = codeMod.hnsw.search(queryVec, 5);
 

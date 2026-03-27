@@ -60,7 +60,7 @@ await brain.initialize();
 
 // ─── Index Docs ─────────────────────────────────────
 
-const docsPlugin = brain.indexer('docs') as any;
+const docsPlugin = brain.plugin('docs') as any;
 docsPlugin.addCollection({
     name: 'project-docs',
     path: docsPath,

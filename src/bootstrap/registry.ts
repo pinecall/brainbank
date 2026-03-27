@@ -111,5 +111,3 @@ export class PluginRegistry {
     }
 }
 
-/** @deprecated Use `PluginRegistry` instead. */
-export type IndexerRegistry = PluginRegistry;

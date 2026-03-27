@@ -120,7 +120,7 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
     if (_pool.has(resolved)) {
         const entry = _pool.get(resolved)!;
         try {
-            const codeStats = entry.brain.indexer('code')?.stats?.();
+            const codeStats = entry.brain.plugin('code')?.stats?.();
             if (codeStats && codeStats.hnswSize === 0) {
                 const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
                 const dbSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;

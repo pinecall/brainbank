@@ -17,7 +17,7 @@ export async function cmdStats(): Promise<void> {
     const s = brain.stats();
 
     console.log(c.bold('\n━━━ BrainBank Stats ━━━\n'));
-    console.log(`  ${c.cyan('Indexers')}: ${brain.indexers.join(', ')}\n`);
+    console.log(`  ${c.cyan('Plugins')}: ${brain.plugins.join(', ')}\n`);
 
     if (s.code) {
         console.log(`  ${c.cyan('Code')}`);
