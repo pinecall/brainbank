@@ -175,7 +175,8 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 - Before commit: `npm test` must pass
 - Keep commits small, focused, one logical change each
 - **Publishing**: Use `/publish` workflow — runs tests, updates CHANGELOG.md, bumps version, builds, and publishes to npm
-- **CHANGELOG**: After each change, update `## [Unreleased]` in `CHANGELOG.md` with what you did. This way any agent can see what's new even before publishing. The `/publish` workflow verifies the items against git log, fixes inaccuracies, stamps `## [Unreleased]` → `## [X.Y.Z] — date`, and adds a fresh `## [Unreleased]` section.
+
+> **⚠️ CHANGELOG is MANDATORY**: After **every** change, update `## [Unreleased]` in `CHANGELOG.md` with what you did. **Do not commit without updating the changelog.** This way any agent can see what's new even before publishing. The `/publish` workflow verifies the items against git log, fixes inaccuracies, stamps `## [Unreleased]` → `## [X.Y.Z] — date`, and adds a fresh `## [Unreleased]` section.
 
 ## Gotchas
 
