@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - **Per-plugin embedding overrides** — each plugin (`code`, `git`, `docs`) now accepts an `embeddingProvider` option. Different plugins can use different providers (and dimensions). HNSW indices are created with the correct dimensions automatically.
+- **Project config file** (`.brainbank/config.json`) — declarative config for plugins, per-plugin embedding keys, docs collections, git depth, reranker. Auto-read by `brainbank index`. CLI flags override config.
 
 ## [0.6.0] — 2026-03-27
 

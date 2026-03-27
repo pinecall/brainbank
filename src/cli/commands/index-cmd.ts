@@ -4,7 +4,7 @@
 
 import * as path from 'node:path';
 import { c, args, getFlag, hasFlag } from '@/cli/utils.ts';
-import { createBrain } from '@/cli/factory.ts';
+import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory.ts';
 
 export async function cmdIndex(): Promise<void> {
     const repoPath = args[1] || '.';
@@ -30,7 +30,11 @@ export async function cmdIndex(): Promise<void> {
 
     const brain = await createBrain(repoPath);
 
-    // Auto-register docs collection from --docs path
+    // Auto-register docs collections from config.json
+    const config = await getConfig();
+    await registerConfigCollections(brain, config);
+
+    // Auto-register docs collection from --docs CLI flag
     if (docsPath) {
         const absDocsPath = path.resolve(docsPath);
         const collName = path.basename(absDocsPath);

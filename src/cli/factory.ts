@@ -3,6 +3,8 @@
  *
  * Creates a configured BrainBank instance with built-in indexers,
  * auto-discovered indexers, and config file support.
+ *
+ * Config priority: CLI flags > .brainbank/config.json > .brainbank/config.ts > defaults.
  */
 
 import * as path from 'node:path';
@@ -12,26 +14,69 @@ import { code } from '@/indexers/code/code-plugin.ts';
 import { git } from '@/indexers/git/git-plugin.ts';
 import { docs } from '@/indexers/docs/docs-plugin.ts';
 import type { Plugin } from '@/indexers/base.ts';
+import type { EmbeddingProvider, DocumentCollection } from '@/types.ts';
 import { c, getFlag } from './utils.ts';
 
 // ── Types ───────────────────────────────────────────
 
-interface BrainBankCliConfig {
-    /** Custom indexers to register alongside built-in ones. */
-    indexers?: Plugin[];
-    /** Override which built-in indexers to load. Default: ['code', 'git', 'docs'] */
-    builtins?: ('code' | 'git' | 'docs')[];
-    /** BrainBank constructor options. */
-    brainbank?: Record<string, any>;
+/** Per-plugin config section (shared shape). */
+interface PluginConfig {
+    /** Embedding provider key: "local", "openai", "perplexity", "perplexity-context". */
+    embedding?: string;
 }
 
-const CONFIG_NAMES = ['config.ts', 'config.js', 'config.mjs'];
+/** Code plugin config. */
+interface CodeConfig extends PluginConfig {
+    maxFileSize?: number;
+}
+
+/** Git plugin config. */
+interface GitConfig extends PluginConfig {
+    depth?: number;
+    maxDiffBytes?: number;
+}
+
+/** Docs plugin config. */
+interface DocsConfig extends PluginConfig {
+    collections?: DocumentCollection[];
+}
+
+/** Full .brainbank/config.json schema. */
+export interface ProjectConfig {
+    /** Which built-in plugins to load. Default: ["code", "git", "docs"] */
+    plugins?: ('code' | 'git' | 'docs')[];
+
+    /** Per-plugin config sections. */
+    code?: CodeConfig;
+    git?: GitConfig;
+    docs?: DocsConfig;
+
+    /** Global embedding provider key (default for all plugins). */
+    embedding?: string;
+    /** Reranker: "none" or "qwen3". */
+    reranker?: string;
+    /** Max file size in bytes. */
+    maxFileSize?: number;
+
+    // --- Legacy .ts config fields (still supported) ---
+    /** @deprecated Use "plugins" instead. */
+    builtins?: ('code' | 'git' | 'docs')[];
+    /** Custom plugin instances (only from .ts config). */
+    indexers?: Plugin[];
+    /** BrainBank constructor options. */
+    brainbank?: Record<string, any>;
+
+    /** Any other plugin name → config (for custom plugins). */
+    [pluginName: string]: any;
+}
+
+const CONFIG_NAMES = ['config.json', 'config.ts', 'config.js', 'config.mjs'];
 const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
 
 // ── Caches ──────────────────────────────────────────
 
 const NOT_LOADED = Symbol('not-loaded');
-let _configCache: BrainBankCliConfig | null | typeof NOT_LOADED = NOT_LOADED;
+let _configCache: ProjectConfig | null | typeof NOT_LOADED = NOT_LOADED;
 let _folderPluginsCache: Plugin[] | typeof NOT_LOADED = NOT_LOADED;
 
 /** Reset factory caches. Useful for tests that import this module multiple times. */
@@ -42,8 +87,8 @@ export function resetFactoryCache(): void {
 
 // ── Config Loader ───────────────────────────────────
 
-/** Load .brainbank/config.ts if present. */
-async function loadConfig(): Promise<BrainBankCliConfig | null> {
+/** Load .brainbank/config.json (or .ts fallback) if present. */
+async function loadConfig(): Promise<ProjectConfig | null> {
     if (_configCache !== NOT_LOADED) return _configCache;
 
     const repoPath = getFlag('repo') ?? '.';
@@ -51,20 +96,38 @@ async function loadConfig(): Promise<BrainBankCliConfig | null> {
 
     for (const name of CONFIG_NAMES) {
         const configPath = path.join(brainbankDir, name);
-        if (fs.existsSync(configPath)) {
-            try {
+        if (!fs.existsSync(configPath)) continue;
+
+        try {
+            if (name === 'config.json') {
+                const raw = fs.readFileSync(configPath, 'utf-8');
+                _configCache = JSON.parse(raw) as ProjectConfig;
+            } else {
                 const mod = await import(configPath);
-                _configCache = (mod.default ?? mod) as BrainBankCliConfig;
-                return _configCache;
-            } catch (err: any) {
-                console.error(c.red(`Error loading .brainbank/${name}: ${err.message}`));
-                process.exit(1);
+                _configCache = (mod.default ?? mod) as ProjectConfig;
             }
+            return _configCache;
+        } catch (err: any) {
+            console.error(c.red(`Error loading .brainbank/${name}: ${err.message}`));
+            process.exit(1);
         }
     }
 
     _configCache = null;
     return null;
+}
+
+/** Get the loaded config (for use by commands). */
+export async function getConfig(): Promise<ProjectConfig | null> {
+    return loadConfig();
+}
+
+// ── Embedding Resolver ─────────────────────────────
+
+/** Resolve an embedding key string to an EmbeddingProvider instance. */
+async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvider> {
+    const { resolveEmbedding } = await import('@/providers/embeddings/resolve.ts');
+    return resolveEmbedding(key);
 }
 
 // ── Plugin Discovery ───────────────────────────────
@@ -135,13 +198,20 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     const folderIndexers = await discoverFolderPlugins();
 
     const brainOpts: Record<string, any> = { repoPath: rp, ...(config?.brainbank ?? {}) };
-    await setupProviders(brainOpts);
+
+    // Apply global config options
+    if (config?.maxFileSize) brainOpts.maxFileSize = config.maxFileSize;
+
+    await setupProviders(brainOpts, config);
 
     const brain = new BrainBank(brainOpts);
-    const builtins = config?.builtins ?? ['code', 'git', 'docs'];
-    registerBuiltins(brain, rp, builtins);
+    const builtins = config?.plugins ?? config?.builtins ?? ['code', 'git', 'docs'];
+    await registerBuiltins(brain, rp, builtins, config);
 
+    // Register custom plugins from .brainbank/indexers/
     for (const indexer of folderIndexers) brain.use(indexer);
+
+    // Register custom plugins from config.ts (programmatic)
     if (config?.indexers) {
         for (const indexer of config.indexers) brain.use(indexer);
     }
@@ -149,42 +219,98 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     return brain;
 }
 
-/** Configure reranker and embedding provider on brainOpts. */
-async function setupProviders(brainOpts: Record<string, any>): Promise<void> {
-    const rerankerFlag = getFlag('reranker');
+/** Configure reranker and global embedding provider. */
+async function setupProviders(brainOpts: Record<string, any>, config: ProjectConfig | null): Promise<void> {
+    // Reranker: CLI flag > config > default
+    const rerankerFlag = getFlag('reranker') ?? config?.reranker;
     if (rerankerFlag === 'qwen3') {
         const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');
         brainOpts.reranker = new Qwen3Reranker();
     }
 
-    const embFlag = getFlag('embedding');
+    // Embedding: CLI flag > config > auto-resolve from DB
+    const embFlag = getFlag('embedding') ?? config?.embedding;
     if (embFlag) {
-        const { resolveEmbedding } = await import('@/providers/embeddings/resolve.ts');
-        const provider = await resolveEmbedding(embFlag);
+        const provider = await resolveEmbeddingKey(embFlag);
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;
     }
-    // If no flag → Initializer reads provider_key from DB → falls back to local
+    // If no flag and no config → Initializer reads provider_key from DB → falls back to local
 }
 
-/** Register built-in indexers with multi-repo detection. */
-function registerBuiltins(
-    brain: BrainBank, rp: string, builtins: ('code' | 'git' | 'docs')[],
-): void {
+/** Register built-in indexers with multi-repo detection and per-plugin embedding. */
+async function registerBuiltins(
+    brain: BrainBank, rp: string, builtins: ('code' | 'git' | 'docs')[], config: ProjectConfig | null,
+): Promise<void> {
     const resolvedRp = path.resolve(rp);
     const hasRootGit = fs.existsSync(path.join(resolvedRp, '.git'));
     const gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp) : [];
 
+    // Resolve per-plugin embeddings from config
+    const codeEmb = config?.code?.embedding ? await resolveEmbeddingKey(config.code.embedding) : undefined;
+    const gitEmb = config?.git?.embedding ? await resolveEmbeddingKey(config.git.embedding) : undefined;
+    const docsEmb = config?.docs?.embedding ? await resolveEmbeddingKey(config.docs.embedding) : undefined;
+
     if (gitSubdirs.length > 0 && (builtins.includes('code') || builtins.includes('git'))) {
         console.log(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
         for (const sub of gitSubdirs) {
-            if (builtins.includes('code')) brain.use(code({ repoPath: sub.path, name: `code:${sub.name}` }));
-            if (builtins.includes('git')) brain.use(git({ repoPath: sub.path, name: `git:${sub.name}` }));
+            if (builtins.includes('code')) {
+                brain.use(code({
+                    repoPath: sub.path,
+                    name: `code:${sub.name}`,
+                    embeddingProvider: codeEmb,
+                    maxFileSize: config?.code?.maxFileSize,
+                }));
+            }
+            if (builtins.includes('git')) {
+                brain.use(git({
+                    repoPath: sub.path,
+                    name: `git:${sub.name}`,
+                    embeddingProvider: gitEmb,
+                    depth: config?.git?.depth,
+                    maxDiffBytes: config?.git?.maxDiffBytes,
+                }));
+            }
         }
     } else {
-        if (builtins.includes('code')) brain.use(code({ repoPath: rp }));
-        if (builtins.includes('git')) brain.use(git());
+        if (builtins.includes('code')) {
+            brain.use(code({
+                repoPath: rp,
+                embeddingProvider: codeEmb,
+                maxFileSize: config?.code?.maxFileSize,
+            }));
+        }
+        if (builtins.includes('git')) {
+            brain.use(git({
+                embeddingProvider: gitEmb,
+                depth: config?.git?.depth,
+                maxDiffBytes: config?.git?.maxDiffBytes,
+            }));
+        }
     }
 
-    if (builtins.includes('docs')) brain.use(docs());
+    if (builtins.includes('docs')) {
+        brain.use(docs({ embeddingProvider: docsEmb }));
+    }
+}
+
+/** Register doc collections from config. Call after brain.initialize(). */
+export async function registerConfigCollections(brain: BrainBank, config: ProjectConfig | null): Promise<void> {
+    const collections = config?.docs?.collections;
+    if (!collections?.length) return;
+
+    for (const coll of collections) {
+        const absPath = path.resolve(coll.path);
+        try {
+            await brain.addCollection({
+                name: coll.name,
+                path: absPath,
+                pattern: coll.pattern ?? '**/*.md',
+                ignore: coll.ignore,
+                context: coll.context,
+            });
+        } catch {
+            // Collection already registered — skip
+        }
+    }
 }

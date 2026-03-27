@@ -61,6 +61,7 @@ Most AI memory solutions (mem0, Zep, LangMem) require cloud services, external d
   - [Examples](#examples)
   - [Watch Mode](#watch-mode)
 - [MCP Server](#mcp-server)
+- [Project Config](#project-config)
 - [Configuration](#configuration)
   - [Embedding Providers](#embedding-providers)
   - [Reranker](#reranker)
@@ -509,32 +510,70 @@ brainbank stats                             # shows all plugins
 brainbank kv search slack_messages "deploy"  # search slack data
 ```
 
-#### Advanced: config file
+### Project Config
 
-For fine-grained control, create a `.brainbank/config.ts`:
+Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads it automatically — no CLI flags needed.
 
-```typescript
-// .brainbank/config.ts
-export default {
-  builtins: ['code', 'docs'],   // exclude git (default: all three)
-  brainbank: {                   // BrainBank constructor options
-    dbPath: '.brainbank/brain.db',
+```jsonc
+// .brainbank/config.json
+{
+  // Which built-in plugins to load (default: all three)
+  "plugins": ["code", "git", "docs"],
+
+  // Per-plugin options
+  "code": {
+    "embedding": "openai",         // use OpenAI embeddings for code
+    "maxFileSize": 512000
   },
-};
+  "git": {
+    "depth": 200                    // index last 200 commits
+  },
+  "docs": {
+    "embedding": "perplexity-context",
+    "collections": [
+      { "name": "docs", "path": "./docs", "pattern": "**/*.md" },
+      { "name": "wiki", "path": "~/team-wiki", "pattern": "**/*.md", "ignore": ["drafts/**"] }
+    ]
+  },
+
+  // Global defaults
+  "embedding": "local",            // default for plugins without their own
+  "reranker": "qwen3"
+}
 ```
 
-Everything lives in `.brainbank/` — DB, config, and custom plugins:
+**Embedding keys:** `"local"` (default, free), `"openai"`, `"perplexity"`, `"perplexity-context"`.
+
+**Per-plugin embeddings** — each plugin creates its own HNSW index with the correct dimensions. A plugin without an `embedding` key uses the global default.
+
+**Docs collections** — registered automatically on every `brainbank index` run. No need for `--docs` flags.
+
+**Custom plugins** — auto-discovered from `.brainbank/indexers/`:
 
 ```
 .brainbank/
 ├── brainbank.db        # SQLite database (auto-created)
-├── config.ts           # Optional project config
-└── indexers/           # Optional custom plugin files
+├── config.json         # Project config (optional)
+└── indexers/           # Custom plugin files (optional)
     ├── slack.ts
     └── jira.ts
 ```
 
-No folder and no config file? The CLI uses the built-in plugins (`code`, `git`, `docs`).
+Custom plugins can also have their own config section:
+
+```jsonc
+{
+  "plugins": ["code", "git"],
+  "slack": { "embedding": "openai" },   // matched by plugin name
+  "jira": { "embedding": "perplexity" }
+}
+```
+
+**Config priority:** CLI flags > `config.json` > auto-resolve from DB > defaults.
+
+> `.brainbank/config.ts` (or `.js`, `.mjs`) is still supported for programmatic config with custom plugin instances. JSON is preferred for declarative setups.
+
+No config file? The CLI uses all built-in plugins with local embeddings — zero config required.
 
 ---
 
