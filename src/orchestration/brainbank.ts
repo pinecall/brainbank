@@ -12,25 +12,25 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { resolveConfig } from './config/defaults.ts';
-import { Database } from './db/database.ts';
-import { HNSWIndex } from './providers/vector/hnsw-index.ts';
-import { Collection } from './orchestration/collection.ts';
-import { IndexerRegistry } from './orchestration/registry.ts';
-import { earlyInit, lateInit } from './orchestration/initializer.ts';
-import { SearchAPI } from './orchestration/search-api.ts';
-import { IndexAPI } from './orchestration/index-api.ts';
-import { reembedAll } from './services/reembed.ts';
-import { createWatcher, type WatchOptions, type Watcher } from './services/watch.ts';
-import type { ReembedResult, ReembedOptions } from './services/reembed.ts';
-import type { Indexer, CollectionPlugin } from './indexers/base.ts';
-import { isCollectionPlugin } from './indexers/base.ts';
+import { resolveConfig } from '@/config/defaults.ts';
+import { Database } from '@/db/database.ts';
+import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import { Collection } from '@/domain/collection.ts';
+import { IndexerRegistry } from './registry.ts';
+import { Initializer } from './initializer.ts';
+import { SearchAPI } from './search-api.ts';
+import { IndexAPI } from './index-api.ts';
+import { reembedAll } from '@/services/reembed.ts';
+import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
+import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
+import type { Indexer, CollectionPlugin } from '@/indexers/base.ts';
+import { isCollectionPlugin } from '@/indexers/base.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
     ContextOptions, CoEditSuggestion, ProgressCallback, StageProgressCallback,
     DocumentCollection,
-} from './types.ts';
+} from '@/types.ts';
 
 export class BrainBank extends EventEmitter {
     // ── State ───────────────────────────────────────
@@ -112,17 +112,18 @@ export class BrainBank extends EventEmitter {
     private async _runInitialize(options: { force?: boolean } = {}): Promise<void> {
         if (this._initialized) return;
 
+        const initializer = new Initializer(this._config, (e, d) => this.emit(e, d));
+
         // Phase 1: set this._kvHnsw BEFORE phase 2 so collection() works
         // when indexers call ctx.collection() during their initialize()
-        const early = await earlyInit(this._config, (e, d) => this.emit(e, d), options);
+        const early = await initializer.early(options);
         this._db        = early.db;
         this._embedding = early.embedding;
         this._kvHnsw    = early.kvHnsw;
 
         // Phase 2: load vectors, run indexers, build search services
-        const late = await lateInit(
+        const late = await initializer.late(
             early,
-            this._config,
             this._registry,
             this._sharedHnsw,
             this._kvVecs,

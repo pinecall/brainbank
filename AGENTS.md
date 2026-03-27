@@ -42,30 +42,34 @@ Layer 1 — Infrastructure (depends on Layer 0 only)
 └── search/          ← SearchStrategy implementations: vector/, keyword/
 
 Layer 2 — Domain (depends on Layers 0-1)
+├── domain/          ← Core primitives: collection (KV store), context-builder
 ├── indexers/        ← Plugins: code/, git/, docs/, memory/, notes/
 │   └── base.ts      ← Indexer interface (the plugin contract)
 └── services/        ← Reembed, watch
 
 Layer 3 — Orchestration (depends on everything below)
-├── brainbank.ts     ← THE main orchestrator, sole root-level file
-├── orchestration/   ← Internal orchestration: collection, search-api,
-│                      context-builder, initializer, index-api, registry
+├── orchestration/   ← BrainBank class, registry, initializer, search-api, index-api
 └── cli/             ← CLI commands and factory
+```
+
+```
+typings/
+└── packages.d.ts    ← Type declarations for @brainbank/* packages
 ```
 
 ```
 packages/
 ├── mcp/             ← MCP server (separate package)
-├── memory/          ← Conversational memory (separate package)
-└── reranker/        ← Qwen3 reranker (separate package)
+└── memory/          ← Conversational memory (separate package)
 ```
 
 ### Key Files
-- `src/brainbank.ts` — The main orchestrator. All public API lives here.
+- `src/orchestration/brainbank.ts` — The main orchestrator. All public API lives here.
 - `src/indexers/base.ts` — The `Indexer` interface. Read this before writing any plugin.
-- `src/orchestration/collection.ts` — Universal KV store with hybrid search. Core primitive.
+- `src/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
+- `src/domain/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
-- `src/packages.d.ts` — Type declarations for `@brainbank/*` packages (reranker, memory, mcp).
+- `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
 ## Code Conventions
 
@@ -116,9 +120,9 @@ import type { SearchResult } from '../../types.ts';
 - All plugins implement the `Indexer` interface from `src/indexers/base.ts`
 - Registered via `.use()` builder pattern on BrainBank
 
-### Architecture Rules
-- `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts`, `index.ts`, `packages.d.ts`)
-- `orchestration/` is internal orchestration — never imported by layers 0-2
+- `src/` root only has `index.ts` (barrel) and `types.ts` (shared types)
+- `orchestration/` is internal wiring — never imported by layers 0-2
+- `domain/` holds core primitives (collection, context-builder) — imported by layers 2-3
 - `lib/` contains pure, stateless functions with zero side effects
 - `search/types.ts` defines `SearchStrategy` — all search backends implement it
 - `BrainBank` extends `EventEmitter` for progress/warning events (no callbacks)
@@ -147,7 +151,7 @@ console.log('indexing done');  // WRONG — use this.emit('progress', ...)
 
 // ❌ Importing from a higher layer
 // In lib/ (Layer 0):
-import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
+import { BrainBank } from '@/orchestration/brainbank.ts'; // WRONG — Layer 0 cannot import Layer 3
 ```
 
 **Size limits:**

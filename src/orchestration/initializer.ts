@@ -2,10 +2,10 @@
  * BrainBank — Initializer
  *
  * Two-phase initialization keeps the dependency ordering correct:
- *   Phase 1 (earlyInit)  — db, embedding, kvHnsw.  Must be assigned to
+ *   Phase 1 (early)  — db, embedding, kvHnsw.  Must be assigned to
  *            `this` on BrainBank before phase 2, so that collection()
  *            works when indexers call ctx.collection() during initialize().
- *   Phase 2 (lateInit)   — loads vectors, runs indexers, builds search.
+ *   Phase 2 (late)   — loads vectors, runs indexers, builds search.
  */
 
 import { dirname, join } from 'node:path';
@@ -14,10 +14,10 @@ import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { LocalEmbedding } from '@/providers/embeddings/local-embedding.ts';
 import { VectorSearch } from '@/search/vector/vector-search.ts';
 import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
-import { ContextBuilder } from './context-builder.ts';
+import { ContextBuilder } from '@/domain/context-builder.ts';
 import { setEmbeddingMeta, detectProviderMismatch } from '@/services/reembed.ts';
 import type { IndexerRegistry } from './registry.ts';
-import type { Collection } from './collection.ts';
+import type { Collection } from '@/domain/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
 import type { IndexerContext } from '@/indexers/base.ts';
 
@@ -39,167 +39,170 @@ export interface LateInit {
     contextBuilder?: ContextBuilder;
 }
 
-// ── Phase 1 ──────────────────────────────────────────
+// ── Initializer class ────────────────────────────────
 
-export async function earlyInit(
-    config: ResolvedConfig,
-    emit: (event: string, data: any) => void,
-    options: { force?: boolean } = {},
-): Promise<EarlyInit> {
-    const db = new Database(config.dbPath);
-    const embedding: EmbeddingProvider = config.embeddingProvider ?? new LocalEmbedding();
+/** Encapsulates BrainBank's two-phase initialization sequence. */
+export class Initializer {
+    private readonly _config: ResolvedConfig;
+    private readonly _emit: (event: string, data: unknown) => void;
 
-    const mismatch = detectProviderMismatch(db, embedding);
-
-    if (mismatch?.mismatch && !options.force) {
-        db.close();
-        throw new Error(
-            `BrainBank: Embedding dimension mismatch (stored: ${mismatch.stored}, current: ${mismatch.current}). ` +
-            `Run brain.reembed() to re-index with the new provider, or switch back to the original provider.`
-        );
+    constructor(config: ResolvedConfig, emit: (event: string, data: unknown) => void) {
+        this._config = config;
+        this._emit = emit;
     }
 
-    setEmbeddingMeta(db, embedding);
+    /** Phase 1: database, embedding provider, KV HNSW index. */
+    async early(options: { force?: boolean } = {}): Promise<EarlyInit> {
+        const { _config: config } = this;
+        const db = new Database(config.dbPath);
+        const embedding: EmbeddingProvider = config.embeddingProvider ?? new LocalEmbedding();
 
-    const kvHnsw = new HNSWIndex(
-        config.embeddingDims,
-        config.maxElements ?? 500_000,
-        config.hnswM,
-        config.hnswEfConstruction,
-        config.hnswEfSearch,
-    );
-    await kvHnsw.init();
+        const mismatch = detectProviderMismatch(db, embedding);
 
-    // When forced with a mismatch, skip loading old vectors (wrong dims)
-    const skipVectorLoad = !!(options.force && mismatch?.mismatch);
-
-    return { db, embedding, kvHnsw, skipVectorLoad };
-}
-
-// ── Phase 2 ──────────────────────────────────────────
-
-export async function lateInit(
-    early: EarlyInit,
-    config: ResolvedConfig,
-    registry: IndexerRegistry,
-    sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
-    kvVecs: Map<number, Float32Array>,
-    getCollection: (name: string) => Collection,
-): Promise<LateInit> {
-    const { db, embedding, kvHnsw, skipVectorLoad } = early;
-
-    if (!skipVectorLoad) {
-        const kvIndexPath = hnswPath(config.dbPath, 'kv');
-        const kvCount = countRows(db, 'kv_vectors');
-        if (kvHnsw.tryLoad(kvIndexPath, kvCount)) {
-            // HNSW graph loaded from disk, but vecCache still needs population:
-            // MMR diversity search computes pairwise similarity using raw vectors
-            loadVecCache(db, 'kv_vectors', 'data_id', kvVecs);
-        } else {
-            loadVectors(db, 'kv_vectors', 'data_id', kvHnsw, kvVecs);
+        if (mismatch?.mismatch && !options.force) {
+            db.close();
+            throw new Error(
+                `BrainBank: Embedding dimension mismatch (stored: ${mismatch.stored}, current: ${mismatch.current}). ` +
+                `Run brain.reembed() to re-index with the new provider, or switch back to the original provider.`
+            );
         }
+
+        setEmbeddingMeta(db, embedding);
+
+        const kvHnsw = new HNSWIndex(
+            config.embeddingDims,
+            config.maxElements ?? 500_000,
+            config.hnswM,
+            config.hnswEfConstruction,
+            config.hnswEfSearch,
+        );
+        await kvHnsw.init();
+
+        const skipVectorLoad = !!(options.force && mismatch?.mismatch);
+
+        return { db, embedding, kvHnsw, skipVectorLoad };
     }
 
-    const ctx = buildIndexerContext(db, embedding, config, sharedHnsw, skipVectorLoad, getCollection);
+    /** Phase 2: load vectors, run indexers, build search layer. */
+    async late(
+        earlyResult: EarlyInit,
+        registry: IndexerRegistry,
+        sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
+        kvVecs: Map<number, Float32Array>,
+        getCollection: (name: string) => Collection,
+    ): Promise<LateInit> {
+        const { _config: config } = this;
+        const { db, embedding, kvHnsw, skipVectorLoad } = earlyResult;
 
-    for (const mod of registry.all) {
-        await mod.initialize(ctx);
-    }
-
-    // Save HNSW indexes to disk for faster next startup
-    saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw);
-
-    return buildSearchLayer(db, embedding, config, registry, sharedHnsw);
-}
-
-/** Build the IndexerContext passed to each plugin's initialize(). */
-function buildIndexerContext(
-    db: Database,
-    embedding: EmbeddingProvider,
-    config: ResolvedConfig,
-    sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
-    skipVectorLoad: boolean,
-    getCollection: (name: string) => Collection,
-): IndexerContext {
-    return {
-        db,
-        embedding,
-        config,
-
-        createHnsw: (maxElements?: number) =>
-            new HNSWIndex(
-                config.embeddingDims,
-                maxElements ?? config.maxElements,
-                config.hnswM,
-                config.hnswEfConstruction,
-                config.hnswEfSearch,
-            ).init(),
-
-        loadVectors: (table, idCol, hnsw, cache) => {
-            if (skipVectorLoad) return;
-            const indexName = table.replace('_vectors', '').replace('_chunks', '');
-            const indexPath = hnswPath(config.dbPath, indexName);
-            const rowCount = countRows(db, table);
-            if (hnsw.tryLoad(indexPath, rowCount)) {
-                // HNSW loaded from file — still populate vecCache for MMR diversity search
-                loadVecCache(db, table, idCol, cache);
+        if (!skipVectorLoad) {
+            const kvIndexPath = hnswPath(config.dbPath, 'kv');
+            const kvCount = countRows(db, 'kv_vectors');
+            if (kvHnsw.tryLoad(kvIndexPath, kvCount)) {
+                loadVecCache(db, 'kv_vectors', 'data_id', kvVecs);
             } else {
-                loadVectors(db, table, idCol, hnsw, cache);
+                loadVectors(db, 'kv_vectors', 'data_id', kvHnsw, kvVecs);
             }
-        },
+        }
 
-        getOrCreateSharedHnsw: async (type, maxElements) => {
-            const existing = sharedHnsw.get(type);
-            if (existing) return { ...existing, isNew: false };
+        const ctx = this._buildIndexerContext(db, embedding, sharedHnsw, skipVectorLoad, getCollection);
 
-            const hnsw = await new HNSWIndex(
-                config.embeddingDims,
-                maxElements ?? config.maxElements,
-                config.hnswM,
-                config.hnswEfConstruction,
-                config.hnswEfSearch,
-            ).init();
+        for (const mod of registry.all) {
+            await mod.initialize(ctx);
+        }
 
-            const vecCache = new Map<number, Float32Array>();
-            sharedHnsw.set(type, { hnsw, vecCache });
-            return { hnsw, vecCache, isNew: true };
-        },
+        saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw);
 
-        collection: getCollection,
-    };
-}
+        return this._buildSearchLayer(db, embedding, registry, sharedHnsw);
+    }
 
-/** Build VectorSearch + KeywordSearch + ContextBuilder from initialized plugins. */
-function buildSearchLayer(
-    db: Database,
-    embedding: EmbeddingProvider,
-    config: ResolvedConfig,
-    registry: IndexerRegistry,
-    sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
-): LateInit {
-    const codeMod = sharedHnsw.get('code');
-    const gitMod  = sharedHnsw.get('git');
-    const memMod  = registry.firstByType('memory') as any;
+    /** Build the IndexerContext passed to each plugin's initialize(). */
+    private _buildIndexerContext(
+        db: Database,
+        embedding: EmbeddingProvider,
+        sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
+        skipVectorLoad: boolean,
+        getCollection: (name: string) => Collection,
+    ): IndexerContext {
+        const { _config: config } = this;
+        return {
+            db,
+            embedding,
+            config,
 
-    if (!codeMod && !gitMod && !memMod) return {};
+            createHnsw: (maxElements?: number) =>
+                new HNSWIndex(
+                    config.embeddingDims,
+                    maxElements ?? config.maxElements,
+                    config.hnswM,
+                    config.hnswEfConstruction,
+                    config.hnswEfSearch,
+                ).init(),
 
-    const search = new VectorSearch({
-        db,
-        codeHnsw:    codeMod?.hnsw,
-        gitHnsw:     gitMod?.hnsw,
-        patternHnsw: memMod?.hnsw,
-        codeVecs:    codeMod?.vecCache ?? new Map(),
-        gitVecs:     gitMod?.vecCache  ?? new Map(),
-        patternVecs: memMod?.vecCache  ?? new Map(),
-        embedding,
-        reranker: config.reranker,
-    });
-    const bm25 = new KeywordSearch(db);
+            loadVectors: (table, idCol, hnsw, cache) => {
+                if (skipVectorLoad) return;
+                const indexName = table.replace('_vectors', '').replace('_chunks', '');
+                const indexPath = hnswPath(config.dbPath, indexName);
+                const rowCount = countRows(db, table);
+                if (hnsw.tryLoad(indexPath, rowCount)) {
+                    loadVecCache(db, table, idCol, cache);
+                } else {
+                    loadVectors(db, table, idCol, hnsw, cache);
+                }
+            },
 
-    const firstGit = registry.firstByType('git') as any;
-    const contextBuilder = new ContextBuilder(search, firstGit?.coEdits);
+            getOrCreateSharedHnsw: async (type, maxElements) => {
+                const existing = sharedHnsw.get(type);
+                if (existing) return { ...existing, isNew: false };
 
-    return { search, bm25, contextBuilder };
+                const hnsw = await new HNSWIndex(
+                    config.embeddingDims,
+                    maxElements ?? config.maxElements,
+                    config.hnswM,
+                    config.hnswEfConstruction,
+                    config.hnswEfSearch,
+                ).init();
+
+                const vecCache = new Map<number, Float32Array>();
+                sharedHnsw.set(type, { hnsw, vecCache });
+                return { hnsw, vecCache, isNew: true };
+            },
+
+            collection: getCollection,
+        };
+    }
+
+    /** Build VectorSearch + KeywordSearch + ContextBuilder from initialized plugins. */
+    private _buildSearchLayer(
+        db: Database,
+        embedding: EmbeddingProvider,
+        registry: IndexerRegistry,
+        sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
+    ): LateInit {
+        const { _config: config } = this;
+        const codeMod = sharedHnsw.get('code');
+        const gitMod  = sharedHnsw.get('git');
+        const memMod  = registry.firstByType('memory') as any;
+
+        if (!codeMod && !gitMod && !memMod) return {};
+
+        const search = new VectorSearch({
+            db,
+            codeHnsw:    codeMod?.hnsw,
+            gitHnsw:     gitMod?.hnsw,
+            patternHnsw: memMod?.hnsw,
+            codeVecs:    codeMod?.vecCache ?? new Map(),
+            gitVecs:     gitMod?.vecCache  ?? new Map(),
+            patternVecs: memMod?.vecCache  ?? new Map(),
+            embedding,
+            reranker: config.reranker,
+        });
+        const bm25 = new KeywordSearch(db);
+
+        const firstGit = registry.firstByType('git') as any;
+        const contextBuilder = new ContextBuilder(search, firstGit?.coEdits);
+
+        return { search, bm25, contextBuilder };
+    }
 }
 
 // ── Shared helpers ────────────────────────────────────

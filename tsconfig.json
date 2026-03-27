@@ -15,6 +15,6 @@
         "baseUrl": ".",
         "paths": { "@/*": ["./src/*"] }
     },
-    "include": ["src/**/*.ts", "test/**/*.ts"],
+    "include": ["src/**/*.ts", "test/**/*.ts", "typings/**/*.d.ts"],
     "exclude": ["node_modules", "dist"]
 }

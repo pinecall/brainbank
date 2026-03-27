@@ -12,7 +12,7 @@
  * Usage: npx tsx test/benchmarks/embedding-providers.ts <repo-path>
  */
 
-import { BrainBank } from '../../src/brainbank.ts';
+import { BrainBank } from '../../src/orchestration/brainbank.ts';
 import { code } from '../../src/indexers/code/code-plugin.ts';
 import { git } from '../../src/indexers/git/git-plugin.ts';
 import { OpenAIEmbedding } from '../../src/providers/embeddings/openai-embedding.ts';

@@ -5,7 +5,7 @@
  * Import once at the top of each test file instead of per-spec.
  */
 
-import { BrainBank } from '../src/brainbank.ts';
+import { BrainBank } from '../src/orchestration/brainbank.ts';
 import { Database } from '../src/db/database.ts';
 import { HNSWIndex } from '../src/providers/vector/hnsw-index.ts';
 import { KeywordSearch } from '../src/search/keyword/keyword-search.ts';
@@ -13,7 +13,7 @@ import { NoteStore } from '../src/indexers/notes/note-store.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai-embedding.ts';
 import { PerplexityEmbedding, decodeBase64Int8 } from '../src/providers/embeddings/perplexity-embedding.ts';
 import { PerplexityContextEmbedding } from '../src/providers/embeddings/perplexity-context-embedding.ts';
-import { Collection } from '../src/orchestration/collection.ts';
+import { Collection } from '../src/domain/collection.ts';
 import { CodeChunker } from '../src/indexers/code/code-chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';
