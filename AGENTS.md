@@ -50,7 +50,7 @@ Layer 2 — Domain (depends on Layers 0-1)
 Layer 3 — Application (depends on everything below)
 ├── brainbank.ts     ← The main orchestrator, sole root-level file
 ├── bootstrap/       ← System wiring: initializer, registry
-├── app/             ← Use cases: search-api, index-api
+├── api/             ← Use cases: search-api, index-api
 └── cli/             ← CLI commands and factory
 ```
 
@@ -72,7 +72,7 @@ packages/
 - `src/search/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `src/bootstrap/initializer.ts` — Two-phase system initialization (Initializer class).
-- `src/app/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
+- `src/api/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
 ## Code Conventions
@@ -126,7 +126,7 @@ import type { SearchResult } from '../../types.ts';
 
 - `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts` and `index.ts`)
 - `bootstrap/` handles system wiring — never imported by layers 0-2
-- `app/` defines use cases (search-api, index-api) — never imported by layers 0-2
+- `api/` defines use cases (search-api, index-api) — never imported by layers 0-2
 - `lib/` contains pure, stateless functions with zero side effects
 - `search/types.ts` defines `SearchStrategy` — all search backends implement it
 - `BrainBank` extends `EventEmitter` for progress/warning events (no callbacks)
