@@ -708,6 +708,33 @@ const brain = new BrainBank({
 | **Perplexity** | `PerplexityEmbedding` | 2560 (4b) / 1024 (0.6b) | ~100ms | $0.02/1M tokens |
 | **Perplexity Context** | `PerplexityContextEmbedding` | 2560 (4b) / 1024 (0.6b) | ~100ms | $0.06/1M tokens |
 
+#### How It Works
+
+BrainBank **auto-resolves** the embedding provider. Set it once → it's stored in the DB → every future run uses the same provider automatically.
+
+**Programmatic API** — pass `embeddingProvider` to the constructor:
+
+```typescript
+import { BrainBank, OpenAIEmbedding } from 'brainbank';
+
+const brain = new BrainBank({
+  repoPath: '.',
+  embeddingProvider: new OpenAIEmbedding(),  // stored in DB on first index
+});
+```
+
+**CLI** — use the `--embedding` flag on first index:
+
+```bash
+brainbank index . --embedding openai        # stores provider_key=openai in DB
+brainbank index .                            # auto-resolves openai from DB
+brainbank hsearch "auth middleware"           # uses the same provider
+```
+
+**MCP** — zero-config. Reads the provider from the DB automatically.
+
+> The provider key is persisted in the `embedding_meta` table. Priority on startup: explicit `embeddingProvider` in config > stored `provider_key` in DB > local WASM (default).
+
 #### OpenAI
 
 ```typescript
@@ -1104,7 +1131,7 @@ BrainBank uses **native tree-sitter** to parse source code into ASTs and extract
 
 For large classes (>80 lines), the chunker descends into the class body and extracts each method as a separate chunk. For unsupported languages, it falls back to a sliding window with overlap.
 
-> Tree-sitter grammars are **optional dependencies**. If a grammar isn't installed, that language falls back to the generic sliding window. Install only the grammars you need: `npm install tree-sitter-ruby tree-sitter-go` etc.
+> Tree-sitter grammars are **optional dependencies** (except JS and TS, which are included). If you index a file whose grammar isn't installed, BrainBank throws a clear error with the exact `npm install` command. See [Tree-Sitter Grammars](#tree-sitter-grammars) for the full list.
 
 ### Incremental Indexing
 
