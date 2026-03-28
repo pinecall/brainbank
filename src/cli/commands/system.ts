@@ -172,6 +172,7 @@ export function showHelp(): void {
     console.log(`  ${c.dim('--docsK <n>')}             Max document results (0 = skip docs, hsearch)`);
     console.log(`  ${c.dim('--collections k:v,...')}   Per-source limits (hsearch), e.g. code:5,git:0,docs:10`);
     console.log(`  ${c.dim('--ignore <globs>')}        Ignore glob patterns for code indexing (comma-separated)`);
+    console.log(`  ${c.dim('--yes / -y')}              Skip interactive prompt (auto-select all available)`);
     console.log(`  ${c.dim('--reranker <name>')}       Reranker to use (qwen3)`);
     console.log('');
     console.log(c.bold('Examples:'));

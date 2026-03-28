@@ -17,6 +17,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **CLI score filter** — `printResults` now filters results by score ≥ 70% (max 20), showing only high-quality matches
 - **CLI source filtering** — `search`, `hsearch`, and `ksearch` accept `--codeK <n>` and `--gitK <n>` flags to control results per source (set to 0 to skip a source entirely). `hsearch` also accepts `--docsK <n>` and `--collections key:val,...` for document and custom KV collection filtering
 - **Code ignore patterns** — `code({ ignore: ['sdk/**', 'vendor/**'] })` skips files matching glob patterns during indexing. Configurable via `code.ignore` in `.brainbank/config.json`, CLI `--ignore` flag, or programmatic API. MCP server reads config.json automatically. Uses `picomatch` for glob matching
+- **Interactive index scan** — `brainbank index` now scans the repo first, shows a summary tree (files by language, git commits, docs collections, config, DB), and prompts with interactive checkboxes to select modules. Auto-generates `.brainbank/config.json` from selections. Use `--yes` to skip prompts
 
 ### Changed
 - **Removed `notes` plugin** — `NoteStore` was a stripped-down `Collection` (same hybrid search, but no reranker/TTL/tags). Use `brain.collection('notes')` for equivalent functionality. Removed: `src/domain/notes/`, schema tables (`note_memories`, `note_vectors`, `fts_notes`), `brainbank/notes` subpath export
