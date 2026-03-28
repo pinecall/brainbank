@@ -7,7 +7,7 @@
  * 
  * Usage:
  *   const result = await brain.reembed({ onProgress });
- *   // → { code: 1200, git: 500, docs: 80, kv: 45, notes: 12, total: 1837 }
+ *   // → { code: 1200, git: 500, docs: 80, kv: 45, total: 1837 }
  */
 
 import type { Database } from '@/db/database.ts';
@@ -71,19 +71,7 @@ const TABLES: ReembedTable[] = [
         // Must match memory/pattern-store.ts:49 exactly
         textBuilder: (r) => `${r.task_type} ${r.task} ${r.approach}`,
     },
-    {
-        name: 'notes',
-        textTable: 'note_memories',
-        vectorTable: 'note_vectors',
-        idColumn: 'id',
-        fkColumn: 'note_id',
-        // Must match notes/engine.ts:90 exactly
-        textBuilder: (r) => {
-            const decisions = (JSON.parse(r.decisions_json || '[]') as string[]).join('. ');
-            const patterns  = (JSON.parse(r.patterns_json  || '[]') as string[]).join('. ');
-            return `${r.title}\n${r.summary}\n${decisions}\n${patterns}`;
-        },
-    },
+
     {
         name: 'docs',
         textTable: 'doc_chunks',
@@ -109,7 +97,7 @@ export interface ReembedResult {
     code: number;
     git: number;
     memory: number;
-    notes: number;
+
     docs: number;
     kv: number;
     total: number;
@@ -167,7 +155,7 @@ export async function reembedAll(
         code: result.code ?? 0,
         git: result.git ?? 0,
         memory: result.memory ?? 0,
-        notes: result.notes ?? 0,
+
         docs: result.docs ?? 0,
         kv: result.kv ?? 0,
         total,

@@ -80,7 +80,6 @@ export async function cmdReembed(): Promise<void> {
     if (result.git > 0)    console.log(`  ${c.green('✓')} Git:     ${result.git} vectors`);
     if (result.docs > 0)   console.log(`  ${c.green('✓')} Docs:    ${result.docs} vectors`);
     if (result.kv > 0)     console.log(`  ${c.green('✓')} KV:      ${result.kv} vectors`);
-    if (result.notes > 0)  console.log(`  ${c.green('✓')} Notes:   ${result.notes} vectors`);
     if (result.memory > 0) console.log(`  ${c.green('✓')} Memory:  ${result.memory} vectors`);
     console.log(`\n  ${c.bold('Total')}: ${result.total} vectors regenerated\n`);
 

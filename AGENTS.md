@@ -196,22 +196,13 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 - Create new files in existing directories
 - Format code
 
-### Ask first:
-- `npm install` / add dependencies
-- Delete files or directories
-- Modify `tsconfig.json`, `tsup.config.ts`, `package.json`
-- `npm run build` or full test suite
-- Modify `src/db/database.ts` (schema changes)
-
 ### NEVER without approval:
 - `git commit` / `git push` — **always** ask the user before committing or pushing
 - `npm publish`
 - Modify SQLite schema without review
 - Delete or rename public exports from `src/index.ts` (breaking change)
-- Modify `packages/mcp/` without understanding the MCP protocol
 - If unsure about architecture: propose a plan and wait for a response
 
-## Notes
+## REMEMBER
 
-- If you find this AGENTS.md is incorrect or incomplete, propose an update.
-- After finishing work confirmed by the user, write a note at `~/.berna/notes/{date}/{note}.md`.
+- Please update the ARCHITECTURE.md everytime you implement a modification in the system core

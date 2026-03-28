@@ -17,7 +17,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **CLI score filter** — `printResults` now filters results by score ≥ 70% (max 20), showing only high-quality matches
 
 ### Changed
-- **Schema version 4 → 5** — added `code_imports`, `code_symbols`, `code_refs` tables. Existing databases need `--force` re-index
+- **Removed `notes` plugin** — `NoteStore` was a stripped-down `Collection` (same hybrid search, but no reranker/TTL/tags). Use `brain.collection('notes')` for equivalent functionality. Removed: `src/domain/notes/`, schema tables (`note_memories`, `note_vectors`, `fts_notes`), `brainbank/notes` subpath export
+- **Schema version 5 → 6** — removed notes tables. Existing databases with notes data should re-create their DB
 - **All 19 tree-sitter grammars bundled** — moved from `optionalDependencies` to `dependencies`. No extra install needed for Go, Ruby, Rust, etc.
 - **Async grammar loading** — `tryGrammar` now supports ESM-only packages (e.g. `tree-sitter-css@0.25`) via `import()` fallback
 - **Graceful fallback for missing grammars** — files with unavailable grammars fall back to sliding window chunking instead of crashing the index

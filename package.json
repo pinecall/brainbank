@@ -25,10 +25,6 @@
             "import": "./dist/docs.js",
             "types": "./dist/docs.d.ts"
         },
-        "./notes": {
-            "import": "./dist/notes.js",
-            "types": "./dist/notes.d.ts"
-        },
         "./memory": {
             "import": "./dist/memory.js",
             "types": "./dist/memory.d.ts"

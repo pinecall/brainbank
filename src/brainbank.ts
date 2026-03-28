@@ -391,7 +391,7 @@ export class BrainBank extends EventEmitter {
             hnswMap.set(type, { hnsw: shared.hnsw, vecs: shared.vecCache });
         }
 
-        for (const type of ['memory', 'notes', 'docs'] as const) {
+        for (const type of ['memory', 'docs'] as const) {
             const mod = this._registry.firstByType(type) as any;
             if (mod?.hnsw) hnswMap.set(type, { hnsw: mod.hnsw, vecs: mod.vecCache });
         }

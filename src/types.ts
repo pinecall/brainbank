@@ -390,11 +390,6 @@ export interface IndexStats {
         chunks: number;
         hnswSize: number;
     };
-    notes?: {
-        total: number;
-        short: number;
-        long: number;
-    };
 }
 
 // ── Index Progress ──────────────────────────────────

@@ -7,10 +7,10 @@ import { Database, KeywordSearch, BM25Search, SCHEMA_VERSION, tmpDb } from '../.
 export const name = 'BM25 Full-Text Search';
 
 export const tests = {
-    async 'FTS5 tables are created with schema v5'(assert: any) {
+    async 'FTS5 tables are created with schema v6'(assert: any) {
         const db = new Database(tmpDb('bm25-test'));
 
-        assert.equal(SCHEMA_VERSION, 5);
+        assert.equal(SCHEMA_VERSION, 6);
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_%'"
@@ -21,7 +21,6 @@ export const tests = {
         assert(names.includes('fts_commits'), 'fts_commits table should exist');
         assert(names.includes('fts_patterns'), 'fts_patterns table should exist');
         assert(names.includes('fts_docs'), 'fts_docs table should exist');
-        assert(names.includes('fts_notes'), 'fts_notes table should exist');
 
         db.close();
     },

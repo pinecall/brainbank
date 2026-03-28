@@ -24,8 +24,8 @@ export { BrainBank } from './brainbank.ts';
 export { code } from './indexers/code/code-plugin.ts';
 export { git } from './indexers/git/git-plugin.ts';
 export { docs } from './indexers/docs/docs-plugin.ts';
-export { memory } from './indexers/memory/memory-plugin.ts';
-export { notes } from './indexers/notes/notes-plugin.ts';
+export { memory } from './domain/memory/memory-plugin.ts';
+
 
 // Plugin types
 export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
@@ -95,10 +95,9 @@ export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
 
 // Agent memory stores
-export { PatternStore } from './indexers/memory/pattern-store.ts';
-export { Consolidator } from './indexers/memory/consolidator.ts';
-export { NoteStore } from './indexers/notes/note-store.ts';
-export type { NoteDigest, StoredNote, RecallOptions } from './indexers/notes/note-store.ts';
+export { PatternStore } from './domain/memory/pattern-store.ts';
+export { Consolidator } from './domain/memory/consolidator.ts';
+
 
 // Search internals
 export { ContextBuilder } from './search/context-builder.ts';

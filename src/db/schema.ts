@@ -7,7 +7,7 @@
 
 import type Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * Create all tables and indices.
@@ -203,47 +203,6 @@ export function createSchema(db: Database.Database): void {
             VALUES ('delete', old.id, old.task_type, old.task, old.approach, COALESCE(old.critique, ''));
         END;
 
-        -- ── Note Memory ───────────────────────────────
-        CREATE TABLE IF NOT EXISTS note_memories (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            title           TEXT    NOT NULL,
-            summary         TEXT    NOT NULL,
-            decisions_json  TEXT    NOT NULL DEFAULT '[]',
-            files_json      TEXT    NOT NULL DEFAULT '[]',
-            patterns_json   TEXT    NOT NULL DEFAULT '[]',
-            open_json       TEXT    NOT NULL DEFAULT '[]',
-            tags_json       TEXT    NOT NULL DEFAULT '[]',
-            tier            TEXT    NOT NULL DEFAULT 'short',
-            created_at      INTEGER NOT NULL DEFAULT (unixepoch())
-        );
-
-        CREATE TABLE IF NOT EXISTS note_vectors (
-            note_id     INTEGER PRIMARY KEY REFERENCES note_memories(id) ON DELETE CASCADE,
-            embedding   BLOB    NOT NULL
-        );
-
-        CREATE VIRTUAL TABLE IF NOT EXISTS fts_notes USING fts5(
-            title,
-            summary,
-            decisions,
-            patterns,
-            tags,
-            content='note_memories',
-            content_rowid='id',
-            tokenize='porter unicode61'
-        );
-
-        CREATE TRIGGER IF NOT EXISTS trg_fts_notes_insert AFTER INSERT ON note_memories BEGIN
-            INSERT INTO fts_notes(rowid, title, summary, decisions, patterns, tags)
-            VALUES (new.id, new.title, new.summary, new.decisions_json, new.patterns_json, new.tags_json);
-        END;
-        CREATE TRIGGER IF NOT EXISTS trg_fts_notes_delete AFTER DELETE ON note_memories BEGIN
-            INSERT INTO fts_notes(fts_notes, rowid, title, summary, decisions, patterns, tags)
-            VALUES ('delete', old.id, old.title, old.summary, old.decisions_json, old.patterns_json, old.tags_json);
-        END;
-
-        CREATE INDEX IF NOT EXISTS idx_nm_tier     ON note_memories(tier);
-        CREATE INDEX IF NOT EXISTS idx_nm_created  ON note_memories(created_at DESC);
 
         -- ── Document Collections ──────────────────────
         CREATE TABLE IF NOT EXISTS collections (

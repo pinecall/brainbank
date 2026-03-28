@@ -9,7 +9,7 @@ import { BrainBank } from '../src/brainbank.ts';
 import { Database } from '../src/db/database.ts';
 import { HNSWIndex } from '../src/providers/vector/hnsw-index.ts';
 import { KeywordSearch } from '../src/search/keyword/keyword-search.ts';
-import { NoteStore } from '../src/indexers/notes/note-store.ts';
+
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai-embedding.ts';
 import { PerplexityEmbedding, decodeBase64Int8 } from '../src/providers/embeddings/perplexity-embedding.ts';
 import { PerplexityContextEmbedding } from '../src/providers/embeddings/perplexity-context-embedding.ts';
@@ -32,7 +32,7 @@ import {
 import { code } from '../src/indexers/code/code-plugin.ts';
 import { git } from '../src/indexers/git/git-plugin.ts';
 import { docs } from '../src/indexers/docs/docs-plugin.ts';
-import { memory } from '../src/indexers/memory/memory-plugin.ts';
+import { memory } from '../src/domain/memory/memory-plugin.ts';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 
@@ -96,7 +96,7 @@ export {
     HNSWIndex,
     KeywordSearch,
     KeywordSearch as BM25Search,
-    NoteStore,
+
     OpenAIEmbedding,
     PerplexityEmbedding,
     PerplexityContextEmbedding,
