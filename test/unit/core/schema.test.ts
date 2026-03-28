@@ -40,6 +40,10 @@ export const tests = {
         assert.includes(tables, 'doc_vectors');
         assert.includes(tables, 'path_contexts');
         assert.includes(tables, 'note_memories');
+        // Code graph tables (v5)
+        assert.includes(tables, 'code_imports');
+        assert.includes(tables, 'code_symbols');
+        assert.includes(tables, 'code_refs');
         db.close();
     },
 

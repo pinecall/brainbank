@@ -20,11 +20,12 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 
 ## Why BrainBank?
 
-BrainBank is a **code-aware knowledge engine** — not just a memory layer. It parses your codebase with tree-sitter ASTs, indexes git history and co-edit patterns, and makes everything searchable with hybrid vector + keyword retrieval. Optional packages add conversational memory (`@brainbank/memory`) and MCP integration (`@brainbank/mcp`).
+BrainBank is a **code-aware knowledge engine** — not just a memory layer. It parses your codebase with tree-sitter ASTs, builds a **code graph** (imports, symbols, call references), indexes git history and co-edit patterns, and makes everything searchable with hybrid vector + keyword retrieval. Optional packages add conversational memory (`@brainbank/memory`) and MCP integration (`@brainbank/mcp`).
 
 | | **BrainBank** | **QMD** | **mem0 / Zep** | **LangChain** |
 |---|:---:|:---:|:---:|:---:|
 | Code-aware (AST) | **19 languages** (tree-sitter) | ✗ | ✗ | ✗ |
+| Code graph | **imports + symbols + calls** | ✗ | ✗ | ✗ |
 | Git + co-edits | ✓ | ✗ | ✗ | ✗ |
 | Search | **Vector + BM25 + RRF** | Vector + reranker | Vector + graph | Vector only |
 | Infra | **SQLite file** | Local GGUF | Vector DB + cloud | Vector DB |
@@ -55,6 +56,8 @@ BrainBank is a **code-aware knowledge engine** — not just a memory layer. It p
 - [Memory](#memory)
 - [Multi-Repository Indexing](#multi-repository-indexing)
 - [Indexing](#indexing-1)
+  - [Code Chunking](#code-chunking-tree-sitter)
+  - [Code Graph](#code-graph)
   - [Incremental Indexing](#incremental-indexing)
   - [Re-embedding](#re-embedding)
 - [Architecture](#architecture)
@@ -437,7 +440,11 @@ const context = await brain.getContext('add rate limiting to the API', {
   affectedFiles: ['src/api/routes.ts'],
   useMMR: true,
 });
-// Returns: ## Relevant Code, ## Git History, ## Relevant Documents
+// Returns:
+// ## Relevant Code       — grouped by file, with call graph annotations
+// ## Related Files        — import graph (who imports what)
+// ## Git History          — relevant commits with diffs
+// ## Relevant Documents   — matching doc chunks
 ```
 
 ### Custom Plugins
@@ -1175,7 +1182,81 @@ BrainBank uses **native tree-sitter** to parse source code into ASTs and extract
 
 For large classes (>80 lines), the chunker descends into the class body and extracts each method as a separate chunk. For unsupported languages, it falls back to a sliding window with overlap.
 
-> Tree-sitter grammars are **optional dependencies** (except JS and TS, which are included). If you index a file whose grammar isn't installed, BrainBank throws a clear error with the exact `npm install` command. See [Tree-Sitter Grammars](#tree-sitter-grammars) for the full list.
+> Tree-sitter grammars are **bundled** — all 19 languages ship with BrainBank. No extra install needed.
+
+### Code Graph
+
+Beyond chunking, BrainBank builds a **relationship-aware code graph** during indexing. This gives the context builder (and your LLM) a deeper understanding of how code connects — not just what's in each file, but who calls what and what depends on what.
+
+#### What Gets Indexed
+
+The code graph adds three dimensions to each indexed file:
+
+| Layer | Table | What it captures | Example |
+|-------|-------|------------------|---------|
+| **Imports** | `code_imports` | File-level dependencies | `agent.ts` → `call`, `config`, `emitter` |
+| **Symbols** | `code_symbols` | Function/class/method definitions | `TurnManager.on_vad_start` (method, L420) |
+| **Call Refs** | `code_refs` | Function calls within each chunk | `on_vad_start` calls `_clear_all_bot_audio`, `emit` |
+
+**Import extraction** is regex-based (fast, no AST needed) and supports all 19 languages:
+
+| Language Family | Patterns Matched |
+|----------------|------------------|
+| JS/TS | `import ... from '...'`, `require('...')` |
+| Python | `import X`, `from X import Y` |
+| Go | `import "pkg"`, `import (...)` |
+| Ruby | `require 'X'`, `require_relative 'X'` |
+| Rust | `use X::Y`, `mod X` |
+| Java/Kotlin/Scala | `import X.Y.Z` |
+| C/C++ | `#include <X>`, `#include "X"` |
+| Others | PHP, Elixir, Lua, Swift, Bash, CSS, HTML |
+
+**Symbol & call extraction** uses tree-sitter ASTs — the same parse tree used for chunking. Symbols are linked to their chunk IDs, enabling cross-references.
+
+#### Enriched Embeddings
+
+The code graph also improves **embedding quality**. Each chunk's embedding text now includes import context and parent class:
+
+```diff
+- File: src/session/turn_manager.py
+- function: on_vad_start
+- <code>
+
++ File: src/session/turn_manager.py
++ Imports: asyncio, logging, domain.turn, processors.audio.vad
++ Class: TurnManager
++ method: TurnManager.on_vad_start
++ <code>
+```
+
+This means searching for "VAD processing in turn manager" finds the right chunk even if the code itself doesn't mention "turn manager" explicitly — because the embedding captures the file context.
+
+#### Context Output
+
+The `getContext()` / `brainbank context` output gains two new sections:
+
+**1. Call graph annotations** on each code block:
+```
+**method `on_vad_start` (L420-480)** — 95% match *(calls: _clear_all_bot_audio, emit | called by: on_speech_ended)*
+```
+
+**2. Related Files section** showing the import graph:
+```markdown
+## Related Files (Import Graph)
+
+- → domain.turn                      # this file imports
+- → processors.audio.vad             # this file imports
+- ← tests/test_turn_manager.py       # imported by
+- ← session/call_handler.py          # imported by
+```
+
+This makes `getContext()` return a complete picture — the code, who calls it, who depends on it, and its git history — in a single query.
+
+#### Multi-Project Isolation
+
+Each project has its own `.brainbank/` database, so `code_imports`, `code_symbols`, and `code_refs` are fully isolated per repo. In multi-repo setups (same DB, different `code:frontend` / `code:backend` plugins), file paths are relative to each repo root — no collisions.
+
+> **Schema v5:** The code graph tables are new in schema version 5. Existing `.brainbank/` databases will auto-migrate when you re-index with `--force`.
 
 ### Incremental Indexing
 
@@ -1393,6 +1474,7 @@ PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to
 │  ┌──────────────────────────────────────────────────┐│
 │  │         SQLite (.brainbank/brainbank.db)         ││
 │  │  code_chunks │ git_commits │ doc_chunks          ││
+│  │  code_imports│ code_symbols│ code_refs            ││
 │  │  kv_data │ FTS5 full-text │ vectors │ co_edits   ││
 │  └──────────────────────────────────────────────────┘│
 │                                                      │
@@ -1443,7 +1525,7 @@ Final results (sorted by blended score)
 ## Testing
 
 ```bash
-npm test                    # Unit tests (172 tests)
+npm test                    # Unit tests (207 tests)
 npm test -- --integration   # Full suite (includes real models + all domains)
 npm test -- --filter code   # Filter by test name
 npm test -- --verbose       # Show assertion details

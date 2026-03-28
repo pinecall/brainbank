@@ -6,7 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Code Graph: Import graph** — new `code_imports` table tracks file-level import relationships. Context builder shows `## Related Files (Import Graph)` section with importing/imported files
+- **Code Graph: Symbol index** — new `code_symbols` table extracts all function/class/method definitions with name, kind, and line number. Linked to chunk IDs for cross-referencing
+- **Code Graph: Call references** — new `code_refs` table tracks function calls within each chunk. Context builder annotates results with `calls:` and `called by:` info
+- **Enriched embedding text** — chunk embeddings now include import context and parent class name, improving semantic search relevance
+- **Import extractor** (`import-extractor.ts`) — regex-based, supports all 19 languages (JS/TS, Python, Go, Ruby, Rust, Java, C/C++, etc.)
+- **Symbol extractor** (`symbol-extractor.ts`) — AST-based extraction of symbols and call references using tree-sitter
+- **Hybrid search: increased defaults** — `codeK` 6→20, `gitK` 5→8 for more candidate results
+- **CLI score filter** — `printResults` now filters results by score ≥ 70% (max 20), showing only high-quality matches
+
 ### Changed
+- **Schema version 4 → 5** — added `code_imports`, `code_symbols`, `code_refs` tables. Existing databases need `--force` re-index
 - **All 19 tree-sitter grammars bundled** — moved from `optionalDependencies` to `dependencies`. No extra install needed for Go, Ruby, Rust, etc.
 - **Async grammar loading** — `tryGrammar` now supports ESM-only packages (e.g. `tree-sitter-css@0.25`) via `import()` fallback
 - **Graceful fallback for missing grammars** — files with unavailable grammars fall back to sliding window chunking instead of crashing the index

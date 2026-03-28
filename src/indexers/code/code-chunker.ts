@@ -38,8 +38,8 @@ export class CodeChunker {
         this.OVERLAP = config.overlap ?? 5;
     }
 
-    /** Lazy-init tree-sitter parser. */
-    private _ensureParser(): any {
+    /** Lazy-init tree-sitter parser. Exposed for symbol extraction. */
+    _ensureParser(): any {
         if (!this._parser) {
             try {
                 const Parser = require('tree-sitter');
@@ -49,6 +49,11 @@ export class CodeChunker {
             }
         }
         return this._parser || null;
+    }
+
+    /** Get a cached grammar (already loaded). Returns null if not loaded. */
+    getCachedGrammar(language: string): LangGrammar | null {
+        return this._langCache.get(language) ?? null;
     }
 
     /** Load a language grammar (cached). Throws if grammar package is not installed. */

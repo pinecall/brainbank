@@ -200,7 +200,7 @@ export class Initializer {
         const bm25 = new KeywordSearch(db);
 
         const firstGit = registry.firstByType('git') as any;
-        const contextBuilder = new ContextBuilder(search, firstGit?.coEdits);
+        const contextBuilder = new ContextBuilder(search, firstGit?.coEdits, db);
 
         return { search, bm25, contextBuilder };
     }

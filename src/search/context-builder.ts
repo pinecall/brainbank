@@ -3,17 +3,19 @@
  * 
  * Builds a formatted markdown context block from search results.
  * Ready for injection into an LLM system prompt.
- * Groups code by file, includes git history and learned patterns.
+ * Groups code by file, includes git history, call graph, and learned patterns.
  */
 
 import type { SearchResult, ContextOptions } from '@/types.ts';
 import type { SearchStrategy } from '@/search/types.ts';
 import type { CoEditAnalyzer } from '@/indexers/git/co-edit-analyzer.ts';
+import type { Database } from '@/db/database.ts';
 
 export class ContextBuilder {
     constructor(
         private _search: SearchStrategy,
         private _coEdits?: CoEditAnalyzer,
+        private _db?: Database,
     ) {}
 
     /** Build a full context block for a task. Returns markdown for system prompt. */
@@ -31,7 +33,9 @@ export class ContextBuilder {
 
         const parts: string[] = [`# Context for: "${task}"\n`];
 
-        this._formatCodeResults(results, codeResults, parts);
+        const codeHits = results.filter(r => r.type === 'code').slice(0, codeResults);
+        this._formatCodeResults(codeHits, parts);
+        this._formatCodeGraph(codeHits, parts);
         this._formatGitResults(results, gitResults, parts);
         this._formatCoEdits(affectedFiles, parts);
         this._formatPatternResults(results, patternResults, parts);
@@ -40,8 +44,7 @@ export class ContextBuilder {
     }
 
     /** Format code search results grouped by file. */
-    private _formatCodeResults(results: SearchResult[], limit: number, parts: string[]): void {
-        const codeHits = results.filter(r => r.type === 'code').slice(0, limit);
+    private _formatCodeResults(codeHits: SearchResult[], parts: string[]): void {
         if (codeHits.length === 0) return;
 
         parts.push('## Relevant Code\n');
@@ -56,15 +59,88 @@ export class ContextBuilder {
         for (const [file, chunks] of byFile) {
             parts.push(`### ${file}`);
             for (const c of chunks) {
-                const m = c.metadata;
+                const m = c.metadata as Record<string, any>;
                 const label = m.name
                     ? `${m.chunkType} \`${m.name}\` (L${m.startLine}-${m.endLine})`
                     : `L${m.startLine}-${m.endLine}`;
-                parts.push(`**${label}** — ${Math.round(c.score * 100)}% match`);
+
+                // Add call graph annotations
+                const callInfo = this._getCallInfo(c);
+                const annotation = callInfo ? ` ${callInfo}` : '';
+
+                parts.push(`**${label}** — ${Math.round(c.score * 100)}% match${annotation}`);
                 parts.push('```' + (m.language || ''));
                 parts.push(c.content);
                 parts.push('```\n');
             }
+        }
+    }
+
+    /** Format code graph: imports and related files. */
+    private _formatCodeGraph(codeHits: SearchResult[], parts: string[]): void {
+        if (!this._db || codeHits.length === 0) return;
+
+        const files = new Set(codeHits.map(r => r.filePath).filter(Boolean) as string[]);
+        const relatedFiles = new Set<string>();
+
+        try {
+            for (const file of files) {
+                // Files this file imports
+                const imports = this._db.prepare(
+                    'SELECT imports_path FROM code_imports WHERE file_path = ?'
+                ).all(file) as { imports_path: string }[];
+                for (const row of imports) relatedFiles.add(`→ ${row.imports_path}`);
+
+                // Files that import this file (reverse lookup by basename)
+                const basename = file.split('/').pop()?.replace(/\.\w+$/, '') ?? '';
+                if (basename) {
+                    const importers = this._db.prepare(
+                        'SELECT DISTINCT file_path FROM code_imports WHERE imports_path LIKE ?'
+                    ).all(`%${basename}%`) as { file_path: string }[];
+                    for (const row of importers) {
+                        if (!files.has(row.file_path)) relatedFiles.add(`← ${row.file_path}`);
+                    }
+                }
+            }
+        } catch {
+            return; // Table might not exist yet
+        }
+
+        if (relatedFiles.size === 0) return;
+        parts.push('## Related Files (Import Graph)\n');
+        for (const f of [...relatedFiles].slice(0, 15)) {
+            parts.push(`- ${f}`);
+        }
+        parts.push('');
+    }
+
+    /** Get call graph info for a single search result. */
+    private _getCallInfo(result: SearchResult): string | null {
+        if (!this._db) return null;
+        const chunkId = (result.metadata as Record<string, any>)?.id;
+        if (!chunkId) return null;
+
+        try {
+            // What this chunk calls
+            const calls = this._db.prepare(
+                'SELECT DISTINCT symbol_name FROM code_refs WHERE chunk_id = ? LIMIT 5'
+            ).all(chunkId) as { symbol_name: string }[];
+
+            // What calls this chunk's main symbol
+            const name = (result.metadata as Record<string, any>)?.name;
+            const callers = name ? this._db.prepare(
+                `SELECT DISTINCT cc.file_path, cc.name FROM code_refs cr
+                 JOIN code_chunks cc ON cc.id = cr.chunk_id
+                 WHERE cr.symbol_name = ? LIMIT 5`
+            ).all(name) as { file_path: string; name: string }[] : [];
+
+            const parts: string[] = [];
+            if (calls.length > 0) parts.push(`calls: ${calls.map(c => c.symbol_name).join(', ')}`);
+            if (callers.length > 0) parts.push(`called by: ${callers.map(c => c.name || c.file_path).join(', ')}`);
+
+            return parts.length > 0 ? `*(${parts.join(' | ')})*` : null;
+        } catch {
+            return null;
         }
     }
 

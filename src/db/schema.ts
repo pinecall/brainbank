@@ -7,7 +7,7 @@
 
 import type Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Create all tables and indices.
@@ -45,6 +45,27 @@ export function createSchema(db: Database.Database): void {
             file_path   TEXT PRIMARY KEY,
             file_hash   TEXT    NOT NULL,
             indexed_at  INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        -- ── Code Graph ─────────────────────────────────
+        CREATE TABLE IF NOT EXISTS code_imports (
+            file_path    TEXT NOT NULL,
+            imports_path TEXT NOT NULL,
+            PRIMARY KEY (file_path, imports_path)
+        );
+
+        CREATE TABLE IF NOT EXISTS code_symbols (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT    NOT NULL,
+            name      TEXT    NOT NULL,
+            kind      TEXT    NOT NULL,
+            line      INTEGER NOT NULL,
+            chunk_id  INTEGER REFERENCES code_chunks(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS code_refs (
+            chunk_id    INTEGER NOT NULL REFERENCES code_chunks(id) ON DELETE CASCADE,
+            symbol_name TEXT    NOT NULL
         );
 
         -- ── Git history ────────────────────────────────
@@ -108,6 +129,11 @@ export function createSchema(db: Database.Database): void {
 
         -- ── Indices ────────────────────────────────────
         CREATE INDEX IF NOT EXISTS idx_cc_file      ON code_chunks(file_path);
+        CREATE INDEX IF NOT EXISTS idx_ci_imports   ON code_imports(imports_path);
+        CREATE INDEX IF NOT EXISTS idx_cs_name      ON code_symbols(name);
+        CREATE INDEX IF NOT EXISTS idx_cs_file      ON code_symbols(file_path);
+        CREATE INDEX IF NOT EXISTS idx_cr_symbol    ON code_refs(symbol_name);
+        CREATE INDEX IF NOT EXISTS idx_cr_chunk     ON code_refs(chunk_id);
         CREATE INDEX IF NOT EXISTS idx_cf_path      ON commit_files(file_path);
         CREATE INDEX IF NOT EXISTS idx_gc_ts        ON git_commits(timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_gc_hash      ON git_commits(hash);
