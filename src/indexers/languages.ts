@@ -56,10 +56,6 @@ export const SUPPORTED_EXTENSIONS: Record<string, string> = {
     '.graphql': 'graphql',
     '.gql': 'graphql',
 
-    // Docs
-    '.md': 'markdown',
-    '.mdx': 'markdown',
-
     // Database
     '.sql': 'sql',
     '.prisma': 'prisma',
