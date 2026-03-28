@@ -506,7 +506,7 @@ PluginContext
 Tree-sitter AST, embed chunks, store in SQLite + HNSW.
 
 ```
-code({ repoPath: '.', name: 'code' })
+code({ repoPath: '.', name: 'code', ignore: ['sdk/**', 'vendor/**'] })
          │
          ▼
    CodePlugin.initialize(ctx)
@@ -516,7 +516,8 @@ code({ repoPath: '.', name: 'code' })
          │     └── all code plugins share ONE HNSW index
          ├── if shared.isNew:
          │     ctx.loadVectors('code_vectors', 'chunk_id', hnsw, vecCache)
-         └── new CodeWalker(repoPath, { db, hnsw, vecCache, embedding }, maxFileSize)
+         └── new CodeWalker(repoPath, { db, hnsw, vecCache, embedding }, maxFileSize, ignore)
+              └── ignore patterns compiled once via picomatch ({ dot: true })
 
 
 CodePlugin.index({ forceReindex, onProgress })
@@ -525,7 +526,10 @@ CodePlugin.index({ forceReindex, onProgress })
    CodeWalker.index()
          │
          ├── _walkRepo(repoPath)         ← recursive dir traversal
-         │     └── filters: IGNORE_DIRS, IGNORE_FILES, SUPPORTED_EXTENSIONS, maxFileSize
+         │     └── filters: IGNORE_DIRS, IGNORE_FILES, SUPPORTED_EXTENSIONS,
+         │                  maxFileSize, custom ignore globs (picomatch)
+         │         dirs:  isIgnoredDir(name) || _isIgnored(relDir)
+         │         files: isIgnoredFile(name) || _isIgnored(relPath)
          │
          ├── for each file:
          │     ├── read content

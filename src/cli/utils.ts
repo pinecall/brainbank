@@ -36,6 +36,7 @@ const VALUE_FLAGS = new Set([
     'repo', 'depth', 'collection', 'pattern', 'context', 'name',
     'keep', 'reranker', 'only', 'docs',
     'ignore', 'meta', 'k', 'mode', 'limit',
+    'codeK', 'gitK', 'docsK', 'collections',
 ]);
 
 /**

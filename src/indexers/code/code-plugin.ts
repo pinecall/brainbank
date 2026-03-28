@@ -25,6 +25,8 @@ export interface CodePluginOptions {
     repoPath?: string;
     /** Maximum file size in bytes. Default: from config */
     maxFileSize?: number;
+    /** Glob patterns to ignore (e.g. sdk/**, *.generated.ts). Applied on top of built-in ignores. */
+    ignore?: string[];
     /** Custom indexer name for multi-repo (e.g. 'code:frontend'). Default: 'code' */
     name?: string;
     /** Per-plugin embedding provider. Default: global embedding from BrainBank config. */
@@ -62,7 +64,7 @@ class CodePlugin implements Plugin {
             hnsw: this.hnsw,
             vectorCache: this.vecCache,
             embedding,
-        }, this.opts.maxFileSize ?? ctx.config.maxFileSize);
+        }, this.opts.maxFileSize ?? ctx.config.maxFileSize, this.opts.ignore);
     }
 
     async index(options: {

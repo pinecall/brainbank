@@ -205,4 +205,4 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 
 ## REMEMBER
 
-- Please update the ARCHITECTURE.md everytime you implement a modification in the system core
+- Please always update the README.md, ARCHITECTURE.md, BENCHMARKS.md and the CHANGELOG.md when needed

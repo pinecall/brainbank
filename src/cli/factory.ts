@@ -28,6 +28,8 @@ interface PluginConfig {
 /** Code plugin config. */
 interface CodeConfig extends PluginConfig {
     maxFileSize?: number;
+    /** Glob patterns to ignore (e.g. sdk/**, *.generated.ts). */
+    ignore?: string[];
 }
 
 /** Git plugin config. */
@@ -251,6 +253,13 @@ async function registerBuiltins(
     const gitEmb = config?.git?.embedding ? await resolveEmbeddingKey(config.git.embedding) : undefined;
     const docsEmb = config?.docs?.embedding ? await resolveEmbeddingKey(config.docs.embedding) : undefined;
 
+    // Resolve ignore patterns: CLI flag (--ignore) merges with config.json
+    const ignoreFlag = getFlag('ignore');
+    const cliIgnore = ignoreFlag ? ignoreFlag.split(',').map(s => s.trim()) : [];
+    const configIgnore = config?.code?.ignore ?? [];
+    const mergedIgnore = [...configIgnore, ...cliIgnore];
+    const ignore = mergedIgnore.length > 0 ? mergedIgnore : undefined;
+
     if (gitSubdirs.length > 0 && (builtins.includes('code') || builtins.includes('git'))) {
         console.log(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
         for (const sub of gitSubdirs) {
@@ -260,6 +269,7 @@ async function registerBuiltins(
                     name: `code:${sub.name}`,
                     embeddingProvider: codeEmb,
                     maxFileSize: config?.code?.maxFileSize,
+                    ignore,
                 }));
             }
             if (builtins.includes('git')) {
@@ -278,6 +288,7 @@ async function registerBuiltins(
                 repoPath: rp,
                 embeddingProvider: codeEmb,
                 maxFileSize: config?.code?.maxFileSize,
+                ignore,
             }));
         }
         if (builtins.includes('git')) {

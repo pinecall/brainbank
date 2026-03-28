@@ -8,6 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import picomatch from 'picomatch';
 import { CodeChunker } from './code-chunker.ts';
 import { extractImports } from './import-extractor.ts';
 import { extractSymbols, extractCallRefs, type SymbolDef } from './symbol-extractor.ts';
@@ -34,11 +35,13 @@ export class CodeWalker {
     private _deps: CodeWalkerDeps;
     private _repoPath: string;
     private _maxFileSize: number;
+    private _isIgnored: ((path: string) => boolean) | null;
 
-    constructor(repoPath: string, deps: CodeWalkerDeps, maxFileSize: number = 512_000) {
+    constructor(repoPath: string, deps: CodeWalkerDeps, maxFileSize: number = 512_000, ignore?: string[]) {
         this._deps = deps;
         this._repoPath = repoPath;
         this._maxFileSize = maxFileSize;
+        this._isIgnored = ignore?.length ? picomatch(ignore, { dot: true }) : null;
     }
 
     /** Index all supported files. Skips unchanged files (same content hash). */
@@ -242,6 +245,11 @@ export class CodeWalker {
         for (const entry of entries) {
             if (entry.isDirectory()) {
                 if (isIgnoredDir(entry.name)) continue;
+                // Check custom ignores against relative dir path
+                if (this._isIgnored) {
+                    const relDir = path.relative(this._repoPath, path.join(dir, entry.name));
+                    if (this._isIgnored(relDir) || this._isIgnored(relDir + '/')) continue;
+                }
                 this._walkRepo(path.join(dir, entry.name), files);
             } else if (entry.isFile()) {
                 if (isIgnoredFile(entry.name)) continue;
@@ -249,6 +257,12 @@ export class CodeWalker {
                 if (!(ext in SUPPORTED_EXTENSIONS)) continue;
 
                 const full = path.join(dir, entry.name);
+                // Check custom ignores against relative file path
+                if (this._isIgnored) {
+                    const rel = path.relative(this._repoPath, full);
+                    if (this._isIgnored(rel)) continue;
+                }
+
                 try {
                     if (fs.statSync(full).size <= this._maxFileSize) {
                         files.push(full);

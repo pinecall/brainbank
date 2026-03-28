@@ -209,6 +209,24 @@ brainbank ksearch <query>                   # Keyword search (BM25, instant)
 brainbank dsearch <query>                   # Document search
 ```
 
+**Source filtering** — all search commands accept `--codeK` and `--gitK` to control how many results come from each source. Set to `0` to skip a source entirely:
+
+```bash
+brainbank hsearch "auth" --codeK 0 --gitK 10   # git commits only
+brainbank hsearch "auth" --codeK 10 --gitK 0   # code only
+brainbank search "handler" --gitK 0            # code only (vector)
+brainbank ksearch "bugfix" --codeK 0           # git only (keyword)
+brainbank hsearch "auth" --codeK 3 --gitK 3    # balanced mix
+```
+
+**Document & collection filtering** (hsearch only) — use `--docsK` to control document results, or `--collections` for full per-source control including custom KV collections:
+
+```bash
+brainbank hsearch "api" --docsK 10 --codeK 0 --gitK 0   # docs only
+brainbank hsearch "bug" --collections errors:5,git:3    # KV collection + git
+brainbank hsearch "auth" --collections code:5,git:0,docs:10,decisions:3
+```
+
 ### Context
 
 ```bash
@@ -236,7 +254,7 @@ brainbank watch                             # Watch files, auto re-index on chan
 brainbank serve                             # Start MCP server (stdio)
 ```
 
-**Global options:** `--repo <path>`, `--force`, `--depth <n>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`, `--reranker <name>`
+**Global options:** `--repo <path>`, `--force`, `--depth <n>`, `--codeK <n>`, `--gitK <n>`, `--docsK <n>`, `--collections k:v,...`, `--ignore <globs>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`, `--reranker <name>`
 
 ---
 
@@ -262,7 +280,10 @@ import { docs } from 'brainbank/docs';
 
 // Each plugin can use a different embedding provider
 const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384d, free)
-  .use(code({ embeddingProvider: new OpenAIEmbedding() }))  // code: OpenAI (1536d)
+  .use(code({
+    embeddingProvider: new OpenAIEmbedding(),                // code: OpenAI (1536d)
+    ignore: ['sdk/**', 'vendor/**', '**/*.generated.ts'],   // skip auto-generated code
+  }))
   .use(git())                                               // git: local (384d)
   .use(docs());                                             // docs: local (384d)
 
@@ -286,19 +307,31 @@ brain.close();
 
 ### Collections
 
-Dynamic key-value collections with semantic search — the building block for agent memory:
+**No plugin needed.** Collections are the simplest way to index any data — API responses, Slack messages, logs, research notes, error traces, anything. Just `brain.collection('name')` and start adding content. Each item is auto-embedded for semantic search.
 
 ```typescript
+// Minimal setup — no plugins required
+import { BrainBank } from 'brainbank';
+
+const brain = new BrainBank({ repoPath: '.' });
+await brain.initialize();
+
+// Create collections on the fly (auto-created on first use)
+const errors = brain.collection('errors');
 const decisions = brain.collection('decisions');
 
-// Store rich content (auto-embedded for vector search)
+// Store anything — auto-embedded for vector search
+await errors.add('TypeError: Cannot read property "id" of undefined in UserService.getProfile()', {
+  tags: ['backend'], metadata: { file: 'src/user.ts', line: 42 }
+});
+
 await decisions.add(
   'Use SQLite with WAL mode instead of PostgreSQL. Portable single-file ' +
   'storage, works offline, zero infrastructure.',
   { tags: ['architecture'], metadata: { files: ['src/db.ts'] } }
 );
 
-// Semantic search — finds by meaning, not keywords
+// Semantic search — finds by meaning, not exact keywords
 const hits = await decisions.search('why not postgres');
 // → [{ content: 'Use SQLite with WAL...', score: 0.95, tags: [...], metadata: {...} }]
 
@@ -308,8 +341,10 @@ decisions.list({ tags: ['architecture'] }); // filter by tags
 decisions.count();                      // total items
 decisions.trim({ keep: 50 });           // keep N most recent
 decisions.prune({ olderThan: '30d' });  // remove older than 30 days
-brain.listCollectionNames();            // → ['decisions', ...]
+brain.listCollectionNames();            // → ['errors', 'decisions']
 ```
+
+Collections work standalone or alongside plugins. When used with `hsearch`, pass `--collections errors:5` to include them in hybrid search results.
 
 > 📂 See [examples/collection](examples/collection/) for a complete runnable demo with cross-collection linking and metadata.
 
@@ -396,7 +431,12 @@ Three modes, from fastest to best quality:
 // Hybrid search (recommended default)
 const results = await brain.hybridSearch('authentication middleware');
 
-// Scoped search
+// Source filtering — control how many results per source
+const codeOnly = await brain.hybridSearch('auth', { codeK: 10, gitK: 0 });
+const gitOnly  = await brain.hybridSearch('auth', { codeK: 0, gitK: 10 });
+const balanced = await brain.hybridSearch('auth', { codeK: 3, gitK: 3 });
+
+// Scoped search (convenience methods)
 const codeHits = await brain.searchCode('parse JSON config', 8);
 const commitHits = await brain.searchCommits('fix auth bug', 5);
 const docHits = await brain.searchDocs('getting started', { collection: 'wiki' });
@@ -518,7 +558,14 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
   // Per-plugin options
   "code": {
     "embedding": "openai",         // use OpenAI embeddings for code
-    "maxFileSize": 512000
+    "maxFileSize": 512000,
+    "ignore": [                     // glob patterns to exclude from indexing
+      "sdk/**",
+      "vendor/**",
+      "**/*.generated.ts",
+      "**/*.min.js",
+      "test/fixtures/**"
+    ]
   },
   "git": {
     "depth": 200                    // index last 200 commits

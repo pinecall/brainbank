@@ -12,6 +12,7 @@ export async function cmdIndex(): Promise<void> {
     const depth = parseInt(getFlag('depth') || '500', 10);
     const onlyRaw = getFlag('only');
     const docsPath = getFlag('docs');
+    const ignoreRaw = getFlag('ignore');
     const modules = onlyRaw
         ? onlyRaw.split(',').map(s => s.trim()) as ('code' | 'git' | 'docs')[]
         : undefined;
@@ -27,6 +28,7 @@ export async function cmdIndex(): Promise<void> {
     console.log(c.dim(`  Git depth: ${depth}`));
     if (modules) console.log(c.dim(`  Modules: ${modules.join(', ')}`));
     if (docsPath) console.log(c.dim(`  Docs path: ${docsPath}`));
+    if (ignoreRaw) console.log(c.dim(`  Ignore: ${ignoreRaw}`));
 
     const brain = await createBrain(repoPath);
 

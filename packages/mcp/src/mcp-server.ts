@@ -134,10 +134,21 @@ async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
 }
 
 async function _createBrain(resolved: string): Promise<BrainBank> {
+    // Read .brainbank/config.json if present
+    const configPath = path.join(resolved, '.brainbank', 'config.json');
+    let projectConfig: Record<string, any> | null = null;
+    try {
+        if (fs.existsSync(configPath)) {
+            projectConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        }
+    } catch {}
+
+    const codeIgnore = projectConfig?.code?.ignore as string[] | undefined;
+
     // Embedding provider auto-resolves from stored DB config (no env var needed)
     const opts: Record<string, any> = { repoPath: resolved, reranker: _sharedReranker };
     const brain = new BrainBank(opts)
-        .use(code({ repoPath: resolved }))
+        .use(code({ repoPath: resolved, ignore: codeIgnore }))
         .use(git({ repoPath: resolved }))
         .use(docs());
 
@@ -151,7 +162,7 @@ async function _createBrain(resolved: string): Promise<BrainBank> {
             try { fs.unlinkSync(dbPath + '-shm'); } catch {}
 
             const fresh = new BrainBank(opts)
-                .use(code({ repoPath: resolved }))
+                .use(code({ repoPath: resolved, ignore: codeIgnore }))
                 .use(git({ repoPath: resolved }))
                 .use(docs());
             await fresh.initialize();

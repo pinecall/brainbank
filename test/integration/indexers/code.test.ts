@@ -229,3 +229,45 @@ tests['cleanup'] = async () => {
     brain.close();
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
 };
+
+// ── Ignore Patterns ─────────────────────────────────
+
+let ignoreBrain: BrainBank;
+let ignoreTmp: string;
+
+tests['ignore: skips files matching custom ignore patterns'] = async () => {
+    ignoreTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-ignore-'));
+    fs.mkdirSync(path.join(ignoreTmp, 'src'), { recursive: true });
+    fs.mkdirSync(path.join(ignoreTmp, 'sdk', 'generated'), { recursive: true });
+    fs.mkdirSync(path.join(ignoreTmp, 'vendor'), { recursive: true });
+
+    // Files that SHOULD be indexed
+    fs.writeFileSync(path.join(ignoreTmp, 'src', 'app.ts'), 'export function main() { return "hello"; }');
+    fs.writeFileSync(path.join(ignoreTmp, 'src', 'utils.ts'), 'export function add(a: number, b: number) { return a + b; }');
+
+    // Files that should be IGNORED
+    fs.writeFileSync(path.join(ignoreTmp, 'sdk', 'client.ts'), 'export class Client {}');
+    fs.writeFileSync(path.join(ignoreTmp, 'sdk', 'generated', 'api.ts'), 'export class Api {}');
+    fs.writeFileSync(path.join(ignoreTmp, 'vendor', 'lib.ts'), 'export function vendorFn() {}');
+    fs.writeFileSync(path.join(ignoreTmp, 'src', 'types.generated.ts'), 'export type Foo = string;');
+
+    ignoreBrain = new BrainBank({
+        repoPath: ignoreTmp,
+        dbPath: path.join(ignoreTmp, 'test.db'),
+        embeddingProvider: emb,
+    }).use(code({
+        repoPath: ignoreTmp,
+        ignore: ['sdk/**', 'vendor/**', '**/*.generated.ts'],
+    }));
+    await ignoreBrain.initialize();
+
+    const result = await ignoreBrain.indexCode();
+
+    // Only src/app.ts and src/utils.ts should be indexed (2 files)
+    assert.equal(result.indexed, 2, `expected 2 indexed files, got ${result.indexed}`);
+};
+
+tests['ignore: cleanup'] = async () => {
+    ignoreBrain.close();
+    try { fs.rmSync(ignoreTmp, { recursive: true, force: true }); } catch {}
+};
