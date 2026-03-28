@@ -1,0 +1,13 @@
+{
+  "plugins": [
+    "code",
+    "git",
+    "docs"
+  ],
+  "code": {
+    "maxFileSize": 512000
+  },
+  "git": {
+    "depth": 500
+  }
+}

@@ -38,6 +38,15 @@ export async function cmdIndex(): Promise<void> {
             console.log(c.dim('\n  Nothing selected. Exiting.\n'));
             return;
         }
+
+        // Clean screen and show selection summary
+        console.clear();
+        console.log(c.bold('\n━━━ BrainBank ━━━\n'));
+        console.log('  Selected modules:');
+        for (const m of modules) {
+            console.log(`    ${c.green('✓')} ${m}`);
+        }
+        console.log('');
     }
 
     // If --docs is passed, auto-include 'docs' in modules
@@ -110,6 +119,7 @@ export async function cmdIndex(): Promise<void> {
 // ── Scan Tree Output ────────────────────────────────
 
 function printScanTree(scan: ScanResult, depth: number): void {
+    console.clear();
     console.log(c.bold('\n━━━ BrainBank Scan ━━━'));
     console.log(c.dim(`  Repo: ${scan.repoPath}`));
 
@@ -196,6 +206,7 @@ function buildDefaultModules(scan: ScanResult): ('code' | 'git' | 'docs')[] {
 /** Interactive checkbox prompt via @inquirer/prompts. */
 async function promptModules(scan: ScanResult): Promise<('code' | 'git' | 'docs')[]> {
     const { checkbox } = await import('@inquirer/prompts');
+    console.log(c.dim('  ─────────────────────────────────────────\n'));
 
     type ModuleName = 'code' | 'git' | 'docs';
     const choices: { name: string; value: ModuleName; checked: boolean; disabled?: string }[] = [];
@@ -239,15 +250,15 @@ async function promptModules(scan: ScanResult): Promise<('code' | 'git' | 'docs'
         });
     } else {
         choices.push({
-            name: 'Docs  — no collections configured',
+            name: 'Docs  — no documents found',
             value: 'docs',
             checked: false,
-            disabled: 'configure in config.json',
+            disabled: 'no .md/.mdx files',
         });
     }
 
     return checkbox<ModuleName>({
-        message: 'Select modules to index:',
+        message: 'Select modules to index:\n',
         choices,
     });
 }
