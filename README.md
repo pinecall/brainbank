@@ -268,9 +268,9 @@ BrainBank uses pluggable plugins. Register only what you need with `.use()`:
 
 | Plugin | Import | Description |
 |---------|--------|-------------|
-| `code` | `brainbank/code` | AST-aware code chunking via tree-sitter (19 languages) |
+| `code` | `brainbank/code` | AST-aware code chunking via tree-sitter (19 languages). Source code only — does **not** index documents (.md, .mdx) |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
-| `docs` | `brainbank/docs` | Document collections (markdown, wikis) |
+| `docs` | `brainbank/docs` | Document collections (markdown, wikis, .md/.mdx files) |
 
 ```typescript
 import { BrainBank, OpenAIEmbedding } from 'brainbank';
