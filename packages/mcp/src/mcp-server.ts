@@ -144,13 +144,26 @@ async function _createBrain(resolved: string): Promise<BrainBank> {
     } catch {}
 
     const codeIgnore = projectConfig?.code?.ignore as string[] | undefined;
+    const plugins = (projectConfig?.plugins as string[] | undefined) ?? ['code', 'git', 'docs'];
 
-    // Embedding provider auto-resolves from stored DB config (no env var needed)
-    const opts: Record<string, any> = { repoPath: resolved, reranker: _sharedReranker };
-    const brain = new BrainBank(opts)
-        .use(code({ repoPath: resolved, ignore: codeIgnore }))
-        .use(git({ repoPath: resolved }))
-        .use(docs());
+    // Resolve embedding: config.json > BRAINBANK_EMBEDDING env > auto from DB
+    const embKey = projectConfig?.embedding ?? process.env.BRAINBANK_EMBEDDING;
+    let embeddingProvider: any = undefined;
+    if (embKey) {
+        const { resolveEmbedding } = await import('brainbank');
+        embeddingProvider = resolveEmbedding(embKey);
+    }
+
+    const opts: Record<string, any> = {
+        repoPath: resolved,
+        reranker: _sharedReranker,
+        ...(embeddingProvider ? { embeddingProvider, embeddingDims: embeddingProvider.dims } : {}),
+    };
+    const brain = new BrainBank(opts);
+
+    if (plugins.includes('code')) brain.use(code({ repoPath: resolved, ignore: codeIgnore }));
+    if (plugins.includes('git')) brain.use(git({ repoPath: resolved }));
+    if (plugins.includes('docs')) brain.use(docs());
 
     try {
         await brain.initialize();
@@ -161,10 +174,10 @@ async function _createBrain(resolved: string): Promise<BrainBank> {
             try { fs.unlinkSync(dbPath + '-wal'); } catch {}
             try { fs.unlinkSync(dbPath + '-shm'); } catch {}
 
-            const fresh = new BrainBank(opts)
-                .use(code({ repoPath: resolved, ignore: codeIgnore }))
-                .use(git({ repoPath: resolved }))
-                .use(docs());
+            const fresh = new BrainBank(opts);
+            if (plugins.includes('code')) fresh.use(code({ repoPath: resolved, ignore: codeIgnore }));
+            if (plugins.includes('git')) fresh.use(git({ repoPath: resolved }));
+            if (plugins.includes('docs')) fresh.use(docs());
             await fresh.initialize();
             return fresh;
         }

@@ -278,7 +278,7 @@ function timeSince(date: Date): string {
 
 /** Offer to generate .brainbank/config.json from the selected modules. */
 async function offerSaveConfig(repoPath: string, modules: ('code' | 'git' | 'docs')[]): Promise<void> {
-    const { confirm } = await import('@inquirer/prompts');
+    const { confirm, select } = await import('@inquirer/prompts');
     const shouldSave = await confirm({
         message: 'Save selection to .brainbank/config.json?',
         default: true,
@@ -286,11 +286,37 @@ async function offerSaveConfig(repoPath: string, modules: ('code' | 'git' | 'doc
 
     if (!shouldSave) return;
 
+    // Embedding provider selection
+    const envEmbedding = process.env.BRAINBANK_EMBEDDING;
+    const embedding = await select<string>({
+        message: 'Embedding provider:',
+        choices: [
+            {
+                name: 'perplexity-context  — best accuracy (recommended)',
+                value: 'perplexity-context',
+            },
+            {
+                name: 'perplexity          — fast, high quality',
+                value: 'perplexity',
+            },
+            {
+                name: 'openai              — text-embedding-3-small',
+                value: 'openai',
+            },
+            {
+                name: 'local               — offline, no API key needed',
+                value: 'local',
+            },
+        ],
+        default: envEmbedding ?? 'perplexity-context',
+    });
+
     const configDir = path.join(repoPath, '.brainbank');
     const configPath = path.join(configDir, 'config.json');
 
     const config: Record<string, unknown> = {
         plugins: modules,
+        embedding,
     };
 
     // Add sensible defaults per module

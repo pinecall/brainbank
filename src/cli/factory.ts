@@ -230,14 +230,14 @@ async function setupProviders(brainOpts: Record<string, any>, config: ProjectCon
         brainOpts.reranker = new Qwen3Reranker();
     }
 
-    // Embedding: CLI flag > config > auto-resolve from DB
-    const embFlag = getFlag('embedding') ?? config?.embedding;
+    // Embedding: CLI flag > config > BRAINBANK_EMBEDDING env > auto-resolve from DB
+    const embFlag = getFlag('embedding') ?? config?.embedding ?? process.env.BRAINBANK_EMBEDDING;
     if (embFlag) {
         const provider = await resolveEmbeddingKey(embFlag);
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;
     }
-    // If no flag and no config → Initializer reads provider_key from DB → falls back to local
+    // If no flag, no config, and no env → Initializer reads provider_key from DB → falls back to local
 }
 
 /** Register built-in indexers with multi-repo detection and per-plugin embedding. */
