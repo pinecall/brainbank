@@ -13,13 +13,15 @@
 
 ## Auto-Resolution
 
-BrainBank **auto-resolves** the embedding provider. Set it once → it's stored in the DB → every future run uses the same provider automatically.
+BrainBank **auto-resolves** the embedding provider. Set it once → it's stored in `.brainbank/config.json` and DB → every future run uses the same provider automatically.
 
 ```bash
-# CLI: set on first index
-brainbank index . --embedding openai        # stores provider_key=openai in DB
-brainbank index .                            # auto-resolves openai from DB
-brainbank hsearch "auth middleware"           # uses the same provider
+# CLI: interactive setup (recommended)
+brainbank index .                            # prompts for embedding provider, saves to config.json
+
+# CLI: explicit override (any command)
+brainbank index . --embedding openai         # overrides provider for this run
+brainbank hsearch "auth middleware"           # auto-resolves from config.json or DB
 ```
 
 ```typescript
@@ -30,9 +32,9 @@ const brain = new BrainBank({
 });
 ```
 
-**MCP** — zero-config. Reads the provider from the DB automatically.
+**MCP** — zero-config. Reads the provider from `config.json` > `BRAINBANK_EMBEDDING` env > DB `provider_key` > falls back to local.
 
-> Priority on startup: explicit `embeddingProvider` in config > stored `provider_key` in DB > local WASM (default).
+> Priority on startup: explicit `embeddingProvider` > `--embedding` flag > `config.json` > `BRAINBANK_EMBEDDING` env > stored `provider_key` in DB > local WASM (default).
 
 ---
 

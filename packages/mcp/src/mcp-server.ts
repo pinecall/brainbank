@@ -6,13 +6,12 @@
  * Exposes BrainBank as an MCP server via stdio transport.
  * Works with Google Antigravity, Claude Desktop, and any MCP-compatible client.
  * 
- * Usage in Antigravity mcp_config.json:
+ * Usage in mcp_config.json:
  * {
  *   "mcpServers": {
  *     "brainbank": {
  *       "command": "npx",
- *       "args": ["tsx", "/path/to/brainbank/packages/mcp/src/mcp-server.ts"],
- *       "env": { "BRAINBANK_REPO": "/path/to/your/repo" }
+ *       "args": ["-y", "@brainbank/mcp"]
  *     }
  *   }
  * }

@@ -62,13 +62,13 @@ brainbank serve
 The MCP server auto-detects everything:
 
 - **Repo path** — from `repo` tool param > `BRAINBANK_REPO` env > `findRepoRoot(cwd)`
-- **Embedding provider** — from `provider_key` stored in DB (set during `brainbank index --embedding openai`)
+- **Embedding provider** — from `config.json` > `BRAINBANK_EMBEDDING` env > `provider_key` stored in DB > falls back to local
 
 > Index your repo once with the CLI to set up the embedding provider:
 > ```bash
-> brainbank index . --embedding openai   # stores provider_key=openai in DB
+> brainbank index .   # interactive — prompts for modules and embedding provider
 > ```
-> After that, the MCP server auto-resolves the correct provider — no env vars needed.
+> The selection is saved to `.brainbank/config.json`. After that, the MCP server auto-resolves the correct provider — no env vars needed.
 
 ---
 
@@ -107,10 +107,11 @@ All optional — the server works without any env vars.
 
 | Variable | Description | Default |
 |----------|-------------|------------|
-| `BRAINBANK_REPO` | Fallback repo path | auto-detect from cwd |
+| `BRAINBANK_REPO` | Fallback repo path (if `repo` param not provided and no `.git/` found) | auto-detect from cwd |
+| `BRAINBANK_EMBEDDING` | Embedding provider key: `local`, `openai`, `perplexity`, `perplexity-context` | from `config.json` or DB |
 | `BRAINBANK_RERANKER` | Reranker: `none`, `qwen3` | `none` |
-| `OPENAI_API_KEY` | Required when provider is `openai` | — |
-| `PERPLEXITY_API_KEY` | Required when provider is `perplexity` | — |
+| `OPENAI_API_KEY` | Required when embedding provider is `openai` | — |
+| `PERPLEXITY_API_KEY` | Required when embedding provider is `perplexity` or `perplexity-context` | — |
 
 ---
 
