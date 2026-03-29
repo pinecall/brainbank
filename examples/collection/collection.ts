@@ -20,7 +20,7 @@ await decisions.add(
     'storage, zero infrastructure, works offline. Trade-off: single-writer ' +
     'only, fine for our single-process design.',
     { tags: ['architecture', 'storage'] }
-); gs
+);
 
 await decisions.add(
     'Migrate API from Express to Fastify. 2x throughput in benchmarks, ' +
