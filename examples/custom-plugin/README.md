@@ -1,82 +1,23 @@
-# Custom Plugin Examples
+# CLI Plugin Example (Quotes)
 
-Two different BrainBank plugins showing the two ways to extend BrainBank. Both are local-only — no external APIs, testable immediately with the included sample data.
+A BrainBank plugin that's **auto-discovered** by the CLI from `.brainbank/plugins/`. Reads a `quotes.txt` file and indexes each line as a searchable quote with author metadata.
 
-## The Two Plugins
-
-| | **Notes Plugin** (programmatic) | **Quotes Plugin** (CLI) |
-|---|---|---|
-| **File** | `notes-plugin.ts` | `.brainbank/plugins/quotes.ts` |
-| **How to use** | Import and register with `brain.use()` | Auto-discovered by CLI |
-| **Data model** | One item per `.txt` file in a directory | One item per line in `quotes.txt` |
-| **What it indexes** | Technical notes (multi-line content) | Programming quotes with author |
-| **Capabilities** | `index` + `search` + `plugin<T>()` + `watch` | `index` + `search` + `plugin<T>()` + `watch` |
+> **Looking for the programmatic API example?** See [../notes-plugin/](../notes-plugin/).
 
 ## File Structure
 
 ```
 custom-plugin/
-├── notes-plugin.ts              # Programmatic plugin (library-style)
-├── usage.ts                     # Script to test the notes plugin
-├── sample-data/
-│   ├── notes/
-│   │   ├── architecture.txt     # Sample notes about BrainBank internals
-│   │   └── plugins.txt          # Sample notes about the plugin system
-│   └── quotes.txt               # 12 programming quotes (one per line)
 ├── .brainbank/
 │   ├── config.json              # Project config
 │   └── plugins/
 │       └── quotes.ts            # CLI plugin (auto-discovered)
+├── sample-data/
+│   └── quotes.txt               # 12 programming quotes (one per line)
 └── README.md
 ```
 
----
-
-## 1. Programmatic: Notes Plugin
-
-The notes plugin reads `.txt` files from a directory and indexes each file as one searchable item.
-
-### Try It
-
-```bash
-cd examples/custom-plugin
-npx tsx usage.ts
-```
-
-This runs the `usage.ts` script which:
-1. Creates a `BrainBank` instance with `.use(notes({ dir: './sample-data/notes' }))`
-2. Calls `brain.index()` — reads `architecture.txt` and `plugins.txt`
-3. Calls `brain.search('how does search work')` — returns relevant note chunks
-4. Uses `brain.plugin<NotesPlugin>('notes')!.searchNotes()` for direct notes search
-5. Uses `notesPlugin.listNotes()` to show all indexed files
-
-### Plugin Code Highlights
-
-```typescript
-import { notes } from './notes-plugin';
-
-const brain = new BrainBank({ repoPath: '.' })
-    .use(notes({ dir: './sample-data/notes' }));
-
-await brain.initialize();
-await brain.index();
-
-// Hybrid search — notes results fused via RRF
-const results = await brain.search('vector search');
-
-// Typed plugin access
-const notesPlugin = brain.plugin<NotesPlugin>('notes')!;
-const noteHits = await notesPlugin.searchNotes('plugin system');
-const allNotes = notesPlugin.listNotes();
-```
-
----
-
-## 2. CLI: Quotes Plugin
-
-The quotes plugin reads a `quotes.txt` file and indexes each line as a separate quote with author metadata.
-
-### Try It
+## Try It
 
 ```bash
 cd examples/custom-plugin
@@ -98,7 +39,7 @@ brainbank kv search quotes "future"
 brainbank stats
 ```
 
-### How It Works
+## How It Works
 
 The file `.brainbank/plugins/quotes.ts` is auto-discovered by the CLI:
 
@@ -112,7 +53,7 @@ export default new QuotesPlugin('./quotes.txt');
 - Indexes each quote with tags: `['quote', 'author-name']`
 - Search returns formatted: `"Quote" — Author`
 
-### Config
+## Config
 
 `.brainbank/config.json` can set per-plugin options:
 
@@ -123,14 +64,10 @@ export default new QuotesPlugin('./quotes.txt');
 }
 ```
 
----
+## Programmatic vs CLI
 
-## Key Differences
-
-| Aspect | Programmatic (`notes-plugin.ts`) | CLI (`.brainbank/plugins/quotes.ts`) |
-|--------|----------------------------------|--------------------------------------|
+| Aspect | Programmatic ([notes-plugin](../notes-plugin/)) | CLI (this example) |
+|--------|--------------------------------------------------|---------------------|
 | Export | `export function notes(opts)` (factory) | `export default new QuotesPlugin()` (instance) |
 | Config | Passed at construction: `notes({ dir })` | From `config.json` or hardcoded |
 | Registration | `brain.use(notes({ dir: '...' }))` | Auto-discovered by CLI |
-| Data shape | One item per file (whole content) | One item per line (split content) |
-| Dedup strategy | By filename metadata | Clear and re-index all |

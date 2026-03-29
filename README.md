@@ -614,7 +614,7 @@ const context = await brain.getContext('add rate limiting to the API', {
 
 BrainBank plugins implement the `Plugin` interface to index any data source, participate in hybrid search, and expose convenience methods.
 
-> 📂 **Full working examples:** [examples/custom-plugin/](examples/custom-plugin/) — two distinct plugins with sample data: a **notes plugin** (programmatic, reads `.txt` files) and a **quotes plugin** (CLI auto-discovery, reads `quotes.txt` line by line).
+> 📂 **Full working examples:** [examples/notes-plugin/](examples/notes-plugin/) — programmatic plugin (reads `.txt` files) and [examples/custom-plugin/](examples/custom-plugin/) — CLI auto-discovery plugin (reads `quotes.txt` line by line).
 
 #### Plugin Lifecycle
 
@@ -907,7 +907,8 @@ brainbank kv search conversations "what did we decide about auth"
 
 | Example | Description | Run |
 |---------|-------------|-----|
-| [custom-plugin](examples/custom-plugin/) | Notes + Quotes plugins (programmatic API & CLI) | `npx tsx examples/custom-plugin/usage.ts` |
+| [notes-plugin](examples/notes-plugin/) | Programmatic plugin (reads `.txt` files) | `npx tsx examples/notes-plugin/usage.ts` |
+| [custom-plugin](examples/custom-plugin/) | CLI auto-discovery plugin (quotes) | `brainbank index` from the directory |
 | [custom-package](examples/custom-package/) | Standalone npm package scaffold (CSV plugin) | See [README](examples/custom-package/README.md) |
 | [collection](examples/collection/) | Collections, semantic search, tags, metadata linking | `npx tsx examples/collection/collection.ts` |
 | [rag](examples/rag/) | RAG chatbot — docs retrieval + generation | `npx tsx examples/rag/rag.ts --docs <path>` ¹ |
