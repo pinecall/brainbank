@@ -1,7 +1,7 @@
 /**
  * BrainBank CLI — Brain Factory
  *
- * Creates a configured BrainBank instance with built-in indexers,
+ * Creates a configured BrainBank instance with dynamically loaded plugins,
  * auto-discovered indexers, and config file support.
  *
  * Config priority: CLI flags > .brainbank/config.json > .brainbank/config.ts > defaults.
@@ -10,9 +10,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { BrainBank } from '@/brainbank.ts';
-import { code } from '@/indexers/code/code-plugin.ts';
-import { git } from '@/indexers/git/git-plugin.ts';
-import { docs } from '@/indexers/docs/docs-plugin.ts';
 import type { Plugin } from '@/indexers/base.ts';
 import type { EmbeddingProvider, DocumentCollection } from '@/types.ts';
 import { c, getFlag } from './utils.ts';
@@ -60,9 +57,6 @@ export interface ProjectConfig {
     /** Max file size in bytes. */
     maxFileSize?: number;
 
-    // --- Legacy .ts config fields (still supported) ---
-    /** @deprecated Use "plugins" instead. */
-    builtins?: ('code' | 'git' | 'docs')[];
     /** Custom plugin instances (only from .ts config). */
     indexers?: Plugin[];
     /** BrainBank constructor options. */
@@ -130,6 +124,38 @@ export async function getConfig(): Promise<ProjectConfig | null> {
 async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvider> {
     const { resolveEmbedding } = await import('@/providers/embeddings/resolve.ts');
     return resolveEmbedding(key);
+}
+
+// ── Dynamic Plugin Loaders ─────────────────────────
+
+/** Try to load @brainbank/code. Returns factory or null if not installed. */
+async function loadCodePlugin(): Promise<((opts: any) => Plugin) | null> {
+    try {
+        const mod = await import('@brainbank/code');
+        return mod.code;
+    } catch {
+        return null;
+    }
+}
+
+/** Try to load @brainbank/git. Returns factory or null if not installed. */
+async function loadGitPlugin(): Promise<((opts: any) => Plugin) | null> {
+    try {
+        const mod = await import('@brainbank/git');
+        return mod.git;
+    } catch {
+        return null;
+    }
+}
+
+/** Try to load @brainbank/docs. Returns factory or null if not installed. */
+async function loadDocsPlugin(): Promise<((opts: any) => Plugin) | null> {
+    try {
+        const mod = await import('@brainbank/docs');
+        return mod.docs;
+    } catch {
+        return null;
+    }
 }
 
 // ── Plugin Discovery ───────────────────────────────
@@ -207,7 +233,7 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     await setupProviders(brainOpts, config);
 
     const brain = new BrainBank(brainOpts);
-    const builtins = config?.plugins ?? config?.builtins ?? ['code', 'git', 'docs'];
+    const builtins = config?.plugins ?? ['code', 'git', 'docs'];
     await registerBuiltins(brain, rp, builtins, config);
 
     // Register custom plugins from .brainbank/plugins/
@@ -260,11 +286,30 @@ async function registerBuiltins(
     const mergedIgnore = [...configIgnore, ...cliIgnore];
     const ignore = mergedIgnore.length > 0 ? mergedIgnore : undefined;
 
-    if (gitSubdirs.length > 0 && (builtins.includes('code') || builtins.includes('git'))) {
+    // Load plugins dynamically from @brainbank/* packages
+    const codeFactory = builtins.includes('code') ? await loadCodePlugin() : null;
+    const gitFactory = builtins.includes('git') ? await loadGitPlugin() : null;
+    const docsFactory = builtins.includes('docs') ? await loadDocsPlugin() : null;
+
+    // Warn if requested but not installed
+    if (builtins.includes('code') && !codeFactory) {
+        console.log(c.yellow('  ⚠ @brainbank/code not installed — skipping code indexing'));
+        console.log(c.dim('    Install: npm i -g @brainbank/code'));
+    }
+    if (builtins.includes('git') && !gitFactory) {
+        console.log(c.yellow('  ⚠ @brainbank/git not installed — skipping git indexing'));
+        console.log(c.dim('    Install: npm i -g @brainbank/git'));
+    }
+    if (builtins.includes('docs') && !docsFactory) {
+        console.log(c.yellow('  ⚠ @brainbank/docs not installed — skipping docs indexing'));
+        console.log(c.dim('    Install: npm i -g @brainbank/docs'));
+    }
+
+    if (gitSubdirs.length > 0 && (codeFactory || gitFactory)) {
         console.log(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
         for (const sub of gitSubdirs) {
-            if (builtins.includes('code')) {
-                brain.use(code({
+            if (codeFactory) {
+                brain.use(codeFactory({
                     repoPath: sub.path,
                     name: `code:${sub.name}`,
                     embeddingProvider: codeEmb,
@@ -272,8 +317,8 @@ async function registerBuiltins(
                     ignore,
                 }));
             }
-            if (builtins.includes('git')) {
-                brain.use(git({
+            if (gitFactory) {
+                brain.use(gitFactory({
                     repoPath: sub.path,
                     name: `git:${sub.name}`,
                     embeddingProvider: gitEmb,
@@ -283,16 +328,16 @@ async function registerBuiltins(
             }
         }
     } else {
-        if (builtins.includes('code')) {
-            brain.use(code({
+        if (codeFactory) {
+            brain.use(codeFactory({
                 repoPath: rp,
                 embeddingProvider: codeEmb,
                 maxFileSize: config?.code?.maxFileSize,
                 ignore,
             }));
         }
-        if (builtins.includes('git')) {
-            brain.use(git({
+        if (gitFactory) {
+            brain.use(gitFactory({
                 embeddingProvider: gitEmb,
                 depth: config?.git?.depth,
                 maxDiffBytes: config?.git?.maxDiffBytes,
@@ -300,8 +345,8 @@ async function registerBuiltins(
         }
     }
 
-    if (builtins.includes('docs')) {
-        brain.use(docs({ embeddingProvider: docsEmb }));
+    if (docsFactory) {
+        brain.use(docsFactory({ embeddingProvider: docsEmb }));
     }
 }
 
@@ -310,10 +355,13 @@ export async function registerConfigCollections(brain: BrainBank, config: Projec
     const collections = config?.docs?.collections;
     if (!collections?.length) return;
 
+    const docsPlugin = brain.docs as any;
+    if (!docsPlugin?.addCollection) return;
+
     for (const coll of collections) {
         const absPath = path.resolve(coll.path);
         try {
-            await brain.docs!.addCollection({
+            await docsPlugin.addCollection({
                 name: coll.name,
                 path: absPath,
                 pattern: coll.pattern ?? '**/*.md',

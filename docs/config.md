@@ -1,0 +1,127 @@
+# Configuration
+
+## Project Config File
+
+Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads it automatically — no CLI flags needed.
+
+```jsonc
+// .brainbank/config.json
+{
+  // Which built-in plugins to load (default: all three)
+  "plugins": ["code", "git", "docs"],
+
+  // Per-plugin options
+  "code": {
+    "embedding": "openai",
+    "maxFileSize": 512000,
+    "ignore": [
+      "sdk/**",
+      "vendor/**",
+      "**/*.generated.ts",
+      "**/*.min.js",
+      "test/fixtures/**"
+    ]
+  },
+  "git": {
+    "depth": 200
+  },
+  "docs": {
+    "embedding": "perplexity-context",
+    "collections": [
+      { "name": "docs", "path": "./docs", "pattern": "**/*.md" },
+      { "name": "wiki", "path": "~/team-wiki", "pattern": "**/*.md", "ignore": ["drafts/**"] }
+    ]
+  },
+
+  // Global defaults
+  "embedding": "local",
+  "reranker": "qwen3"
+}
+```
+
+---
+
+## Directory Structure
+
+```
+.brainbank/
+├── brainbank.db        # SQLite database (auto-created)
+├── config.json         # Project config (optional)
+└── plugins/            # Custom plugin files (optional)
+    ├── notes.ts
+    └── csv.ts
+```
+
+---
+
+## Embedding Keys
+
+| Key | Provider | Dims | Cost |
+|-----|----------|------|------|
+| `"local"` (default) | WASM (all-MiniLM-L6-v2) | 384 | Free |
+| `"openai"` | OpenAI (text-embedding-3-small) | 1536 | $0.02/1M tokens |
+| `"perplexity"` | Perplexity (pplx-embed-v1-4b) | 2560 | $0.02/1M tokens |
+| `"perplexity-context"` | Perplexity contextualized | 2560 | $0.06/1M tokens |
+
+---
+
+## Per-Plugin Embeddings
+
+Each plugin creates its own HNSW index with the correct dimensions. A plugin without an `embedding` key uses the global default:
+
+```jsonc
+{
+  "embedding": "local",              // global default
+  "code": { "embedding": "openai" }, // code uses OpenAI (1536d)
+  "git": {},                         // git uses local (384d)
+  "docs": { "embedding": "perplexity-context" }  // docs uses Perplexity (2560d)
+}
+```
+
+---
+
+## Custom Plugin Config
+
+Custom plugins auto-discovered from `.brainbank/plugins/` can have their own config section, matched by plugin name:
+
+```jsonc
+{
+  "plugins": ["code", "git"],
+  "notes": { "embedding": "local" },
+  "csv": { "embedding": "openai" }
+}
+```
+
+---
+
+## Config Priority
+
+```
+CLI flags          (highest)
+config.json        fields
+auto-resolve       from DB (for embedding provider)
+defaults           (lowest)
+```
+
+> `.brainbank/config.ts` (or `.js`, `.mjs`) is also supported for programmatic config with custom plugin instances. JSON is preferred for declarative setups.
+
+No config file? The CLI uses all built-in plugins with local embeddings — **zero config required**.
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BRAINBANK_DEBUG` | Show full stack traces in CLI errors |
+| `OPENAI_API_KEY` | Required when using `--embedding openai` |
+| `PERPLEXITY_API_KEY` | Required when using `--embedding perplexity` or `perplexity-context` |
+
+> **Note:** `BRAINBANK_EMBEDDING` env var has been removed. Use `brainbank index --embedding <provider>` on first index — the provider is stored in the DB and auto-resolved on subsequent runs.
+
+---
+
+## See Also
+
+- [Embeddings & Reranker](embeddings.md) — provider details, benchmarks, reranker config
+- [Plugins](plugins.md) — per-plugin embedding override

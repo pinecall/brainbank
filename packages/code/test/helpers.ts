@@ -7,8 +7,8 @@
 
 import { BrainBank } from '../../../src/brainbank.ts';
 import { Database } from '../../../src/db/database.ts';
-import { code } from '../../../src/indexers/code/code-plugin.ts';
-import { CodeChunker } from '../../../src/indexers/code/code-chunker.ts';
+import { code } from '../src/index.js';
+import { CodeChunker } from '../src/code-chunker.js';
 import {
     getLanguage, isSupported, isIgnoredDir, isIgnoredFile,
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,

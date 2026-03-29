@@ -136,8 +136,8 @@ tests['git: indexes with global 128d embedding'] = async () => {
 };
 
 tests['docs: indexes with per-plugin 256d embedding'] = async () => {
-    await brain.docs!.addCollection({ name: 'docs', path: path.join(tmpDir, 'docs'), pattern: '**/*.md' });
-    const result = await brain.docs!.indexDocs();
+    await (brain.docs as any)!.addCollection({ name: 'docs', path: path.join(tmpDir, 'docs'), pattern: '**/*.md' });
+    const result = await (brain.docs as any)!.indexDocs();
 
     assert.ok(result.docs, 'should have docs result');
     assert.equal(result.docs.indexed, 2, 'should index 2 docs');

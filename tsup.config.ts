@@ -3,10 +3,6 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
     entry: {
         'index': 'src/index.ts',
-        'code': 'src/indexers/code/code-plugin.ts',
-        'git': 'src/indexers/git/git-plugin.ts',
-        'docs': 'src/indexers/docs/docs-plugin.ts',
-        'memory': 'src/domain/memory/memory-plugin.ts',
         'cli': 'src/cli/index.ts',
     },
     tsconfig: 'tsconfig.build.json',
@@ -22,17 +18,13 @@ export default defineConfig({
         'hnswlib-node',
         // optional deps
         '@xenova/transformers',
-        'simple-git',
         'node-llama-cpp',
-        // tree-sitter (optional — install individual grammar packages as needed)
-        'tree-sitter',
-        /^tree-sitter-/,
-        // separate packages
-        '@brainbank/mcp',
+        // separate @brainbank/* packages (resolved at runtime)
         '@brainbank/code',
-
         '@brainbank/git',
         '@brainbank/docs',
+        '@brainbank/memory',
+        '@brainbank/mcp',
     ],
     banner: {
         js: '',

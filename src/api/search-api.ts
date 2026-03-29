@@ -54,17 +54,17 @@ export class SearchAPI {
 
     async searchCode(query: string, k = 8): Promise<SearchResult[]> {
         if (!this._d.registry.firstByType('code'))
-            throw new Error("BrainBank: Indexer 'code' is not loaded. Add .use(code()) to your BrainBank instance.");
+            throw new Error("BrainBank: Plugin 'code' is not loaded. Install @brainbank/code and add .use(code()).");
         if (!this._d.search)
-            throw new Error('BrainBank: MultiIndexSearch not available. Ensure code indexer is loaded.');
+            throw new Error('BrainBank: VectorSearch not available. Ensure code plugin is loaded.');
         return this._d.search.search(query, { codeK: k, gitK: 0, patternK: 0 });
     }
 
     async searchCommits(query: string, k = 8): Promise<SearchResult[]> {
         if (!this._d.registry.firstByType('git'))
-            throw new Error("BrainBank: Indexer 'git' is not loaded. Add .use(git()) to your BrainBank instance.");
+            throw new Error("BrainBank: Plugin 'git' is not loaded. Install @brainbank/git and add .use(git()).");
         if (!this._d.search)
-            throw new Error('BrainBank: MultiIndexSearch not available. Ensure git indexer is loaded.');
+            throw new Error('BrainBank: VectorSearch not available. Ensure git plugin is loaded.');
         return this._d.search.search(query, { codeK: 0, gitK: k, patternK: 0 });
     }
 

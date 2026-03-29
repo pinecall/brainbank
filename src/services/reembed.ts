@@ -245,6 +245,3 @@ async function rebuildHnsw(
         vecs.set(row.id, vec);
     }
 }
-
-// ── Re-exports (backward compat) ────────────────────
-export { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from './embedding-meta.ts';

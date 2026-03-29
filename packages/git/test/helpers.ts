@@ -3,8 +3,8 @@
  */
 
 import { BrainBank } from '../../../src/brainbank.ts';
-import { git } from '../../../src/indexers/git/git-plugin.ts';
-import { code } from '../../../src/indexers/code/code-plugin.ts';
+import { git } from '../src/index.js';
+import { code } from '@brainbank/code';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 
 /** Creates a deterministic hash-based embedding provider. */

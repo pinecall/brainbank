@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs';
 import { BrainBank } from '../../../src/brainbank.ts';
-import { docs } from '../../../src/indexers/docs/docs-plugin.ts';
+import { docs } from '@brainbank/docs';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 
 export const name = 'BrainBank Orchestrator';
@@ -146,13 +146,13 @@ export const tests = {
         fs.writeFileSync(`${docsDir}/guide.md`, '# Getting Started\n\nThis is a guide for setting up authentication with JWT tokens.\n\n## Installation\n\nRun npm install jsonwebtoken to get started.');
         fs.writeFileSync(`${docsDir}/api.md`, '# API Reference\n\nThe login endpoint accepts POST requests with email and password.');
 
-        await brain.docs!.addCollection({ name: 'docs', path: docsDir, pattern: '**/*.md' });
+        await (brain.docs as any)!.addCollection({ name: 'docs', path: docsDir, pattern: '**/*.md' });
 
-        const collections = brain.docs!.listCollections();
+        const collections = (brain.docs as any)!.listCollections();
         assert.equal(collections.length, 1);
         assert.equal(collections[0].name, 'docs');
 
-        const result = await brain.docs!.indexDocs();
+        const result = await (brain.docs as any)!.indexDocs();
         assert.ok(result.docs, 'should have docs result');
         assert.equal(result.docs.indexed, 2);
 
@@ -251,7 +251,7 @@ export const tests = {
         fs.mkdirSync(docsDir, { recursive: true });
         fs.writeFileSync(`${docsDir}/test.md`, '# Test\n\nSome content for testing modules filter.');
 
-        await brain.docs!.addCollection({ name: 'test-docs', path: docsDir, pattern: '**/*.md' });
+        await (brain.docs as any)!.addCollection({ name: 'test-docs', path: docsDir, pattern: '**/*.md' });
 
         const result = await brain.index({ modules: ['docs'] });
 
@@ -277,7 +277,7 @@ export const tests = {
         fs.mkdirSync(docsDir, { recursive: true });
         fs.writeFileSync(`${docsDir}/skip.md`, '# Skip\n\nThis should not be indexed.');
 
-        await brain.docs!.addCollection({ name: 'skip-docs', path: docsDir, pattern: '**/*.md' });
+        await (brain.docs as any)!.addCollection({ name: 'skip-docs', path: docsDir, pattern: '**/*.md' });
 
         const result = await brain.index({ modules: ['code'] });
 
@@ -301,7 +301,7 @@ export const tests = {
         fs.mkdirSync(docsDir, { recursive: true });
         fs.writeFileSync(`${docsDir}/all.md`, '# All\n\nDefault should index this.');
 
-        await brain.docs!.addCollection({ name: 'all-docs', path: docsDir, pattern: '**/*.md' });
+        await (brain.docs as any)!.addCollection({ name: 'all-docs', path: docsDir, pattern: '**/*.md' });
 
         const result = await brain.index();
 
@@ -352,7 +352,7 @@ export const tests = {
 
         // brain.docs is available after .use() — typed accessor on the plugin
         assert.ok(brain.docs, 'docs accessor should be defined after .use()');
-        assert.equal(typeof brain.docs!.listCollections, 'function');
+        assert.equal(typeof (brain.docs as any)!.listCollections, 'function');
 
         brain.close();
         cleanup(db);
@@ -395,8 +395,8 @@ export const tests = {
         fs.mkdirSync(docsDir, { recursive: true });
         fs.writeFileSync(`${docsDir}/test.md`, '# Per-Plugin Test\n\nThis document tests per-plugin embedding overrides with different dimensions.');
 
-        await brain.docs!.addCollection({ name: 'test', path: docsDir, pattern: '**/*.md' });
-        const result = await brain.docs!.indexDocs();
+        await (brain.docs as any)!.addCollection({ name: 'test', path: docsDir, pattern: '**/*.md' });
+        const result = await (brain.docs as any)!.indexDocs();
         assert.ok(result.test, 'should have indexed test collection');
         assert.equal(result.test.indexed, 1);
 

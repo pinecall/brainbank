@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { BrainBank } from '../../../src/brainbank.ts';
-import { docs } from '../../../src/indexers/docs/docs-plugin.ts';
+import { docs } from '@brainbank/docs';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 import type { ProjectConfig } from '../../../src/cli/factory.ts';
 import { registerConfigCollections } from '../../../src/cli/factory.ts';
@@ -93,7 +93,7 @@ export const tests = {
 
         await registerConfigCollections(brain, config);
 
-        const collections = brain.docs!.listCollections();
+        const collections = (brain.docs as any)!.listCollections();
         assert.equal(collections.length, 1);
         assert.equal(collections[0].name, 'test-coll');
 
@@ -112,7 +112,7 @@ export const tests = {
         await brain.initialize();
 
         await registerConfigCollections(brain, null);
-        const collections = brain.docs!.listCollections();
+        const collections = (brain.docs as any)!.listCollections();
         assert.equal(collections.length, 0);
 
         brain.close();
@@ -144,7 +144,7 @@ export const tests = {
 
         await registerConfigCollections(brain, config);
 
-        const collections = brain.docs!.listCollections();
+        const collections = (brain.docs as any)!.listCollections();
         assert.equal(collections.length, 2);
         const names = collections.map((c: any) => c.name).sort();
         assert.deepEqual(names, ['first', 'second']);
@@ -155,20 +155,4 @@ export const tests = {
         fs.rmSync(dir2, { recursive: true, force: true });
     },
 
-    async 'config supports legacy builtins field'(assert: any) {
-        const config: ProjectConfig = {
-            builtins: ['code', 'docs'],
-        };
-        const plugins = config.plugins ?? config.builtins ?? ['code', 'git', 'docs'];
-        assert.deepEqual(plugins, ['code', 'docs']);
-    },
-
-    async 'plugins field takes priority over builtins'(assert: any) {
-        const config: ProjectConfig = {
-            plugins: ['code'],
-            builtins: ['code', 'git', 'docs'],
-        };
-        const plugins = config.plugins ?? config.builtins ?? ['code', 'git', 'docs'];
-        assert.deepEqual(plugins, ['code']);
-    },
 };

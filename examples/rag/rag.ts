@@ -15,7 +15,7 @@
  */
 
 import { BrainBank } from '../../src/index.ts';
-import { docs } from '../../src/indexers/docs/docs-plugin.ts';
+import { docs } from '@brainbank/docs';
 import { PerplexityContextEmbedding } from '../../src/providers/embeddings/perplexity-context-embedding.ts';
 import { createDriver, parseBackend, parseModel } from '../lib/driver.ts';
 import type { SearchResult } from '../../src/types.ts';

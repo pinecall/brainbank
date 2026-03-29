@@ -18,10 +18,13 @@ export async function cmdDocs(): Promise<void> {
         process.stdout.write(`\r  ${c.cyan(col)} [${cur}/${total}] ${file}                    `);
     };
 
-    const results = await brain.docs!.indexDocs(opts);
+    const docsPlugin = brain.docs as any;
+    if (!docsPlugin) { console.log(c.red('  Docs plugin not loaded. Install @brainbank/docs.')); process.exit(1); }
+
+    const results = await docsPlugin.indexDocs(opts);
 
     console.log('\n');
-    for (const [name, stat] of Object.entries(results)) {
+    for (const [name, stat] of Object.entries(results) as [string, { indexed: number; skipped: number; chunks: number }][]) {
         console.log(`  ${c.green(name)}: ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
     }
 
@@ -42,10 +45,10 @@ export async function cmdDocSearch(): Promise<void> {
     console.log(c.bold(`\n━━━ BrainBank Doc Search: "${query}" ━━━\n`));
 
     if (!brain.docs) {
-        console.log(c.red('Docs plugin not loaded. Add .use(docs()) to your BrainBank instance.'));
+        console.log(c.red('Docs plugin not loaded. Install @brainbank/docs.'));
         process.exit(1);
     }
-    const results = await brain.docs.search(query, { collection: collection ?? undefined, k });
+    const results = await (brain.docs as any).search(query, { collection: collection ?? undefined, k });
 
     if (results.length === 0) {
         console.log(c.yellow('  No results found.'));

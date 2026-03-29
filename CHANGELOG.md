@@ -7,6 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Documentation refactor** — README.md rewritten as a concise landing page; all content moved to 13 focused `docs/` files (getting-started, cli, plugins, collections, search, custom-plugins, config, embeddings, multi-repo, mcp, memory, indexing, architecture). ARCHITECTURE.md moved to `docs/architecture.md`. CONTRIBUTING.md updated with current terminology and project structure
 - **Typed plugin accessors** — `brain.docs` and `brain.git` provide direct, type-safe access to built-in plugins without casting. Custom plugins use `brain.plugin<T>('name')` with generics
 - **`plugin<T>()` returns `T | undefined`** — no longer throws; supports safe optional chaining (`brain.plugin<NotesPlugin>('notes')?.searchNotes()`)
 - **Package: `@brainbank/code`** — code indexer extracted as a separate npm package with tree-sitter as a peer dependency
@@ -44,6 +45,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Removed `@expose` decorator** — plugin methods are no longer injected onto `BrainBank` at runtime. Use `brain.docs.method()` or `brain.git.method()` for built-in plugins, `brain.plugin<T>('name').method()` for custom plugins
 - **Removed `CollectionPlugin` interface** — docs plugin now implements `SearchablePlugin` + `IndexablePlugin` directly
 - **`plugin()` returns `T | undefined`** — previously threw if plugin not found; now returns undefined for safe optional chaining
+- **Core decoupled from plugins** — deleted `src/indexers/code/`, `src/indexers/git/`, `src/indexers/docs/` from core. All plugin logic now lives exclusively in `packages/`. Core is framework-only
+- **Removed backward compat aliases** — `MultiIndexSearch`, `BM25Search` exports removed from barrel. Use `VectorSearch` and `KeywordSearch` directly
+- **Removed deprecated `builtins` config field** — use `plugins` instead in `.brainbank/config.json`
+- **Removed backward compat re-exports from `reembed.ts`** — import `setEmbeddingMeta`, `getEmbeddingMeta`, `detectProviderMismatch` from `services/embedding-meta.ts` directly
+- **Removed tree-sitter and simple-git from core** — `optionalDependencies` and subpath exports cleared. Install `@brainbank/code` for tree-sitter, `@brainbank/git` for simple-git
+- **CLI uses dynamic imports** — `src/cli/factory.ts` loads `@brainbank/*` plugins with `import()`. Missing plugins now print a warning instead of crashing
+- **`brain.docs` / `brain.git` return `Plugin | undefined`** — previously typed as concrete plugin classes, now duck-typed via the generic `Plugin` interface
 
 ## [0.7.0] — 2026-03-27
 

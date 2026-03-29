@@ -6,15 +6,19 @@
  * Groups code by file, includes git history, call graph, and learned patterns.
  */
 
-import type { SearchResult, ContextOptions } from '@/types.ts';
+import type { SearchResult, ContextOptions, CoEditSuggestion } from '@/types.ts';
 import type { SearchStrategy } from '@/search/types.ts';
-import type { CoEditAnalyzer } from '@/indexers/git/co-edit-analyzer.ts';
 import type { Database } from '@/db/database.ts';
+
+/** Duck-typed interface for co-edit suggestions (provided by @brainbank/git). */
+interface CoEditProvider {
+    suggest(filePath: string, limit: number): CoEditSuggestion[];
+}
 
 export class ContextBuilder {
     constructor(
         private _search: SearchStrategy,
-        private _coEdits?: CoEditAnalyzer,
+        private _coEdits?: CoEditProvider,
         private _db?: Database,
     ) {}
 

@@ -54,8 +54,8 @@ tests['setup: brain with code + git + docs + memory'] = async () => {
     await brain.initialize();
 
     await brain.index({ forceReindex: true });
-    await brain.docs!.addCollection({ name: 'guide', path: docsDir, pattern: '**/*.md' });
-    await brain.docs!.indexDocs();
+    await (brain.docs as any)!.addCollection({ name: 'guide', path: docsDir, pattern: '**/*.md' });
+    await (brain.docs as any)!.indexDocs();
 
     const mem = brain.plugin('memory') as any;
     await mem.learn({ task: 'Fix auth bug', taskType: 'debug', approach: 'Check token flow', outcome: 'Fixed', successRate: 0.9 });

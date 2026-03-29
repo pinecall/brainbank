@@ -22,7 +22,9 @@ export async function cmdCollection(): Promise<void> {
         }
 
         const brain = await createBrain();
-        await brain.docs!.addCollection({
+        const docsPlugin = brain.docs as any;
+        if (!docsPlugin) { console.log(c.red('Docs plugin not loaded. Install @brainbank/docs.')); process.exit(1); }
+        await docsPlugin.addCollection({
             name,
             path,
             pattern,
@@ -38,7 +40,9 @@ export async function cmdCollection(): Promise<void> {
     if (sub === 'list') {
         const brain = await createBrain();
         await brain.initialize();
-        const collections = brain.docs!.listCollections();
+        const docsPlugin = brain.docs as any;
+        if (!docsPlugin) { console.log(c.yellow('  Docs plugin not loaded.')); brain.close(); return; }
+        const collections = docsPlugin.listCollections();
         if (collections.length === 0) {
             console.log(c.yellow('  No collections registered.'));
         } else {
@@ -60,7 +64,9 @@ export async function cmdCollection(): Promise<void> {
             process.exit(1);
         }
         const brain = await createBrain();
-        await brain.docs!.removeCollection(name);
+        const docsPlugin = brain.docs as any;
+        if (!docsPlugin) { console.log(c.red('Docs plugin not loaded.')); process.exit(1); }
+        await docsPlugin.removeCollection(name);
         console.log(c.green(`✓ Collection '${name}' removed.`));
         brain.close();
         return;

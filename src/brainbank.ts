@@ -25,8 +25,6 @@ import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch
 import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
 import type { Plugin } from '@/indexers/base.ts';
 import { isSearchable } from '@/indexers/base.ts';
-import { DocsPlugin } from '@/indexers/docs/docs-plugin.ts';
-import { GitPlugin } from '@/indexers/git/git-plugin.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
@@ -87,13 +85,13 @@ export class BrainBank extends EventEmitter {
     // ── Typed Plugin Accessors ───────────────────────
 
     /** Typed access to the docs plugin. Returns undefined if not loaded. */
-    get docs(): DocsPlugin | undefined {
-        return this._registry.firstByType('docs') as DocsPlugin | undefined;
+    get docs(): Plugin | undefined {
+        return this._registry.firstByType('docs');
     }
 
     /** Typed access to the git plugin. Returns undefined if not loaded. */
-    get git(): GitPlugin | undefined {
-        return this._registry.firstByType('git') as GitPlugin | undefined;
+    get git(): Plugin | undefined {
+        return this._registry.firstByType('git');
     }
 
     // ── Initialization ───────────────────────────────

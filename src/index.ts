@@ -4,8 +4,8 @@
  * Semantic knowledge bank for AI agents.
  * 
  *   import { BrainBank } from 'brainbank';
- *   import { code } from 'brainbank/code';
- *   import { docs } from 'brainbank/docs';
+ *   import { code } from '@brainbank/code';
+ *   import { docs } from '@brainbank/docs';
  *   
  *   const brain = new BrainBank()
  *     .use(code({ repoPath: '.' }))
@@ -20,17 +20,9 @@
 
 export { BrainBank } from './brainbank.ts';
 
-// Plugin factories
-export { code } from './indexers/code/code-plugin.ts';
-export { git } from './indexers/git/git-plugin.ts';
-export { docs } from './indexers/docs/docs-plugin.ts';
-export { memory } from './domain/memory/memory-plugin.ts';
-
-
 // Plugin types
 export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin } from './indexers/base.ts';
-export { DocsPlugin } from './indexers/docs/docs-plugin.ts';
-export { GitPlugin } from './indexers/git/git-plugin.ts';
+export { isIndexable, isSearchable, isWatchable, isDocsPlugin } from './indexers/base.ts';
 
 // Collections
 export { Collection } from './domain/collection.ts';
@@ -82,17 +74,13 @@ export type { EmbeddingKey } from './providers/embeddings/resolve.ts';
 // Config
 export { resolveConfig, DEFAULTS } from './config/defaults.ts';
 
-// ── Internals (for custom plugins & power users) ────
+// ── Internals (for plugin authors & power users) ────
 
 // Vector indices
 export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';
 
-// Indexer implementations
-export { CodeChunker } from './indexers/code/code-chunker.ts';
-export { CodeWalker } from './indexers/code/code-walker.ts';
-export { GitIndexer } from './indexers/git/git-indexer.ts';
-export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
+// Language support (used by @brainbank/code)
 export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage, isIgnoredDir, isIgnoredFile } from './indexers/languages.ts';
 
 // Math utilities (needed by plugins)
@@ -102,11 +90,9 @@ export { vecToBuffer, cosineSimilarity, normalize } from './lib/math.ts';
 export { PatternStore } from './domain/memory/pattern-store.ts';
 export { Consolidator } from './domain/memory/consolidator.ts';
 
-
 // Search internals
 export { ContextBuilder } from './search/context-builder.ts';
 export { VectorSearch } from './search/vector/vector-search.ts';
-export { CoEditAnalyzer } from './indexers/git/co-edit-analyzer.ts';
 export { KeywordSearch } from './search/keyword/keyword-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
 export { normalizeBM25 } from './lib/fts.ts';
@@ -115,6 +101,5 @@ export { rerank } from './search/vector/rerank.ts';
 // Search types
 export type { SearchStrategy, SearchOptions } from './search/types.ts';
 
-// Backwards compatibility aliases
-export { VectorSearch as MultiIndexSearch } from './search/vector/vector-search.ts';
-export { KeywordSearch as BM25Search } from './search/keyword/keyword-search.ts';
+// Database (for plugin access)
+export type { Database } from './db/database.ts';

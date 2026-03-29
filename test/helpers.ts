@@ -14,7 +14,6 @@ import { OpenAIEmbedding } from '../src/providers/embeddings/openai-embedding.ts
 import { PerplexityEmbedding, decodeBase64Int8 } from '../src/providers/embeddings/perplexity-embedding.ts';
 import { PerplexityContextEmbedding } from '../src/providers/embeddings/perplexity-context-embedding.ts';
 import { Collection } from '../src/domain/collection.ts';
-import { CodeChunker } from '../src/indexers/code/code-chunker.ts';
 import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';
 import { reciprocalRankFusion } from '../src/lib/rrf.ts';
@@ -28,10 +27,10 @@ import {
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,
 } from '../src/indexers/languages.ts';
 
-// Plugins
-import { code } from '../src/indexers/code/code-plugin.ts';
-import { git } from '../src/indexers/git/git-plugin.ts';
-import { docs } from '../src/indexers/docs/docs-plugin.ts';
+// Plugins — loaded from @brainbank/* packages
+import { code } from '@brainbank/code';
+import { git } from '@brainbank/git';
+import { docs } from '@brainbank/docs';
 import { memory } from '../src/domain/memory/memory-plugin.ts';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
@@ -95,14 +94,12 @@ export {
     Database,
     HNSWIndex,
     KeywordSearch,
-    KeywordSearch as BM25Search,
 
     OpenAIEmbedding,
     PerplexityEmbedding,
     PerplexityContextEmbedding,
     decodeBase64Int8,
     Collection,
-    CodeChunker,
     resolveConfig,
     DEFAULTS,
     SCHEMA_VERSION,

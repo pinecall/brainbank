@@ -3,7 +3,7 @@
  */
 
 import { BrainBank } from '../../../src/brainbank.ts';
-import { docs } from '../../../src/indexers/docs/docs-plugin.ts';
+import { docs } from '../src/index.js';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 
 /** Creates a deterministic hash-based embedding provider. */

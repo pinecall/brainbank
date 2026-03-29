@@ -8,8 +8,8 @@ Thanks for your interest in contributing! Here's how to get started.
 git clone https://github.com/pinecall/brainbank.git
 cd brainbank
 npm install
-npm test                    # Unit tests (129)
-npm test -- --integration   # Full suite with real models (157)
+npm test                    # Unit tests (207)
+npm test -- --integration   # Full suite with real models
 ```
 
 ## Running Tests
@@ -25,27 +25,33 @@ npm test -- --verbose           # Show assertion details
 
 ```
 src/
-├── core/          Main orchestrator, collections, config, schema
-├── embeddings/    Embedding providers (local, OpenAI)
-├── indexers/      Code, git, doc indexer implementations
-├── integrations/  CLI, MCP server
-├── memory/        Note store, patterns, consolidation
-├── plugins/       Plugin factories and Indexer interface
-├── query/         Search, BM25, RRF, context builder
-├── storage/       SQLite database wrapper
-└── vector/        HNSW index, MMR diversity
+├── brainbank.ts       Main orchestrator (facade)
+├── types.ts           All shared types and interfaces
+├── config/            Defaults, resolver
+├── db/                SQLite schema, database wrapper
+├── lib/               Pure functions: math, rrf, fts
+├── providers/         Embeddings (local, OpenAI, Perplexity), vector (HNSW), rerankers
+├── search/            Search strategies: vector, keyword, context-builder
+├── domain/            Core primitives: collection, memory
+├── indexers/          Plugins: code, git, docs + base interface
+├── services/          Reembed, watch
+├── bootstrap/         System wiring: initializer, registry
+├── api/               Use cases: search-api, index-api
+└── cli/               CLI commands and factory
 ```
 
-## Writing a Custom Indexer
+See [docs/architecture.md](docs/architecture.md) for the complete architecture reference.
 
-Implement the `Indexer` interface:
+## Writing a Custom Plugin
+
+Implement the `Plugin` interface:
 
 ```typescript
-import type { Indexer, IndexerContext } from 'brainbank';
+import type { Plugin, PluginContext } from 'brainbank';
 
-function myIndexer(): Indexer {
+function myPlugin(): Plugin {
   return {
-    name: 'my-indexer',
+    name: 'my-plugin',
     async initialize(ctx) {
       // ctx.db, ctx.embedding, ctx.collection() available
     },
@@ -58,11 +64,15 @@ function myIndexer(): Indexer {
 }
 ```
 
+See [docs/custom-plugins.md](docs/custom-plugins.md) for the full plugin guide.
+
 ## Code Style
 
 - TypeScript strict mode
+- ESM only (`"type": "module"`)
 - JSDoc on all public interfaces
-- No `any` types in public API
+- No `any` types in new code
+- Imports use `@/` for cross-directory, `./` for same-directory (never `../`)
 - Tests for every new feature
 
 ## Pull Request Process
@@ -70,4 +80,5 @@ function myIndexer(): Indexer {
 1. Fork and create a feature branch
 2. Write tests for new features
 3. Ensure `npm test -- --integration` passes
-4. Submit PR with a clear description
+4. Update `CHANGELOG.md` under `## [Unreleased]`
+5. Submit PR with a clear description
