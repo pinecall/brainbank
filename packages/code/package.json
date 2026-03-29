@@ -1,0 +1,37 @@
+{
+    "name": "@brainbank/code",
+    "version": "0.1.0",
+    "description": "Code indexing plugin for BrainBank — AST-aware chunking, import graph, and symbol extraction for 20+ languages",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "files": [
+        "dist/"
+    ],
+    "scripts": {
+        "build": "tsup"
+    },
+    "peerDependencies": {
+        "brainbank": ">=0.7.0"
+    },
+    "dependencies": {
+        "tree-sitter": "^0.25.0",
+        "tree-sitter-html": "^0.23.2",
+        "tree-sitter-javascript": "^0.25.0",
+        "tree-sitter-typescript": "^0.23.2",
+        "tree-sitter-python": "^0.25.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pinecall/brainbank.git",
+        "directory": "packages/code"
+    },
+    "author": "Bernardo Castro <bernardo@pinecall.io>",
+    "license": "MIT"
+}

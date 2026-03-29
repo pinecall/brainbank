@@ -1,0 +1,28 @@
+{
+    "name": "@brainbank/docs",
+    "version": "0.1.0",
+    "description": "Document collection indexing plugin for BrainBank — smart markdown chunking + hybrid search",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "files": ["dist"],
+    "scripts": {
+        "build": "tsup"
+    },
+    "peerDependencies": {
+        "brainbank": ">=0.7.0"
+    },
+    "devDependencies": {
+        "tsup": "^8.4.0",
+        "typescript": "^5.7.0"
+    },
+    "keywords": ["brainbank", "docs", "markdown", "search", "plugin"],
+    "author": "Bernardo Castro <bernardo@pinecall.io>",
+    "license": "MIT"
+}

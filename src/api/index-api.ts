@@ -68,11 +68,25 @@ export class IndexAPI {
             const docsPlugin = this._d.registry.get('docs');
             if (isCollectionPlugin(docsPlugin)) {
                 options.onProgress?.('docs', 'Starting...');
-                result.docs = await docsPlugin.indexCollections({
+                result.docs = await docsPlugin.indexDocs({
                     onProgress: (coll: string, file: string, cur: number, total: number) =>
                         options.onProgress?.('docs', `[${coll}] ${cur}/${total}: ${file}`),
                 });
             }
+        }
+
+        // Index custom plugins (any IndexablePlugin that isn't code/git/docs)
+        const builtinTypes = new Set(['code', 'git', 'docs']);
+        for (const mod of this._d.registry.all) {
+            const baseType = mod.name.split(':')[0];
+            if (builtinTypes.has(baseType)) continue;
+            if (!isIndexable(mod)) continue;
+
+            options.onProgress?.(mod.name, 'Starting...');
+            const r = await mod.index({
+                onProgress: (msg: string) => options.onProgress?.(mod.name, msg),
+            });
+            (result as Record<string, any>)[mod.name] = r;
         }
 
         this._d.emit('indexed', result);

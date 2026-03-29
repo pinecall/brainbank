@@ -6,7 +6,23 @@ description: Bump version, update CHANGELOG, build, and publish to npm
 
 Run this when the user says `/publish` or asks to release a new version.
 
-## Steps
+## Scope
+
+The user will specify what to publish. Options:
+- **core** — `brainbank` (root package)
+- **code** — `@brainbank/code` (packages/code)
+- **grammars** — `@brainbank/code-grammars-all` (packages/code-grammars-all)
+- **git** — `@brainbank/git` (packages/git)
+- **docs** — `@brainbank/docs` (packages/docs)
+- **mcp** — `@brainbank/mcp` (packages/mcp)
+- **memory** — `@brainbank/memory` (packages/memory)
+- **all** — publish everything that has unreleased changes
+
+If the user doesn't specify, ask: "Which package(s) to publish? `core`, `code`, `grammars`, `git`, `docs`, `mcp`, `memory`, or `all`?"
+
+---
+
+## Steps (for each package being published)
 
 ### 1. Ensure tests pass
 // turbo
@@ -17,18 +33,19 @@ If tests fail, STOP and fix them first.
 
 ### 2. Check what changed since last version
 
-Find the latest tag and show commits since then. This two-step approach never fails:
-
+For **core** (`brainbank`):
 // turbo
 ```
 LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1); git log ${LAST_TAG:+${LAST_TAG}..}HEAD --oneline --no-merges -50
 ```
 
-**How it works:**
-- `git tag -l 'v*' --sort=-v:refname | head -1` gets the latest `v*` tag (empty string if none exist)
-- `${LAST_TAG:+${LAST_TAG}..}` expands to `vX.Y.Z..` only if a tag exists, otherwise expands to nothing
-- Without a tag, this becomes `git log HEAD --oneline -50` (last 50 commits)
-- The `-50` flag prevents pager issues
+For **packages/** (e.g. `code`):
+// turbo
+```
+LAST_TAG=$(git tag -l '@brainbank/code@*' --sort=-v:refname | head -1); git log ${LAST_TAG:+${LAST_TAG}..}HEAD --oneline --no-merges -- packages/code/ -50
+```
+
+Adapt the tag prefix and path for each package.
 
 Save this output — you'll need it to verify the CHANGELOG.
 
@@ -39,7 +56,9 @@ Wait for the user's response before proceeding.
 
 ### 4. Verify and finalize CHANGELOG.md
 
-Read `CHANGELOG.md`. There should be a `## [Unreleased]` section maintained by agents during development.
+Read the **correct** CHANGELOG.md:
+- Core: `CHANGELOG.md` (root)
+- Packages: `packages/<name>/CHANGELOG.md`
 
 **Verify** the `[Unreleased]` items against the git log from step 2:
 - **Add** any commits that are missing from `[Unreleased]`
@@ -69,20 +88,40 @@ Then:
 Omit empty sections. Use concise, user-facing descriptions (not raw commit messages).
 
 ### 5. Bump version in package.json
+
+For **core**:
 // turbo
 ```
 npm version <patch|minor|major> --no-git-tag-version
 ```
-Use the bump type from step 3.
+
+For **packages/**:
+// turbo
+```
+cd packages/<name> && npm version <patch|minor|major> --no-git-tag-version
+```
 
 ### 6. Build
+
+For **core**:
 // turbo
 ```
 npm run build:core
 ```
+
+For **packages/** that have a build script:
+// turbo
+```
+cd packages/<name> && npm run build
+```
+
+Skip if the package has no build step (e.g. `code-grammars-all`).
+
 If build fails, STOP and fix.
 
 ### 7. Commit and tag
+
+For **core**:
 ```
 git add -A
 git commit -m "release: vX.Y.Z"
@@ -90,10 +129,42 @@ git tag vX.Y.Z
 git push && git push --tags
 ```
 
+For **packages/**:
+```
+git add -A
+git commit -m "release: @brainbank/<name>@X.Y.Z"
+git tag @brainbank/<name>@X.Y.Z
+git push && git push --tags
+```
+
 ### 8. Publish to npm
+
+For **core**:
 ```
 npm publish
 ```
 
+For **packages/**:
+```
+cd packages/<name> && npm publish --access public
+```
+
+> **Note**: `--access public` is required for scoped packages on first publish.
+
 ### 9. Confirm
-Tell the user: "✅ Published `brainbank@X.Y.Z` to npm."
+Tell the user: "✅ Published `<package>@X.Y.Z` to npm."
+
+---
+
+## Multi-package publish order
+
+When publishing `all` or multiple packages, publish in dependency order:
+1. `brainbank` (core) — no deps on other packages
+2. `@brainbank/code` — depends on `brainbank`
+3. `@brainbank/code-grammars-all` — depends on `@brainbank/code`
+4. `@brainbank/git` — depends on `brainbank`
+5. `@brainbank/docs` — depends on `brainbank`
+6. `@brainbank/memory` — depends on `brainbank`
+7. `@brainbank/mcp` — depends on `brainbank`
+
+Bump and publish each one fully (steps 4-9) before moving to the next.

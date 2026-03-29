@@ -39,6 +39,40 @@ export interface PluginContext {
     collection(name: string): Collection;
 }
 
+// ── @expose Decorator ─────────────────────────────
+// Mark plugin methods to be injected onto BrainBank.
+// BrainBank.use() auto-discovers and binds them after initialization.
+
+const EXPOSED_KEY = Symbol('brainbank:exposed');
+
+/**
+ * Mark a plugin method to be injected onto the BrainBank instance.
+ * 
+ *   class GitPlugin implements Plugin {
+ *       @expose
+ *       async searchCommits(query: string, k = 8) { ... }
+ *   }
+ * 
+ * After `brain.use(git())`, call `brain.searchCommits(...)` directly.
+ */
+export function expose<This, Args extends unknown[], Return>(
+    _target: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext<This>,
+): void {
+    const methodName = context.name as string;
+    context.addInitializer(function (this: This) {
+        const ctor = (this as object).constructor as any;
+        if (!ctor[EXPOSED_KEY]) ctor[EXPOSED_KEY] = new Set<string>();
+        ctor[EXPOSED_KEY].add(methodName);
+    });
+}
+
+/** Get all @expose-marked method names from a plugin instance. */
+export function getExposedMethods(plugin: Plugin): string[] {
+    const ctor = (plugin as object).constructor as any;
+    return [...(ctor[EXPOSED_KEY] ?? [])];
+}
+
 // ── Core Plugin Interface ─────────────────────────
 // Minimal contract: name + initialize. All capabilities are expressed
 // via composed interfaces below.
@@ -79,7 +113,8 @@ export interface CollectionPlugin extends Plugin {
     addCollection(collection: DocumentCollection): void;
     removeCollection(name: string): void;
     listCollections(): DocumentCollection[];
-    indexCollections(options?: any): Promise<any>;
+    indexDocs(options?: any): Promise<any>;
+    searchDocs(query: string, options?: any): Promise<SearchResult[]>;
     search(query: string, options?: any): Promise<SearchResult[]>;
     addContext?(collection: string, path: string, context: string): void;
     removeContext?(collection: string, path: string): void;

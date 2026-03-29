@@ -27,13 +27,3 @@ OPENAI_API_KEY=sk-... PERPLEXITY_API_KEY=pplx-... \
 | `entities` | Show entity graph |
 | `docs <query>` | Search docs + generate answer |
 | *(any text)* | Chat with RAG context injected |
-
-## RAG Evaluator
-
-Measure retrieval quality with the benchmarks in [`test/benchmarks/rag/`](../../test/benchmarks/rag/):
-
-```bash
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
-```
-
-Output: Recall@3, Recall@5, MRR per category with miss analysis.

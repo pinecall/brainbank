@@ -91,6 +91,23 @@ export class Collection {
         return id;
     }
 
+    /** Update an item's content (re-embeds). Returns the new ID. */
+    async update(id: number, content: string, options?: CollectionAddOptions): Promise<number> {
+        const row = this._db.prepare(
+            'SELECT * FROM kv_data WHERE id = ? AND collection = ?'
+        ).get(id, this._name) as KvDataRow | undefined;
+
+        if (!row) throw new Error(`BrainBank: Item ${id} not found in collection '${this._name}'.`);
+
+        // Merge: keep original metadata/tags unless overridden
+        const metadata = options?.metadata ?? JSON.parse(row.meta_json || '{}');
+        const tags = options?.tags ?? JSON.parse(row.tags_json || '[]');
+        const ttl = options?.ttl;
+
+        this._removeById(id);
+        return this.add(content, { metadata, tags, ...(ttl ? { ttl } : {}) });
+    }
+
     /** Add multiple items. Returns their IDs. */
     async addMany(items: { content: string; metadata?: Record<string, any>; tags?: string[]; ttl?: string }[]): Promise<number[]> {
         if (items.length === 0) return [];

@@ -1,0 +1,27 @@
+{
+    "name": "brainbank-csv",
+    "version": "0.1.0",
+    "description": "CSV indexing plugin for BrainBank — indexes rows from local .csv files",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "files": ["dist"],
+    "scripts": {
+        "build": "tsup"
+    },
+    "peerDependencies": {
+        "brainbank": ">=0.7.0"
+    },
+    "devDependencies": {
+        "tsup": "^8.4.0",
+        "typescript": "^5.7.0"
+    },
+    "keywords": ["brainbank", "csv", "plugin", "semantic-search"],
+    "license": "MIT"
+}

@@ -2,14 +2,15 @@
 
 ## Project Overview
 
-BrainBank is a pluggable semantic memory library for AI agents — hybrid search (vector + BM25) in a single SQLite file. Ships as an npm package (`brainbank`) with built-in code, git, and docs indexers, plus a CLI and MCP server.
+BrainBank is a pluggable semantic memory library for AI agents — hybrid search (vector + BM25) in a single SQLite file. Ships as an npm package (`brainbank`) with built-in git and docs indexers, plus a CLI and MCP server. Code indexing is available via the optional `@brainbank/code` package.
 
 Architecture: 4-layer modular plugin system with `.use()` builder pattern.
-Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node · tree-sitter.
+Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node.
 
 ## Dev Environment
 
-- Install: `npm install` (native deps: better-sqlite3, hnswlib-node, tree-sitter — requires C++ toolchain)
+- Install: `npm install` (native deps: better-sqlite3, hnswlib-node — requires C++ toolchain)
+- Install code plugin: `npm install` in `packages/code/` (tree-sitter deps are optional in core)
 - Dev CLI: `npm run dev` (runs `tsx src/cli/index.ts`)
 - Build: `npm run build:core` (tsup — generates `dist/`)
 - No `.env` file needed for development. Optional: `OPENAI_API_KEY` for OpenAI embeddings.
@@ -22,7 +23,7 @@ Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node 
 - Test verbose: `npm test -- --verbose --filter <name>`
 
 ### Full suite (only when requested)
-- Unit tests: `npm test` (146 tests, ~7s)
+- Unit tests: `npm test` (200 tests, ~11s)
 - Integration: `npm run test:integration` (downloads embedding model, ~30s)
 - Build: `npm run build:core`
 
@@ -43,8 +44,8 @@ Layer 1 — Infrastructure (depends on Layer 0 only)
 
 Layer 2 — Domain (depends on Layers 0-1)
 ├── domain/          ← Core primitives: collection (KV store)
-├── indexers/        ← Plugins: code/, git/, docs/, memory/, notes/
-│   └── base.ts      ← Indexer interface (the plugin contract)
+├── indexers/        ← Plugins: code/, git/, docs/, memory/
+│   └── base.ts      ← Plugin interface (the plugin contract)
 └── services/        ← Reembed, watch
 
 Layer 3 — Application (depends on everything below)
@@ -61,8 +62,11 @@ typings/
 
 ```
 packages/
-├── mcp/             ← MCP server (separate package)
-└── memory/          ← Conversational memory (separate package)
+├── code/            ← @brainbank/code — Code indexer (AST, import graph, symbols)
+├── git/             ← @brainbank/git — Git history + co-edit analysis
+├── docs/            ← @brainbank/docs — Document collection search
+├── mcp/             ← @brainbank/mcp — MCP server
+└── memory/          ← @brainbank/memory — Conversational memory
 ```
 
 ### Key Files
@@ -95,13 +99,14 @@ packages/
 - Files containing pure functions use descriptive kebab-case: `rrf.ts`, `fts.ts`, `math.ts`
 
 ### Import Rules (Critical)
-- **Path aliases**: All cross-directory imports use `@/` (configured in `tsconfig.json` and `tsup.config.ts`)
+- **Path aliases**: All cross-directory imports in `src/` use `@/` (configured in `tsconfig.json` and `tsup.config.ts`)
 - **Same-directory**: Use `./` for files in the same directory
 - **NEVER use `../`**: No relative parent imports. If you see `../` in src/, it's a bug.
 - **Layer direction**: Imports only flow downward (Layer 3 → 2 → 1 → 0). Never import from a higher layer.
+- **Separate packages** (`packages/*`): Import from `'brainbank'` peer dep, NOT `@/`. Use `.js` extensions for local imports.
 
 ```typescript
-// ✅ Correct — cross-directory with @/
+// ✅ Correct — cross-directory with @/ (inside src/)
 import { Database } from '@/db/database.ts';
 import type { SearchResult } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
@@ -109,6 +114,10 @@ import { reciprocalRankFusion } from '@/lib/rrf.ts';
 // ✅ Correct — same directory with ./
 import { ContextBuilder } from './context-builder.ts';
 import type { PluginRegistry } from './registry.ts';
+
+// ✅ Correct — inside packages/*  (peer dep)
+import type { Plugin, PluginContext } from 'brainbank';
+import { CodeWalker } from './code-walker.js';
 
 // ❌ WRONG — never use ../
 import { Database } from '../db/database.ts';
@@ -125,9 +134,14 @@ import type { SearchResult } from '../../types.ts';
 - Registered via `.use()` builder pattern on BrainBank
 - Access: `brain.plugin('code')` — returns a typed plugin instance
 - List: `brain.plugins` — returns all registered plugin names
+- **`@expose` decorator** — methods marked with `@expose` are auto-injected onto BrainBank after `initialize()`. Imported from `brainbank` or `@/indexers/base.ts`.
+- **Method injection** — `_bindExposedMethods()` in `brainbank.ts` discovers `@expose`-decorated methods and binds them. Collision detection prevents overrides.
 
 > **Breaking change (v0.6):** `Indexer` → `Plugin`, `IndexerContext` → `PluginContext`, `IndexerRegistry` → `PluginRegistry`.
 > `.indexer()` → `.plugin()`, `.indexers` → `.plugins`. No backward compat aliases — clean break.
+
+> **Breaking change (v0.8):** Plugin-owned methods moved from hardcoded in `brainbank.ts` to `@expose` decorator injection.
+> `indexCollections()` renamed to `indexDocs()` (backward compat alias available). `brain.coEdits()` → `brain.suggestCoEdits()`.
 
 - `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts` and `index.ts`)
 - `bootstrap/` handles system wiring — never imported by layers 0-2
@@ -167,7 +181,7 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 - **Functions**: Max **40 lines**. If longer, extract helpers.
 - **Files**: Max **300 lines**. If longer, split into focused modules.
 
-**Exception**: Dynamic `import()` is allowed in `src/cli/` for lazy-loading heavy dependencies (e.g. tree-sitter) that shouldn't slow down CLI startup.
+**Exception**: Dynamic `import()` is allowed in `src/cli/` for lazy-loading heavy dependencies (e.g. tree-sitter) and resolving optional packages (e.g. `@brainbank/code`).
 
 ## Git Workflow
 
@@ -175,8 +189,9 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 - Before commit: `npm test` must pass
 - Keep commits small, focused, one logical change each
 - **Publishing**: Use `/publish` workflow — runs tests, updates CHANGELOG.md, bumps version, builds, and publishes to npm
+- **Per-package changelogs**: Each package in `packages/` has its own `CHANGELOG.md`. Core changes go in root `CHANGELOG.md`.
 
-> **⚠️ CHANGELOG is MANDATORY**: After **every** change, update `## [Unreleased]` in `CHANGELOG.md` with what you did. **Do not commit without updating the changelog.** This way any agent can see what's new even before publishing. The `/publish` workflow verifies the items against git log, fixes inaccuracies, stamps `## [Unreleased]` → `## [X.Y.Z] — date`, and adds a fresh `## [Unreleased]` section.
+> **⚠️ CHANGELOG is MANDATORY**: After **every** change, update `## [Unreleased]` in the appropriate `CHANGELOG.md` (root for core, `packages/*/CHANGELOG.md` for packages). **Do not commit without updating the changelog.** The `/publish` workflow verifies the items against git log, fixes inaccuracies, stamps `## [Unreleased]` → `## [X.Y.Z] — date`, and adds a fresh `## [Unreleased]` section.
 
 ## Gotchas
 
@@ -186,6 +201,9 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 - HNSW indices are in-memory. Large repos use significant RAM during indexing.
 - `npm run build` runs workspaces too. Use `npm run build:core` to build only the core package.
 - The custom test runner (`test/run.ts`) discovers tests in `test/unit/` and `test/integration/`. Tests export `{ name, tests }` — not Jest/Vitest syntax.
+- **tree-sitter is optional** — all grammars are in `optionalDependencies`. The code chunker falls back to sliding-window when grammars are missing.
+- **Global CLI + separate packages**: When `brainbank` is installed globally, `@brainbank/code` must also be installed globally in the same prefix for `import('@brainbank/code')` to resolve.
+- **packages/ use `.js` extensions** for local imports (bundled by tsup), not `.ts` like `src/`.
 
 ## Permissions
 
@@ -205,4 +223,4 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 
 ## REMEMBER
 
-- Please always update the README.md, ARCHITECTURE.md, BENCHMARKS.md and the CHANGELOG.md when needed
+- Please always update the README.md, ARCHITECTURE.md and the CHANGELOG.md when needed

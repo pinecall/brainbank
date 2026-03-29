@@ -345,17 +345,13 @@ export const tests = {
         cleanup(db);
     },
 
-    async 'listCollections() before init throws'(assert: any) {
+    async 'listCollections() not available before init'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({ dbPath: db, embeddingProvider: new MockEmbedding(), embeddingDims: 16 })
             .use(docs());
 
-        let threw = false;
-        try { brain.listCollections(); } catch (e: any) {
-            threw = true;
-            assert.includes(e.message, 'Not initialized');
-        }
-        assert.ok(threw, 'should throw before initialization');
+        // @expose methods aren't bound until initialize()
+        assert.equal(typeof brain.listCollections, 'undefined');
 
         brain.close();
         cleanup(db);

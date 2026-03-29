@@ -7,19 +7,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **`@expose` decorator** — plugin methods marked with `@expose` are automatically injected onto the `BrainBank` instance after initialization. Eliminates hardcoded proxy methods.
+- **Plugin method injection** — `suggestCoEdits`, `fileHistory` (git), `searchDocs`, `addCollection`, `removeCollection`, `listCollections`, `indexDocs`, `addContext`, `removeContext`, `listContexts` (docs) now injected via `@expose`
+- **Package: `@brainbank/code`** — code indexer extracted as a separate npm package with tree-sitter as a peer dependency
+- **Package: `@brainbank/git`** — git history indexer extracted as a separate npm package with simple-git as a dependency
+- **Package: `@brainbank/docs`** — document collection indexer extracted as a separate npm package
+- **Graph Expansion Engine** — context builder performs 2-hop import graph traversal + directory clustering to achieve ~93% feature coverage from a single query
+- **`Collection.update(id, content, options?)`** — update an item's content with re-embedding. Preserves original metadata/tags unless overridden
+- **Plugin examples** — `examples/custom-plugin/` (notes plugin + quotes CLI plugin) and `examples/custom-package/` (CSV package scaffold) with full READMEs and sample data
+- **Custom plugin indexing** — `brain.index()` now calls `index()` on any registered `IndexablePlugin` beyond built-in code/git/docs
+- **Custom plugin search** — `brain.search()` and `brain.hybridSearch()` now call `search()` on any registered `SearchablePlugin` and fuse results via RRF
+- **New public exports** — `vecToBuffer`, `isIgnoredDir`, `isIgnoredFile`, `normalizeBM25`, `rerank`, `expose`, `getExposedMethods` now exported from `brainbank` for plugin authors
 - **Code Graph: Import graph** — new `code_imports` table tracks file-level import relationships. Context builder shows `## Related Files (Import Graph)` section with importing/imported files
 - **Code Graph: Symbol index** — new `code_symbols` table extracts all function/class/method definitions with name, kind, and line number. Linked to chunk IDs for cross-referencing
 - **Code Graph: Call references** — new `code_refs` table tracks function calls within each chunk. Context builder annotates results with `calls:` and `called by:` info
 - **Enriched embedding text** — chunk embeddings now include import context and parent class name, improving semantic search relevance
 - **Import extractor** (`import-extractor.ts`) — regex-based, supports all 19 languages (JS/TS, Python, Go, Ruby, Rust, Java, C/C++, etc.)
 - **Symbol extractor** (`symbol-extractor.ts`) — AST-based extraction of symbols and call references using tree-sitter
+
+### Changed
+- **tree-sitter deps moved to `optionalDependencies`** — reduces mandatory install size from ~950MB to ~60MB. Grammars are loaded on demand; missing ones fall back to sliding-window chunking
 - **Hybrid search: increased defaults** — `codeK` 6→20, `gitK` 5→8 for more candidate results
 - **CLI score filter** — `printResults` now filters results by score ≥ 70% (max 20), showing only high-quality matches
-- **CLI source filtering** — `search`, `hsearch`, and `ksearch` accept `--codeK <n>` and `--gitK <n>` flags to control results per source (set to 0 to skip a source entirely). `hsearch` also accepts `--docsK <n>` and `--collections key:val,...` for document and custom KV collection filtering
+- **CLI source filtering** — all search commands accept dynamic `--<source> <n>` flags (e.g. `--code 10 --git 0 --docs 5 --notes 3`). Replaces `--codeK`/`--gitK`/`--docsK`/`--collections` with a unified pattern that works with built-in sources and custom plugins
 - **Code ignore patterns** — `code({ ignore: ['sdk/**', 'vendor/**'] })` skips files matching glob patterns during indexing. Configurable via `code.ignore` in `.brainbank/config.json`, CLI `--ignore` flag, or programmatic API. MCP server reads config.json automatically. Uses `picomatch` for glob matching
 - **Interactive index scan** — `brainbank index` now scans the repo first, shows a summary tree (files by language, git commits, docs collections, config, DB), and prompts with interactive checkboxes to select modules. Auto-generates `.brainbank/config.json` from selections. Use `--yes` to skip prompts
 
 ### Changed
+- **CLI plugin directory renamed** — `.brainbank/indexers/` → `.brainbank/plugins/` (matches the v0.6 Indexer→Plugin rename)
 - **Removed `notes` plugin** — `NoteStore` was a stripped-down `Collection` (same hybrid search, but no reranker/TTL/tags). Use `brain.collection('notes')` for equivalent functionality. Removed: `src/domain/notes/`, schema tables (`note_memories`, `note_vectors`, `fts_notes`), `brainbank/notes` subpath export
 - **Code indexer no longer indexes .md/.mdx files** — documents are handled exclusively by the docs plugin, avoiding duplication
 - **Schema version 5 → 6** — removed notes tables. Existing databases with notes data should re-create their DB

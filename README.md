@@ -4,15 +4,20 @@
 
 BrainBank gives LLMs a long-term memory that persists between sessions.
 
-- **All-in-one** — core + code + git + docs + CLI in a single `brainbank` package
+- **All-in-one** — core + all plugins + CLI in a single `npm i -g brainbank`
 - **Pluggable plugins** — `.use()` only what you need (code, git, docs, or custom)
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 - **Pluggable embeddings** — local WASM (free), OpenAI, or Perplexity (standard & contextualized)
 - **Multi-repo** — index multiple repositories into one shared database
 - **Portable** — single `.brainbank/brainbank.db` file
-- **Optional packages** — [`@brainbank/memory`](#memory) (fact extraction + entity graph), [`@brainbank/mcp`](#mcp-server) (MCP server)
 - **Optional reranker** — Qwen3-0.6B cross-encoder via `Qwen3Reranker` (opt-in)
+- **Modular packages** — each plugin also published as a standalone `@brainbank/*` package
+  - [`@brainbank/code`](#packages) — AST chunking, import graph, symbols. Bundles JS/TS/HTML/Python grammars; add more with `npm i -g tree-sitter-<lang>`
+  - [`@brainbank/git`](#packages) — commit search, co-edit analysis
+  - [`@brainbank/docs`](#packages) — document collection search
+  - [`@brainbank/memory`](#memory) — fact extraction + entity graph
+  - [`@brainbank/mcp`](#mcp-server) — MCP server for AI tools
 
 ![BrainBank Architecture](assets/architecture.png)
 
@@ -24,7 +29,7 @@ BrainBank is a **code-aware knowledge engine** — not just a memory layer. It p
 
 | | **BrainBank** | **QMD** | **mem0 / Zep** | **LangChain** |
 |---|:---:|:---:|:---:|:---:|
-| Code-aware (AST) | **19 languages** (tree-sitter) | ✗ | ✗ | ✗ |
+| Code-aware (AST) | **20 languages** (tree-sitter) | ✗ | ✗ | ✗ |
 | Code graph | **imports + symbols + calls** | ✗ | ✗ | ✗ |
 | Git + co-edits | ✓ | ✗ | ✗ | ✗ |
 | Search | **Vector + BM25 + RRF** | Vector + reranker | Vector + graph | Vector only |
@@ -36,15 +41,18 @@ BrainBank is a **code-aware knowledge engine** — not just a memory layer. It p
 
 - [Why BrainBank?](#why-brainbank)
 - [Installation](#installation)
+- [Packages](#packages)
 - [Quick Start](#quick-start)
 - [CLI](#cli)
 - [Programmatic API](#programmatic-api)
   - [Plugins](#plugins)
   - [Collections](#collections)
   - [Search](#search)
+    - [How Search Works](#how-search-works)
   - [Document Collections](#document-collections)
   - [Context Generation](#context-generation)
-  - [Custom Plugins](#custom-plugins)
+  - [Building Custom Plugins](#building-custom-plugins)
+  - [Developing a Plugin Package](#developing-a-plugin-package)
   - [AI Agent Integration](#ai-agent-integration)
   - [Examples](#examples)
   - [Watch Mode](#watch-mode)
@@ -63,53 +71,81 @@ BrainBank is a **code-aware knowledge engine** — not just a memory layer. It p
 - [Architecture](#architecture)
   - [Search Pipeline](#search-pipeline)
 - [Benchmarks](#benchmarks)
-  - [Search Quality: AST vs Sliding Window](#search-quality-ast-vs-sliding-window)
-  - [Grammar Support](#grammar-support)
-  - [RAG Retrieval Quality](#rag-retrieval-quality)
-    · [Full Results →](./BENCHMARKS.md)
 
 ---
 
 ## Installation
 
 ```bash
-npm install brainbank
+npm i -g brainbank
 ```
 
-### Optional Packages
+This installs **everything**: core, code plugin, git plugin, docs plugin, all 20 tree-sitter grammars, CLI. All plugins and grammars are `optionalDependencies` — they install automatically if your system has a C++ toolchain.
 
-| Package | When to install |
-|---------|----------------|
-| `@brainbank/memory` | Deterministic memory extraction + entity graph for LLM conversations |
-| `@brainbank/mcp` | MCP server for AI tool integration |
+---
 
-```bash
-# Memory — automatic fact extraction & dedup for chatbots/agents
-npm install @brainbank/memory
+## Packages
 
-# Reranker — built-in, install the runtime dependency to enable
-npm install node-llama-cpp
+Every plugin is also published as a standalone `@brainbank/*` package. The core `brainbank` install bundles most of them as optional dependencies — you only install packages separately for programmatic imports or `--no-optional` setups.
 
-# MCP server — for Antigravity, Claude Desktop, etc.
-npm install @brainbank/mcp
-```
+### Bundled Plugins (included in `brainbank`)
+
+| Package | What it does |
+|---------|------|
+| [`@brainbank/code`](./packages/code/) | AST-aware code chunking, import graph, symbol index, call refs. Includes JS/TS/JSX/TSX, HTML + Python grammars |
+| [`@brainbank/git`](./packages/git/) | Git history indexing + co-edit analysis (which files change together) |
+| [`@brainbank/docs`](./packages/docs/) | Document collection search with heading-aware smart chunking (qmd-inspired) |
 
 ### Tree-Sitter Grammars
 
-BrainBank uses [tree-sitter](https://tree-sitter.github.io/) for AST-aware code chunking. **All 19 language grammars ship with BrainBank** — no extra installation needed.
+`@brainbank/code` bundles **5 grammars** out of the box: JavaScript, TypeScript (JSX/TSX), Python, and HTML. These cover most projects without any extra setup.
 
-<details>
-<summary>Supported languages (19)</summary>
+For additional languages, install individual `tree-sitter-*` packages globally:
+
+```bash
+# Install a few extra languages
+npm i -g tree-sitter-go tree-sitter-rust
+
+# Install all 16 remaining grammars at once
+npm i -g tree-sitter-go tree-sitter-rust tree-sitter-c tree-sitter-cpp \
+  tree-sitter-java tree-sitter-kotlin tree-sitter-scala tree-sitter-ruby \
+  tree-sitter-php tree-sitter-c-sharp tree-sitter-swift tree-sitter-lua \
+  tree-sitter-bash tree-sitter-elixir tree-sitter-css
+```
+
+BrainBank auto-detects installed grammars at runtime. Missing grammars fall back to a sliding-window chunker (still functional, just less precise).
+
+| Default (bundled) | Install separately |
+|---|---|
+| JavaScript | Go |
+| TypeScript (JSX/TSX) | Rust |
+| Python | C / C++ |
+| HTML | Java / Kotlin / Scala |
+| | Ruby |
+| | PHP |
+| | C# |
+| | Swift |
+| | Lua / Bash / Elixir |
+| | CSS |
+
+### Separate Packages (install individually)
+
+| Package | What it does | Install |
+|---------|------|---------|
+| [`@brainbank/memory`](./packages/memory/) | Deterministic fact extraction + entity graph for conversational memory | `npm i -g @brainbank/memory` |
+| [`@brainbank/mcp`](./packages/mcp/) | MCP server for Antigravity, Claude Desktop, Cursor, etc. | `npm i -g @brainbank/mcp` |
+
+### Tree-Sitter Grammars
+
+BrainBank uses [tree-sitter](https://tree-sitter.github.io/) for AST-aware code chunking. **5 grammars are bundled** (JS/TS/Python/HTML). Install additional languages with `npm i -g tree-sitter-<lang>`. Without grammars, the code indexer falls back to sliding-window chunking.
 
 | Category | Languages |
 |----------|-----------|
-| Web | JavaScript, TypeScript, HTML, CSS |
-| Systems | Go, Rust, C, C++, Swift |
-| JVM | Java, Kotlin, Scala |
-| Scripting | Python, Ruby, PHP, Lua, Bash, Elixir |
-| .NET | C# |
-
-</details>
+| **Web** | JavaScript, TypeScript, HTML, CSS |
+| **Systems** | Go, Rust, C, C++, Swift |
+| **JVM** | Java, Kotlin, Scala |
+| **Scripting** | Python, Ruby, PHP, Lua, Bash, Elixir |
+| **.NET** | C# |
 
 ---
 
@@ -209,22 +245,17 @@ brainbank ksearch <query>                   # Keyword search (BM25, instant)
 brainbank dsearch <query>                   # Document search
 ```
 
-**Source filtering** — all search commands accept `--codeK` and `--gitK` to control how many results come from each source. Set to `0` to skip a source entirely:
+**Source filtering** — all search commands accept `--<source> <n>` to control how many results come from each source. Set to `0` to skip a source. Works with built-in sources and custom plugins:
 
 ```bash
-brainbank hsearch "auth" --codeK 0 --gitK 10   # git commits only
-brainbank hsearch "auth" --codeK 10 --gitK 0   # code only
-brainbank search "handler" --gitK 0            # code only (vector)
-brainbank ksearch "bugfix" --codeK 0           # git only (keyword)
-brainbank hsearch "auth" --codeK 3 --gitK 3    # balanced mix
-```
-
-**Document & collection filtering** (hsearch only) — use `--docsK` to control document results, or `--collections` for full per-source control including custom KV collections:
-
-```bash
-brainbank hsearch "api" --docsK 10 --codeK 0 --gitK 0   # docs only
-brainbank hsearch "bug" --collections errors:5,git:3    # KV collection + git
-brainbank hsearch "auth" --collections code:5,git:0,docs:10,decisions:3
+brainbank hsearch "auth" --code 0 --git 10           # git commits only
+brainbank hsearch "auth" --code 10 --git 0           # code only
+brainbank search "handler" --git 0                   # code only (vector)
+brainbank ksearch "bugfix" --code 0                  # git only (keyword)
+brainbank hsearch "auth" --code 3 --git 3            # balanced mix
+brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only
+brainbank hsearch "bug" --notes 5 --git 3            # custom plugin + git
+brainbank hsearch "auth" --code 5 --docs 10 --slack_messages 3
 ```
 
 ### Context
@@ -254,7 +285,7 @@ brainbank watch                             # Watch files, auto re-index on chan
 brainbank serve                             # Start MCP server (stdio)
 ```
 
-**Global options:** `--repo <path>`, `--force`, `--depth <n>`, `--codeK <n>`, `--gitK <n>`, `--docsK <n>`, `--collections k:v,...`, `--ignore <globs>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`, `--reranker <name>`
+**Global options:** `--repo <path>`, `--force`, `--depth <n>`, `--<source> <n>` (source filter), `--ignore <globs>`, `--collection <name>`, `--pattern <glob>`, `--context <desc>`, `--reranker <name>`
 
 ---
 
@@ -268,7 +299,7 @@ BrainBank uses pluggable plugins. Register only what you need with `.use()`:
 
 | Plugin | Import | Description |
 |---------|--------|-------------|
-| `code` | `brainbank/code` | AST-aware code chunking via tree-sitter (19 languages). Source code only — does **not** index documents (.md, .mdx) |
+| `code` | `brainbank/code` | AST-aware code chunking via tree-sitter (20 languages). Source code only — does **not** index documents (.md, .mdx) |
 | `git` | `brainbank/git` | Git commit history, diffs, co-edit relationships |
 | `docs` | `brainbank/docs` | Document collections (markdown, wikis, .md/.mdx files) |
 
@@ -335,16 +366,47 @@ await decisions.add(
 const hits = await decisions.search('why not postgres');
 // → [{ content: 'Use SQLite with WAL...', score: 0.95, tags: [...], metadata: {...} }]
 
+// Batch add (uses embedBatch — much faster than individual adds)
+await errors.addMany([
+  { content: 'NullPointerException in AuthService', tags: ['backend'], metadata: { file: 'auth.ts' } },
+  { content: 'CORS preflight failed on /api/users', tags: ['frontend'], metadata: { file: 'proxy.ts' } },
+]);
+
+// Update an existing item (re-embeds, preserves metadata/tags unless overridden)
+const id = await errors.add('Old error message', { tags: ['backend'] });
+await errors.update(id, 'Updated error message'); // keeps original tags
+
 // Management
 decisions.list({ limit: 20 });          // newest first
 decisions.list({ tags: ['architecture'] }); // filter by tags
 decisions.count();                      // total items
+decisions.remove(id);                   // remove by ID
+decisions.clear();                      // remove all items
 decisions.trim({ keep: 50 });           // keep N most recent
 decisions.prune({ olderThan: '30d' });  // remove older than 30 days
 brain.listCollectionNames();            // → ['errors', 'decisions']
 ```
 
-Collections work standalone or alongside plugins. When used with `hsearch`, pass `--collections errors:5` to include them in hybrid search results.
+#### Collection API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `add` | `add(content, options?): Promise<number>` | Add an item. Returns its ID. Auto-embedded for vector search. |
+| `addMany` | `addMany(items): Promise<number[]>` | Batch add (uses `embedBatch` — much faster). Returns IDs. |
+| `update` | `update(id, content, options?): Promise<number>` | Replace content, re-embed. Preserves original metadata/tags unless overridden. Returns new ID. |
+| `search` | `search(query, options?): Promise<CollectionItem[]>` | Hybrid search (vector + BM25 → RRF). Options: `k`, `mode`, `minScore`, `tags`. |
+| `list` | `list(options?): CollectionItem[]` | List items (newest first). Options: `limit`, `offset`, `tags`. |
+| `count` | `count(): number` | Total items in collection. |
+| `remove` | `remove(id): void` | Remove a specific item by ID. |
+| `clear` | `clear(): void` | Remove all items in the collection. |
+| `trim` | `trim({ keep }): Promise<{ removed }>` | Keep N most recent items, remove the rest. |
+| `prune` | `prune({ olderThan }): Promise<{ removed }>` | Remove items older than a duration (e.g. `'30d'`, `'12h'`). |
+
+**Options for `add` / `update`:** `{ metadata?: Record, tags?: string[], ttl?: string }`
+
+> TTL: Items with a `ttl` (e.g. `'7d'`, `'24h'`) are auto-pruned from search/list results after expiration.
+
+Collections work standalone or alongside plugins. When used with `hsearch`, pass `--<collection> <n>` to include them in hybrid search results.
 
 > 📂 See [examples/collection](examples/collection/) for a complete runnable demo with cross-collection linking and metadata.
 
@@ -378,6 +440,7 @@ Custom plugins can hook into watch mode by implementing `onFileChange` and `watc
 
 ```typescript
 import type { Plugin, PluginContext } from 'brainbank';
+import * as fs from 'node:fs';
 
 function csvPlugin(): Plugin {
   let ctx: PluginContext;
@@ -394,16 +457,25 @@ function csvPlugin(): Plugin {
       return ['**/*.csv', '**/*.tsv'];
     },
 
-    // Called when a watched file changes
+    // Called when a watched file changes (event: 'create' | 'update' | 'delete')
     async onFileChange(filePath, event) {
-      if (event === 'delete') return true;
-
-      const data = fs.readFileSync(filePath, 'utf-8');
       const col = ctx.collection('csv_data');
-      await col.add(data, {
-        tags: ['csv'],
-        metadata: { file: filePath },
-      });
+
+      // Remove old data for this file (idempotent — safe if nothing exists)
+      const existing = col.list({ limit: 1000 }).filter(
+        i => i.metadata.file === filePath
+      );
+      for (const item of existing) col.remove(item.id);
+
+      // Re-add only if the file still exists (not a delete event)
+      if (event !== 'delete') {
+        const data = fs.readFileSync(filePath, 'utf-8');
+        await col.add(data, {
+          tags: ['csv'],
+          metadata: { file: filePath },
+        });
+      }
+
       return true; // handled
     },
   };
@@ -449,6 +521,57 @@ const docHits = await brain.searchDocs('getting started', { collection: 'wiki' }
 | 0.3–0.5 | Somewhat related |
 | < 0.3 | Weak match |
 
+#### How Search Works
+
+BrainBank has **two levels** of search:
+
+```
+brain.hybridSearch('auth')
+  │
+  ├── SearchAPI (centralized orchestration)
+  │     │
+  │     ├── VectorSearch ──── shared HNSW ──── code + git vectors
+  │     ├── KeywordSearch ─── FTS5 BM25 ────── code + git text
+  │     └── RRF fusion ────── merges all result lists
+  │
+  └── Plugin search (per-plugin, via @expose)
+        │
+        └── DocsPlugin.searchDocs() ── own HNSW ── doc vectors
+```
+
+**Centralized search** (`SearchAPI`) manages a shared multi-index HNSW that holds both code and git vectors. The convenience methods `searchCode()` and `searchCommits()` are just filters on this shared index:
+
+```typescript
+// These are equivalent:
+await brain.searchCode('auth', 8);
+await brain.search('auth', { codeK: 8, gitK: 0 });
+```
+
+**Plugin-owned search** runs independently. The docs plugin has its own HNSW index and BM25 search, because document collections can use different embedding dimensions (via per-plugin `embeddingProvider`).
+
+`hybridSearch()` **combines both levels** — it queries the shared vector+BM25 indices AND the docs plugin, then fuses everything with [Reciprocal Rank Fusion (RRF)](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf):
+
+```typescript
+// hybridSearch queries ALL sources and fuses with RRF:
+const results = await brain.hybridSearch('auth middleware', {
+  codeK: 20,   // top-20 code vectors
+  gitK: 8,     // top-8 git vectors
+  // docs automatically queried (top-8) if docs plugin is loaded
+  // KV collections queryable too:
+  collections: { errors: 5, patterns: 3 },
+});
+```
+
+| Method | Engine | What it searches |
+|--------|--------|-----------------|
+| `search(q)` | SearchAPI → VectorSearch | Code + git vectors (shared HNSW) |
+| `searchCode(q)` | SearchAPI → VectorSearch | Code vectors only |
+| `searchCommits(q)` | SearchAPI → VectorSearch | Git vectors only |
+| `searchBM25(q)` | SearchAPI → KeywordSearch | Code + git text (FTS5) |
+| `searchDocs(q)` | DocsPlugin (via `@expose`) | Document vectors (own HNSW + BM25) |
+| `hybridSearch(q)` | SearchAPI + plugins | **All sources** → RRF fusion |
+| `getContext(task)` | SearchAPI + plugins | All sources → formatted markdown |
+
 ### Document Collections
 
 Register folders of documents. Files are chunked by heading structure:
@@ -487,63 +610,143 @@ const context = await brain.getContext('add rate limiting to the API', {
 // ## Relevant Documents   — matching doc chunks
 ```
 
-### Custom Plugins
+### Building Custom Plugins
 
-Implement the `Plugin` interface to build your own:
+BrainBank plugins implement the `Plugin` interface to index any data source, participate in hybrid search, and expose convenience methods on `brain`.
+
+> 📂 **Full working examples:** [examples/custom-plugin/](examples/custom-plugin/) — two distinct plugins with sample data: a **notes plugin** (programmatic, reads `.txt` files) and a **quotes plugin** (CLI auto-discovery, reads `quotes.txt` line by line).
+
+#### Plugin Lifecycle
+
+```
+1. brain.use(myPlugin)        →  Plugin registered (not initialized yet)
+2. await brain.initialize()   →  plugin.initialize(ctx) called
+                              →  @expose methods bound to brain instance
+3. brain.index()              →  plugin.index() called  (if IndexablePlugin)
+4. brain.search()             →  plugin.search() called (if SearchablePlugin)
+5. brain.watch()              →  plugin.onFileChange()  (if WatchablePlugin)
+6. brain.close()              →  plugin.close()         (cleanup)
+```
+
+#### Minimal Plugin
 
 ```typescript
 import type { Plugin, PluginContext } from 'brainbank';
 
 const myPlugin: Plugin = {
-  name: 'custom',
+  name: 'my-plugin',
   async initialize(ctx: PluginContext) {
-    // ctx.db            — shared SQLite database
-    // ctx.embedding     — shared embedding provider
-    // ctx.collection()  — create dynamic collections
     const store = ctx.collection('my_data');
-    await store.add('indexed content', { source: 'custom' });
+    await store.add('some content', { tags: ['example'] });
   },
 };
 
-brain.use(myPlugin);
+const brain = new BrainBank({ repoPath: '.' }).use(myPlugin);
+await brain.initialize();
 ```
 
-#### Using custom plugins with the CLI
+#### `PluginContext` API
 
-Drop `.ts` files into `.brainbank/indexers/` — the CLI auto-discovers them:
+Every plugin receives a `PluginContext` during `initialize()`:
 
-```
-.brainbank/
-├── brainbank.db
-└── indexers/
-    ├── slack.ts
-    └── jira.ts
-```
+| Property | What you use it for |
+|----------|---------------------|
+| `ctx.collection(name)` | **Start here.** Get/create a KV collection with built-in hybrid search |
+| `ctx.db` | Raw SQLite access (for custom tables) |
+| `ctx.embedding` | `embed(text)` / `embedBatch(texts)` |
+| `ctx.config` | `repoPath`, `dbPath`, etc. |
+| `ctx.createHnsw(max?, dims?)` | Standalone HNSW index (advanced) |
+| `ctx.getOrCreateSharedHnsw(type)` | Shared HNSW across same-type plugins (multi-repo) |
 
-Each file exports a default `Plugin`:
+#### Capability Interfaces
+
+| Interface | Method to implement | What happens |
+|-----------|---------------------|-------------|
+| `IndexablePlugin` | `index(options?)` | Runs during `brain.index()` |
+| `SearchablePlugin` | `search(query, options?)` | Results merged via RRF in `brain.search()` |
+| `WatchablePlugin` | `watchPatterns()` + `onFileChange(path, event)` | Auto-re-index on file changes |
+
+#### The `@expose` Decorator
+
+Mark methods with `@expose` to inject them onto `brain`:
 
 ```typescript
-// .brainbank/indexers/slack.ts
+import { expose } from 'brainbank';
+
+class MyPlugin implements Plugin {
+    readonly name = 'my-plugin';
+    private ctx!: PluginContext;
+
+    async initialize(ctx: PluginContext) { this.ctx = ctx; }
+
+    // Injected onto brain → brain.searchMyData('query')
+    @expose
+    async searchMyData(query: string, k = 5): Promise<SearchResult[]> {
+        const hits = await this.ctx.collection('my_data').search(query, { k });
+        return hits.map(h => ({
+            type: 'collection' as const,
+            score: h.score ?? 0,
+            content: h.content,
+            metadata: h.metadata,
+        }));
+    }
+}
+
+export function myPlugin(opts?: MyOptions): Plugin {
+    return new MyPlugin(opts);
+}
+```
+
+Methods **without** `@expose` stay internal — accessible via `brain.plugin('name')`.
+
+#### CLI Auto-Discovery
+
+Drop `.ts` files into `.brainbank/plugins/` — the CLI auto-discovers them:
+
+```typescript
+// .brainbank/plugins/my-plugin.ts
 import type { Plugin } from 'brainbank';
 
 export default {
-  name: 'slack',
-  async initialize(ctx) {
-    const msgs = ctx.collection('slack_messages');
-    // ... fetch and index slack messages
-  },
+  name: 'my-plugin',
+  async initialize(ctx) { /* ... */ },
 } satisfies Plugin;
 ```
 
-That's it — all CLI commands automatically pick up your plugins:
-
 ```bash
-brainbank index                             # runs code + git + docs + slack + jira
-brainbank stats                             # shows all plugins
-brainbank kv search slack_messages "deploy"  # search slack data
+brainbank index    # runs code + git + docs + my-plugin
+brainbank stats    # shows all plugins
 ```
 
----
+### Developing a Plugin Package
+
+To publish a reusable plugin as a standalone npm package (like `@brainbank/git` or `@brainbank/docs`):
+
+> 📂 **Full scaffold:** [examples/custom-package/](examples/custom-package/) — a CSV indexer as a publishable npm package, with every config file included.
+
+> ⚠️ The `@brainbank` npm scope is reserved for official plugins. Use your own scope (e.g. `brainbank-csv`, `@myorg/brainbank-csv`).
+
+| Requirement | Value |
+|-------------|-------|
+| `brainbank` in `package.json` | `peerDependencies` (never `dependencies`) |
+| Local imports | `.js` extensions (`'./my-plugin.js'`) |
+| Export pattern | Factory function: `csv(opts)` → `Plugin` |
+| `tsup` externals | `external: ['brainbank']` |
+| `tsconfig` module | `"moduleResolution": "bundler"` |
+
+```bash
+npm run build       # → dist/index.js + dist/index.d.ts
+npm publish --access public
+```
+
+```typescript
+import { BrainBank } from 'brainbank';
+import { csv } from 'brainbank-csv';
+
+const brain = new BrainBank({ repoPath: '.' }).use(csv({ dir: './data' }));
+await brain.initialize();
+await brain.index();
+```
 
 ## Project Config
 
@@ -590,15 +793,15 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
 
 **Docs collections** — registered automatically on every `brainbank index` run. No need for `--docs` flags.
 
-**Custom plugins** — auto-discovered from `.brainbank/indexers/`:
+**Custom plugins** — auto-discovered from `.brainbank/plugins/`:
 
 ```
 .brainbank/
 ├── brainbank.db        # SQLite database (auto-created)
 ├── config.json         # Project config (optional)
-└── indexers/           # Custom plugin files (optional)
-    ├── slack.ts
-    └── jira.ts
+└── plugins/            # Custom plugin files (optional)
+    ├── notes.ts
+    └── csv.ts
 ```
 
 Custom plugins can also have their own config section:
@@ -606,8 +809,8 @@ Custom plugins can also have their own config section:
 ```jsonc
 {
   "plugins": ["code", "git"],
-  "slack": { "embedding": "openai" },   // matched by plugin name
-  "jira": { "embedding": "perplexity" }
+  "notes": { "embedding": "local" },    // matched by plugin name
+  "csv": { "embedding": "openai" }
 }
 ```
 
@@ -671,7 +874,7 @@ Teach your AI coding agent to use BrainBank as persistent memory. Add an `AGENTS
 For agents that produce structured logs (e.g. Antigravity's `brain/` directory), auto-index them:
 
 ```typescript
-// .brainbank/indexers/conversations.ts
+// .brainbank/plugins/conversations.ts
 import type { Plugin, PluginContext } from 'brainbank';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -706,9 +909,13 @@ brainbank kv search conversations "what did we decide about auth"
 
 | Example | Description | Run |
 |---------|-------------|-----|
-| [rag](examples/rag/) | RAG chatbot — docs retrieval + generation | `OPENAI_API_KEY=sk-... PERPLEXITY_API_KEY=pplx-... npx tsx examples/rag/rag.ts --docs <path>` |
-| [memory](examples/memory/) | Memory chatbot — fact extraction + entity graph | `OPENAI_API_KEY=sk-... npx tsx examples/memory/memory.ts` |
+| [custom-plugin](examples/custom-plugin/) | Notes + Quotes plugins (programmatic API & CLI) | `npx tsx examples/custom-plugin/usage.ts` |
+| [custom-package](examples/custom-package/) | Standalone npm package scaffold (CSV plugin) | See [README](examples/custom-package/README.md) |
 | [collection](examples/collection/) | Collections, semantic search, tags, metadata linking | `npx tsx examples/collection/collection.ts` |
+| [rag](examples/rag/) | RAG chatbot — docs retrieval + generation | `npx tsx examples/rag/rag.ts --docs <path>` ¹ |
+| [memory](examples/memory/) | Memory chatbot — fact extraction + entity graph | `npx tsx examples/memory/memory.ts` ¹ |
+
+> ¹ RAG and memory examples require `OPENAI_API_KEY`. RAG also requires `PERPLEXITY_API_KEY`. All other examples use local embeddings — zero config.
 
 ---
 
@@ -736,7 +943,7 @@ Add to your MCP config (`~/.gemini/antigravity/mcp_config.json` or Claude Deskto
 ```
 
 **Zero-config.** The MCP server auto-detects:
-- **Repo path** — from `repo` tool param > `BRAINBANK_REPO` env > `findRepoRoot(cwd)`
+- **Repo path** — from `repo` tool param > `findRepoRoot(cwd)`
 - **Embedding provider** — from `provider_key` stored in the DB (set during `brainbank index --embedding openai`)
 
 > [!TIP]
@@ -937,10 +1144,10 @@ Or from the CLI:
 brainbank hsearch "auth middleware" --reranker qwen3
 ```
 
-Or via environment variable:
+Or via `.brainbank/config.json`:
 
-```bash
-BRAINBANK_RERANKER=qwen3 brainbank serve
+```jsonc
+{ "reranker": "qwen3" }
 ```
 
 The model is cached at `~/.cache/brainbank/models/` after first download.
@@ -978,7 +1185,7 @@ The memory plugin enables **learning from experience** — your agent records wh
 
 ```typescript
 import { BrainBank } from 'brainbank';
-import { memory } from 'brainbank/memory';
+import { memory } from 'brainbank';
 
 const brain = new BrainBank({ repoPath: '.' });
 brain.use(memory());
@@ -1078,9 +1285,7 @@ The `LLMProvider` interface works with any framework:
 
 | Variable | Description |
 |----------|-------------|
-| `BRAINBANK_REPO` | Default repository path (optional — auto-detected from `.git/` or passed per tool call) |
-| `BRAINBANK_RERANKER` | Reranker: `none` (default), `qwen3` |
-| `BRAINBANK_DEBUG` | Show full stack traces |
+| `BRAINBANK_DEBUG` | Show full stack traces in CLI errors |
 | `OPENAI_API_KEY` | Required when using `--embedding openai` |
 | `PERPLEXITY_API_KEY` | Required when using `--embedding perplexity` or `perplexity-context` |
 
@@ -1187,7 +1392,7 @@ BrainBank uses **native tree-sitter** to parse source code into ASTs and extract
 
 For large classes (>80 lines), the chunker descends into the class body and extracts each method as a separate chunk. For unsupported languages, it falls back to a sliding window with overlap.
 
-> Tree-sitter grammars are **bundled** — all 19 languages ship with BrainBank. No extra install needed.
+> 5 grammars (JS/TS/Python/HTML) are bundled. Install additional languages with `npm i -g tree-sitter-<lang>`.
 
 ### Code Graph
 
@@ -1203,7 +1408,7 @@ The code graph adds three dimensions to each indexed file:
 | **Symbols** | `code_symbols` | Function/class/method definitions | `TurnManager.on_vad_start` (method, L420) |
 | **Call Refs** | `code_refs` | Function calls within each chunk | `on_vad_start` calls `_clear_all_bot_audio`, `emit` |
 
-**Import extraction** is regex-based (fast, no AST needed) and supports all 19 languages:
+**Import extraction** is regex-based (fast, no AST needed) and supports all 20 languages:
 
 | Language Family | Patterns Matched |
 |----------------|------------------|
@@ -1335,122 +1540,48 @@ brainbank reembed
 
 ## Benchmarks
 
-BrainBank includes benchmark scripts to validate chunking quality and search relevance. Run them against your own codebase to see the impact.
+### Document Retrieval (Perplexity Context Embeddings, 2560d)
 
-### Search Quality: AST vs Sliding Window
-
-We compared BrainBank's **tree-sitter AST chunker** against the traditional **sliding window** (80-line blocks) on a production NestJS backend (3,753 lines across 8 service files). Both strategies chunk the same files; all chunks are embedded and searched with the same 10 domain-specific queries.
-
-#### How It Works
-
-```
-Sliding Window                          Tree-Sitter AST
-┌────────────────────┐                  ┌────────────────────┐
-│ import { ... }     │                  │ ✓ constructor()    │  → named chunk
-│ @Injectable()      │  → L1-80 block   │ ✓ findAll()        │  → named chunk
-│ class JobsService {│                  │ ✓ createJob()      │  → named chunk
-│   constructor()    │                  │ ✓ cancelJob()      │  → named chunk
-│   findAll() { ... }│                  │ ✓ updateStatus()   │  → named chunk
-│   createJob()      │                  └────────────────────┘
-│   ...              │
-│ ────────────────── │  overlaps ↕
-│   cancelJob()      │  → L75-155 block
-│   updateStatus()   │
-│   ...              │
-└────────────────────┘
-```
-
-**Sliding window** mixes imports, constructors, and multiple methods into one embedding. Search for "cancel a job" and you get a generic block.
-**AST chunking** gives each method its own embedding. Search for "cancel a job" → direct hit on `cancelJob()`.
-
-#### Results (Production NestJS Backend — 3,753 lines)
-
-Tested with 10 domain-specific queries on 8 service files (`orders.service.ts`, `bookings.service.ts`, `notifications.service.ts`, etc.):
-
-| Metric | Sliding Window | Tree-Sitter AST |
-|--------|:-:|:-:|
-| **Query Wins** | 0/10 | **8/10** (2 ties) |
-| **Top-1 Relevant** | 3/10 | **8/10** |
-| **Avg Precision@3** | 1.1/3 | **1.7/3** |
-| **Avg Score Delta** | — | **+0.035** |
-
-#### Per-Query Breakdown
-
-| Query | SW Top Result | AST Top Result | Δ Score |
-|-------|:---:|:---:|:---:|
-| cancel an order | generic `L451-458` | **`updateOrderStatus`** | +0.005 |
-| create a booking | generic `L451-458` | **`createInstantBooking`** | +0.068 |
-| confirm booking | generic `L451-458` | **`confirm`** | +0.034 |
-| send notification | generic `L226-305` | **`publishNotificationEvent`** | +0.034 |
-| authenticate JWT | generic `L1-80` | **`AuthModule`** | +0.032 |
-| tenant DB connection | `L76-155` | **`onModuleDestroy`** | +0.037 |
-| list orders paginated | `L76-155` | **`findAllActive`** | +0.045 |
-| reject booking | generic `L451-458` | **`reject`** | +0.090 |
-
-> Notice how the sliding window returns the **same generic block `L451-458`** for 4 different queries. The AST chunker returns a different, correctly named method each time.
-
-#### Chunk Quality Comparison
-
-| | Sliding Window | Tree-Sitter AST |
-|---|:-:|:-:|
-| Total chunks | 53 | **83** |
-| Avg lines/chunk | 75 | **39** |
-| Named chunks | 0 | **83** (100%) |
-| Chunk types | `block` | `method`, `interface`, `class` |
-
-### Grammar Support
-
-All 9 core grammars verified, each parsing in **<0.05ms**:
-
-| Language | AST Nodes Extracted | Parse Time |
-|----------|:---:|:---:|
-| TypeScript | `export_statement`, `interface_declaration` | 0.04ms |
-| JavaScript | `function_declaration` × 3 | 0.04ms |
-| Python | `class_definition`, `function_definition` × 2 | 0.03ms |
-| Go | `function_declaration`, `method_declaration` × 3 | 0.04ms |
-| Rust | `struct_item`, `impl_item`, `function_item` | 0.03ms |
-| Ruby | `class`, `method` | 0.03ms |
-| Java | `class_declaration` | 0.02ms |
-| C | `function_definition` × 3 | 0.05ms |
-| PHP | `class_declaration` | 0.03ms |
-
-> Additional grammars available: C++, Swift, C#, Kotlin, Scala, Lua, Elixir, Bash, HTML, CSS
-
-### RAG Retrieval Quality
-
-BrainBank's hybrid search pipeline (Vector + BM25 → RRF) with Perplexity Context embeddings (2560d):
+Tested with BrainBank's hybrid pipeline (Vector + BM25 → RRF):
 
 | Benchmark | Metric | Score |
 |---|---|:---:|
 | **BEIR SciFact** (5,183 docs, 300 queries) | NDCG@10 | **0.761** |
-| **Custom semantic** (69 docs, 20 queries) | R@5 | **83%** |
+| **Custom semantic** (127 docs, 20 queries) | R@5 | **83%** |
 
-The hybrid pipeline improved R@5 by **+26pp over vector-only** retrieval on our custom eval.
+#### Pipeline Progression (Custom Eval)
 
-See **[BENCHMARKS.md](./BENCHMARKS.md)** for full pipeline progression, per-technique impact, and reproduction instructions.
+| Pipeline Stage | R@5 | Delta |
+|---|:---:|---|
+| Vector-only (HNSW) | 57% | baseline |
+| + BM25 (RRF fusion) | 78% | **+21pp** |
+| + Qwen3 Reranker | 83% | **+5pp** |
 
-#### Running the RAG Eval
+> The hybrid pipeline improved R@5 by **+26pp over vector-only**, reducing misses from 6/20 to 1/20.
 
-```bash
-# Custom eval on your own docs
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
+### Head-to-Head: BrainBank vs QMD
 
-# BEIR standard benchmark
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact
-```
+Compared against [QMD](https://github.com/tobi/qmd), a fully local markdown search engine (embeddinggemma 768d + query expansion). Same corpus, same 20 semantic queries:
 
-### Running Benchmarks
+| Metric | BrainBank + Reranker | QMD + Reranker |
+|---|:---:|:---:|
+| **R@5** | **83%** | 65% |
+| **R@3** | **63%** | 53% |
+| **MRR** | **0.57** | 0.45 |
+| **Misses** | **1/20** | 6/20 |
 
-```bash
-# Grammar support (9 languages, parse speed)
-node test/benchmarks/grammar-support.mjs
+> BrainBank wins overall (+18pp R@5). QMD is competitive on broad queries (83% vs 83%) — impressive for a fully local pipeline with zero API calls.
 
-# Search quality A/B (uses BrainBank's own source files)
-node test/benchmarks/search-quality.mjs
+### Pending Benchmarks
 
-# RAG retrieval quality (requires Perplexity API key + docs folder)
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
-```
+The following benchmarks haven't been run yet:
+
+- **Code search quality** — vector vs hybrid on code queries across multiple languages
+- **Local embeddings** — same benchmarks with the WASM local provider (384d) — no API keys needed
+- **OpenAI embeddings** — `text-embedding-3-small` (1536d) comparison against Perplexity
+- **Indexing speed** — time to index repos of various sizes (1K, 10K, 100K files)
+- **Memory usage** — HNSW RAM consumption at different scales
+- **Watch mode latency** — time from file save to re-indexed and searchable
 
 ---
 

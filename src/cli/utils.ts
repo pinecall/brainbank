@@ -36,14 +36,18 @@ const VALUE_FLAGS = new Set([
     'repo', 'depth', 'collection', 'pattern', 'context', 'name',
     'keep', 'reranker', 'only', 'docs',
     'ignore', 'meta', 'k', 'mode', 'limit',
-    'codeK', 'gitK', 'docsK', 'collections',
 ]);
 
 /**
  * Strip all --flags AND their values from an argv slice.
  * Returns only positional arguments.
  *
- *   stripFlags(['ksearch', 'auth', '--repo', '/path'])
+ * Handles:
+ *   - Known VALUE_FLAGS: --repo /path → skip both
+ *   - Dynamic source flags: --code 10 → skip both (any --name <number>)
+ *   - Boolean flags: --force, --yes → skip flag only
+ *
+ *   stripFlags(['ksearch', 'auth', '--repo', '/path', '--code', '10'])
  *   → ['ksearch', 'auth']
  */
 export function stripFlags(argv: string[]): string[] {
@@ -51,7 +55,13 @@ export function stripFlags(argv: string[]): string[] {
     for (let i = 0; i < argv.length; i++) {
         if (argv[i].startsWith('--')) {
             const name = argv[i].slice(2);
-            if (VALUE_FLAGS.has(name)) i++; // skip next (the value)
+            const next = argv[i + 1];
+            // Known value flag or dynamic numeric value → skip both
+            if (next !== undefined && !next.startsWith('--')) {
+                if (VALUE_FLAGS.has(name) || /^\d+$/.test(next)) {
+                    i++; // skip the value
+                }
+            }
             continue;
         }
         result.push(argv[i]);

@@ -24,7 +24,7 @@ import { reembedAll } from '@/services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
 import type { Plugin, CollectionPlugin } from '@/indexers/base.ts';
-import { isCollectionPlugin } from '@/indexers/base.ts';
+import { isCollectionPlugin, getExposedMethods } from '@/indexers/base.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
@@ -147,8 +147,23 @@ export class BrainBank extends EventEmitter {
             emit:     (e, d) => this.emit(e, d),
         });
 
+        // Bind @expose-decorated methods from all plugins
+        for (const plugin of this._registry.all) {
+            this._bindExposedMethods(plugin);
+        }
+
         this._initialized = true;
         this.emit('initialized', { plugins: this.plugins });
+    }
+
+    /** Bind @expose-decorated methods from a plugin onto this BrainBank instance. */
+    private _bindExposedMethods(plugin: Plugin): void {
+        for (const name of getExposedMethods(plugin)) {
+            if (name in this && typeof (this as any)[name] === 'function') {
+                throw new Error(`BrainBank: Method '${name}' already exists. Plugin '${plugin.name}' cannot override it.`);
+            }
+            (this as any)[name] = (...args: unknown[]) => (plugin as any)[name](...args);
+        }
     }
 
     // ── Collections (KV) ────────────────────────────
@@ -206,62 +221,23 @@ export class BrainBank extends EventEmitter {
         return this._indexAPI!.indexGit(options);
     }
 
-    // ── Document collections ─────────────────────────
-
-    /** Register a document collection. */
-    async addCollection(collection: DocumentCollection): Promise<void> {
-        await this.initialize();
-        this._docsPlugin('addCollection').addCollection(collection);
-    }
-
-    /** Remove a collection and all its indexed data. */
-    async removeCollection(name: string): Promise<void> {
-        await this.initialize();
-        this._docsPlugin('removeCollection').removeCollection(name);
-    }
-
-    /** List all registered collections. */
-    listCollections(): DocumentCollection[] {
-        return this._docsPlugin('listCollections').listCollections();
-    }
-
-    /** Index all (or specific) document collections. */
-    async indexDocs(options: {
+    // ── Plugin-injected methods ──────────────────────
+    // Typed stubs — overwritten at runtime by @expose from plugins.
+    // Docs plugin:
+    addCollection!: (collection: DocumentCollection) => void;
+    removeCollection!: (name: string) => void;
+    listCollections!: () => DocumentCollection[];
+    indexDocs!: (options?: {
         collections?: string[];
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
-    } = {}): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>> {
-        await this.initialize();
-        const results = await this._docsPlugin('indexDocs').indexCollections(options);
-        this.emit('docsIndexed', results);
-        return results;
-    }
-
-    /** Search documents only. */
-    async searchDocs(query: string, options?: { collection?: string; k?: number; minScore?: number }): Promise<SearchResult[]> {
-        await this.initialize();
-        if (!this.has('docs')) return [];
-        return this._docsPlugin('searchDocs').search(query, options);
-    }
-
-    // ── Context metadata ─────────────────────────────
-
-    /** Add context description for a collection path. */
-    addContext(collection: string, path: string, context: string): void {
-        const docs = this._docsPlugin('addContext');
-        if (docs.addContext) docs.addContext(collection, path, context);
-    }
-
-    /** Remove context for a collection path. */
-    removeContext(collection: string, path: string): void {
-        const docs = this._docsPlugin('removeContext');
-        if (docs.removeContext) docs.removeContext(collection, path);
-    }
-
-    /** List all context entries. */
-    listContexts(): { collection: string; path: string; context: string }[] {
-        const docs = this._docsPlugin('listContexts');
-        return docs.listContexts?.() ?? [];
-    }
+    }) => Promise<Record<string, { indexed: number; skipped: number; chunks: number }>>;
+    searchDocs!: (query: string, options?: { collection?: string; k?: number; minScore?: number; mode?: 'hybrid' | 'vector' | 'keyword' }) => Promise<SearchResult[]>;
+    addContext!: (collection: string, path: string, context: string) => void;
+    removeContext!: (collection: string, path: string) => void;
+    listContexts!: () => { collection: string; path: string; context: string }[];
+    // Git plugin:
+    suggestCoEdits!: (filePath: string, limit?: number) => CoEditSuggestion[];
+    fileHistory!: (filePath: string, limit?: number) => Record<string, unknown>[];
 
     // ── Search (delegated to SearchAPI) ─────────────
 
@@ -283,13 +259,13 @@ export class BrainBank extends EventEmitter {
         return this._searchAPI!.search(query, options);
     }
 
-    /** Semantic search over code only. */
+    /** Semantic search over code only. Convenience for search({ codeK, gitK: 0 }). */
     async searchCode(query: string, k = 8): Promise<SearchResult[]> {
         await this.initialize();
         return this._searchAPI!.searchCode(query, k);
     }
 
-    /** Semantic search over commits only. */
+    /** Semantic search over commits only. Convenience for search({ gitK, codeK: 0 }). */
     async searchCommits(query: string, k = 8): Promise<SearchResult[]> {
         await this.initialize();
         return this._searchAPI!.searchCommits(query, k);
@@ -320,21 +296,8 @@ export class BrainBank extends EventEmitter {
         this._searchAPI!.rebuildFTS();
     }
 
-    // ── Queries ──────────────────────────────────────
+    // fileHistory, suggestCoEdits → injected by @expose from git plugin
 
-    /** Get git history for a specific file. */
-    async fileHistory(filePath: string, limit = 20): Promise<Record<string, unknown>[]> {
-        await this.initialize();
-        const gitPlugin = this.plugin('git') as Plugin & { fileHistory(f: string, l: number): Record<string, unknown>[] };
-        return gitPlugin.fileHistory(filePath, limit);
-    }
-
-    /** Get co-edit suggestions for a file. */
-    coEdits(filePath: string, limit = 5): CoEditSuggestion[] {
-        this._requireInit('coEdits');
-        const gitPlugin = this.plugin('git') as Plugin & { suggestCoEdits(f: string, l: number): CoEditSuggestion[] };
-        return gitPlugin.suggestCoEdits(filePath, limit);
-    }
 
     // ── Stats ────────────────────────────────────────
 
@@ -430,14 +393,5 @@ export class BrainBank extends EventEmitter {
     private _requireInit(method: string): void {
         if (!this._initialized)
             throw new Error(`BrainBank: Not initialized. Call await brain.initialize() before ${method}().`);
-    }
-
-    /** Get the docs indexer as CollectionPlugin with init + type check. */
-    private _docsPlugin(method: string): CollectionPlugin {
-        this._requireInit(method);
-        const docs = this._registry.get('docs');
-        if (!docs || !isCollectionPlugin(docs))
-            throw new Error(`BrainBank: Docs indexer not loaded. Add .use(docs()) before calling ${method}().`);
-        return docs;
     }
 }

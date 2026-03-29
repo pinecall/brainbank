@@ -12,6 +12,7 @@ import type { ContextBuilder } from '@/search/context-builder.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { PluginRegistry } from '@/bootstrap/registry.ts';
 import type { CollectionPlugin } from '@/indexers/base.ts';
+import { isSearchable } from '@/indexers/base.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { rerank } from '@/search/vector/rerank.ts';
@@ -35,12 +36,20 @@ export class SearchAPI {
         codeK?: number; gitK?: number; patternK?: number;
         minScore?: number; useMMR?: boolean;
     }): Promise<SearchResult[]> {
-        if (!this._d.search) {
-            return this._d.registry.has('docs')
-                ? await this._searchDocs(query, { k: 8 })
-                : [];
+        const resultLists: SearchResult[][] = [];
+
+        if (this._d.search) {
+            resultLists.push(await this._d.search.search(query, options));
+        } else if (this._d.registry.has('docs')) {
+            resultLists.push(await this._searchDocs(query, { k: 8 }));
         }
-        return this._d.search.search(query, options);
+
+        // Include custom SearchablePlugin results
+        await this._searchCustomPlugins(query, options, resultLists);
+
+        if (resultLists.length === 0) return [];
+        if (resultLists.length === 1) return resultLists[0];
+        return reciprocalRankFusion(resultLists);
     }
 
     async searchCode(query: string, k = 8): Promise<SearchResult[]> {
@@ -86,6 +95,9 @@ export class SearchAPI {
             if (docs.length > 0) resultLists.push(docs);
         }
 
+        // Include custom SearchablePlugin results
+        await this._searchCustomPlugins(query, options, resultLists);
+
         await this._searchKvCollections(query, cols, resultLists);
         if (resultLists.length === 0) return [];
 
@@ -109,6 +121,20 @@ export class SearchAPI {
                     metadata: { collection: name, id: h.id, ...h.metadata },
                 })));
             }
+        }
+    }
+
+    /** Search custom plugins (any SearchablePlugin that isn't code/git/docs). */
+    private async _searchCustomPlugins(
+        query: string, options: Record<string, any> | undefined, resultLists: SearchResult[][],
+    ): Promise<void> {
+        const builtinTypes = new Set(['code', 'git', 'docs']);
+        for (const mod of this._d.registry.all) {
+            const baseType = mod.name.split(':')[0];
+            if (builtinTypes.has(baseType)) continue;
+            if (!isSearchable(mod)) continue;
+            const hits = await mod.search(query, options);
+            if (hits.length > 0) resultLists.push(hits);
         }
     }
 

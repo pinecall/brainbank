@@ -140,7 +140,7 @@ export function showHelp(): void {
     console.log(`  ${c.cyan('hsearch')} <query>                    Hybrid search (${c.bold('best quality')})`);
     console.log(`  ${c.cyan('ksearch')} <query>                    Keyword search (BM25, instant)`);
     console.log(`  ${c.cyan('dsearch')} <query>                    Document search`);
-    console.log(c.dim('    All search commands accept --codeK <n> --gitK <n> to filter by source'));
+    console.log(c.dim('    All search commands accept --<source> <n> to filter by source'));
     console.log('');
     console.log(c.bold('Context:'));
     console.log(`  ${c.cyan('context')} <task>                     Get formatted context for a task`);
@@ -167,10 +167,7 @@ export function showHelp(): void {
     console.log(`  ${c.dim('--collection <name>')}     Filter by collection`);
     console.log(`  ${c.dim('--pattern <glob>')}        Collection glob (default: **/*.md)`);
     console.log(`  ${c.dim('--context <desc>')}        Context description`);
-    console.log(`  ${c.dim('--codeK <n>')}             Max code results (0 = skip code)`);
-    console.log(`  ${c.dim('--gitK <n>')}              Max git results (0 = skip git)`);
-    console.log(`  ${c.dim('--docsK <n>')}             Max document results (0 = skip docs, hsearch)`);
-    console.log(`  ${c.dim('--collections k:v,...')}   Per-source limits (hsearch), e.g. code:5,git:0,docs:10`);
+    console.log(`  ${c.dim('--<source> <n>')}          Source filter: max results from <source> (0 = skip)`);
     console.log(`  ${c.dim('--ignore <globs>')}        Ignore glob patterns for code indexing (comma-separated)`);
     console.log(`  ${c.dim('--yes / -y')}              Skip interactive prompt (auto-select all available)`);
     console.log(`  ${c.dim('--reranker <name>')}       Reranker to use (qwen3)`);
@@ -182,10 +179,10 @@ export function showHelp(): void {
     console.log(c.dim('  brainbank kv search errors "null pointer"'));
     console.log(c.dim('  brainbank kv list'));
     console.log(c.dim('  brainbank hsearch "authentication middleware"'));
-    console.log(c.dim('  brainbank hsearch "auth" --codeK 0 --gitK 10    # git only'));
-    console.log(c.dim('  brainbank search "handler" --gitK 0             # code only'));
-    console.log(c.dim('  brainbank hsearch "api" --docsK 10 --codeK 0 --gitK 0  # docs only'));
-    console.log(c.dim('  brainbank hsearch "bug" --collections errors:5,git:3'));
+    console.log(c.dim('  brainbank hsearch "auth" --code 0 --git 10           # git only'));
+    console.log(c.dim('  brainbank search "handler" --git 0                   # code only'));
+    console.log(c.dim('  brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only'));
+    console.log(c.dim('  brainbank hsearch "bug" --notes 5 --git 3            # custom plugin'));
     console.log(c.dim('  brainbank context "add rate limiting to the API"'));
     console.log(c.dim('  brainbank serve'));
 }

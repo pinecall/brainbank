@@ -134,42 +134,42 @@ async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvider> {
 
 // ── Plugin Discovery ───────────────────────────────
 
-/** Auto-discover indexers from .brainbank/indexers/ folder. */
+/** Auto-discover plugins from .brainbank/plugins/ folder. */
 async function discoverFolderPlugins(): Promise<Plugin[]> {
     if (_folderPluginsCache !== NOT_LOADED) return _folderPluginsCache;
 
     const repoPath = getFlag('repo') ?? '.';
-    const indexersDir = path.resolve(repoPath, '.brainbank', 'indexers');
+    const pluginsDir = path.resolve(repoPath, '.brainbank', 'plugins');
 
-    if (!fs.existsSync(indexersDir)) {
+    if (!fs.existsSync(pluginsDir)) {
         _folderPluginsCache = [];
         return [];
     }
 
-    const files = fs.readdirSync(indexersDir)
+    const files = fs.readdirSync(pluginsDir)
         .filter(f => INDEXER_EXTENSIONS.some(ext => f.endsWith(ext)))
         .sort();
 
-    const indexers: Plugin[] = [];
+    const plugins: Plugin[] = [];
 
     for (const file of files) {
-        const filePath = path.join(indexersDir, file);
+        const filePath = path.join(pluginsDir, file);
         try {
             const mod = await import(filePath);
-            const indexer = mod.default ?? mod;
+            const plugin = mod.default ?? mod;
 
-            if (indexer && typeof indexer === 'object' && indexer.name) {
-                indexers.push(indexer as Plugin);
+            if (plugin && typeof plugin === 'object' && plugin.name) {
+                plugins.push(plugin as Plugin);
             } else {
                 console.error(c.yellow(`⚠ ${file}: must export a default Plugin with a 'name' property, skipping`));
             }
         } catch (err: any) {
-            console.error(c.red(`Error loading indexer ${file}: ${err.message}`));
+            console.error(c.red(`Error loading plugin ${file}: ${err.message}`));
         }
     }
 
-    _folderPluginsCache = indexers;
-    return indexers;
+    _folderPluginsCache = plugins;
+    return plugins;
 }
 
 // ── Multi-repo Detection ────────────────────────────
@@ -210,12 +210,12 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     const builtins = config?.plugins ?? config?.builtins ?? ['code', 'git', 'docs'];
     await registerBuiltins(brain, rp, builtins, config);
 
-    // Register custom plugins from .brainbank/indexers/
-    for (const indexer of folderIndexers) brain.use(indexer);
+    // Register custom plugins from .brainbank/plugins/
+    for (const plugin of folderIndexers) brain.use(plugin);
 
     // Register custom plugins from config.ts (programmatic)
     if (config?.indexers) {
-        for (const indexer of config.indexers) brain.use(indexer);
+        for (const plugin of config.indexers) brain.use(plugin);
     }
 
     return brain;

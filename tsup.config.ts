@@ -24,8 +24,15 @@ export default defineConfig({
         '@xenova/transformers',
         'simple-git',
         'node-llama-cpp',
+        // tree-sitter (optional — install individual grammar packages as needed)
+        'tree-sitter',
+        /^tree-sitter-/,
         // separate packages
         '@brainbank/mcp',
+        '@brainbank/code',
+
+        '@brainbank/git',
+        '@brainbank/docs',
     ],
     banner: {
         js: '',

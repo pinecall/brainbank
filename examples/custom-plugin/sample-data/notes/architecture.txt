@@ -1,0 +1,6 @@
+BrainBank uses SQLite for portable single-file storage. The entire database — code chunks, git commits, embeddings, collections — lives in one .db file.
+The code indexer uses tree-sitter for AST-aware chunking. It understands function boundaries, class definitions, and import statements to create semantically meaningful chunks.
+Hybrid search combines vector similarity with BM25 keyword matching. Results from both strategies are fused using Reciprocal Rank Fusion (RRF) for optimal relevance.
+HNSW (Hierarchical Navigable Small World) provides approximate nearest neighbor search for vector embeddings. It trades a small amount of accuracy for massive speed improvements.
+The plugin system uses a builder pattern with .use() to register plugins. Each plugin gets a PluginContext with access to the shared database, embedding provider, and collection system.
+Watch mode monitors file changes using chokidar and triggers incremental re-indexing. Plugins can implement watchPatterns() and onFileChange() to participate.

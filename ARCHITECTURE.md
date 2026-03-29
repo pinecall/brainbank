@@ -135,7 +135,7 @@ src/
 
 │
 ├── indexers/
-│   ├── base.ts               ← Plugin interfaces + type guards
+│   ├── base.ts               ← Plugin interfaces, @expose decorator, type guards
 │   ├── languages.ts          ← Supported extensions, ignore lists
 │   ├── code/
 │   │   ├── code-plugin.ts    ← Plugin entry point for code indexing
@@ -167,7 +167,7 @@ src/
 │
 ├── search/
 │   ├── types.ts              ← SearchStrategy interface + SearchOptions
-│   ├── context-builder.ts    ← Formats search results → LLM-ready markdown
+│   ├── context-builder.ts    ← Formats search results → LLM-ready markdown (includes graph expansion engine)
 │   ├── keyword/
 │   │   └── keyword-search.ts ← FTS5 BM25 search across all tables
 │   └── vector/
@@ -193,6 +193,38 @@ src/
         ├── kv.ts             ← brainbank kv add/search/list/trim/clear
         └── system.ts         ← brainbank stats/reembed/watch/serve
 ```
+
+```
+packages/
+├── code/                             ← @brainbank/code (separate npm package)
+│   ├── src/
+│   │   ├── index.ts                 ← Package entry point
+│   │   ├── code-plugin.ts           ← Plugin factory (imports from 'brainbank' peer dep)
+│   │   ├── code-walker.ts           ← File walker + incremental indexer
+│   │   ├── code-chunker.ts          ← Tree-sitter AST chunker (+ sliding window fallback)
+│   │   ├── grammars.ts              ← Grammar registry (20 languages)
+│   │   ├── import-extractor.ts      ← Regex-based import graph extraction
+│   │   └── symbol-extractor.ts      ← AST symbol/call-ref extraction
+│   ├── package.json                 ← peerDependency: brainbank >=0.7.0
+│   └── CHANGELOG.md
+├── mcp/                             ← @brainbank/mcp
+└── memory/                          ← @brainbank/memory
+```
+
+### Package Dependency Graph
+
+```
+@brainbank/code
+    └── peerDep: brainbank (core)
+                    ├── better-sqlite3
+                    ├── hnswlib-node
+                    └── picomatch
+
+@brainbank/mcp ──── peerDep: brainbank
+@brainbank/memory ── peerDep: brainbank
+```
+
+> **DB Schema Ownership**: Core owns all table schemas (`code_chunks`, `code_imports`, `code_symbols`, `code_refs`, `git_commits`, etc.). Plugins only populate them. The `context-builder.ts` in core reads these tables directly for graph expansion without importing any plugin code.
 
 ---
 
@@ -239,12 +271,18 @@ guards, and delegates every operation to a specialized subsystem. It contains
 │  .searchCode(query)    → delegates to SearchAPI                       │
 │  .searchCommits(query) → delegates to SearchAPI                       │
 │  .getContext(task)     → delegates to SearchAPI                       │
-│  .addCollection(coll)  → delegates to DocsPlugin                      │
-│  .indexDocs(opts)      → delegates to DocsPlugin                      │
-│  .searchDocs(query)    → delegates to DocsPlugin                      │
-│  .addContext(...)      → delegates to DocsPlugin                      │
-│  .coEdits(file)        → delegates to GitPlugin                       │
-│  .fileHistory(file)    → delegates to GitPlugin                       │
+│                                                                        │
+│  PLUGIN-INJECTED (@expose)                                             │
+│  ──────────────────────────────────────────────────────────────────   │
+│  .addCollection(coll)  → injected from docs plugin via @expose        │
+│  .indexDocs(opts)      → injected from docs plugin via @expose        │
+│  .searchDocs(query)    → injected from docs plugin via @expose        │
+│  .addContext(...)      → injected from docs plugin via @expose        │
+│  .removeContext(...)   → injected from docs plugin via @expose        │
+│  .listCollections()    → injected from docs plugin via @expose        │
+│  .listContexts()       → injected from docs plugin via @expose        │
+│  .suggestCoEdits(file) → injected from git plugin via @expose         │
+│  .fileHistory(file)    → injected from git plugin via @expose         │
 │  .stats()              → delegates to each plugin's stats()           │
 │  .reembed(opts)        → delegates to reembedAll service              │
 │  .watch(opts)          → delegates to createWatcher service           │
@@ -253,7 +291,7 @@ guards, and delegates every operation to a specialized subsystem. It contains
 │  GUARDS                                                                │
 │  ──────────────────────────────────────────────────────────────────   │
 │  _requireInit(method)  → throws if not initialized                    │
-│  _docsPlugin(method)   → _requireInit + type-checks docs plugin       │
+│  _bindExposedMethods() → discovers @expose methods, binds to this     │
 │                                                                        │
 │  EVENTS EMITTED                                                        │
 │  ──────────────────────────────────────────────────────────────────   │
@@ -326,6 +364,8 @@ BrainBank._runInitialize()
     │
     ├── for each plugin in registry:
     │     await plugin.initialize(ctx)      ← each plugin sets itself up
+    │
+    ├── _bindExposedMethods()               ← discovers @expose methods, binds to BrainBank
     │
     ├── saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw)  ← persist to disk
     │
@@ -451,11 +491,31 @@ Extended Capability Interfaces:
 │ addCollection(DocumentCollection)        │
 │ removeCollection(name)                   │
 │ listCollections() → DocumentCollection[] │
-│ indexCollections(opts) → Record<...>     │
+│ indexDocs(opts) → Record<...>            │
+│ searchDocs(query, opts) → SearchResult[] │
 │ search(query, opts) → SearchResult[]     │
 │ addContext?(collection, path, context)   │
 │ removeContext?(collection, path)         │
 │ listContexts?() → any[]                  │
+└──────────────────────────────────────────┘
+
+┌──────────────────────────────────────────┐
+│         @expose Decorator                │
+│                                          │
+│  Marks plugin methods for injection      │
+│  onto the BrainBank instance.            │
+│                                          │
+│  class MyPlugin implements Plugin {      │
+│      @expose                             │
+│      myMethod() { ... }                  │
+│  }                                       │
+│                                          │
+│  After initialize():                     │
+│    brain.myMethod() → plugin.myMethod()  │
+│                                          │
+│  Collision detection prevents overrides. │
+│  Uses Symbol('brainbank:exposed') on     │
+│  the constructor to store method names.  │
 └──────────────────────────────────────────┘
 
 Type Guards (runtime capability detection):
@@ -694,7 +754,7 @@ DocsPlugin.addCollection({ name, path, pattern, ignore, context })
    → UPSERT collections table
 
 
-DocsPlugin.indexCollections({ collections?, onProgress })
+DocsPlugin.indexDocs({ collections?, onProgress })
    → for each collection in DB:
        DocsIndexer.indexCollection(name, path, pattern, { ignore, onProgress })
 
@@ -979,10 +1039,7 @@ near-identical patterns via cosine similarity comparison.)
 (See §7.4 — synthesis for Memory Plugin. Aggregates top patterns by
 `taskType` into a single readable strategy stored in `distilled_strategies`.)
 
-### 8.5 NoteStore
 
-(See §7.5 — full CRUD + hybrid retrieval + consolidation for `NoteDigest`
-records. Part of Notes Plugin.)
 
 ---
 
@@ -1543,7 +1600,7 @@ embedding providers.
 reembedAll(db, embedding, hnswMap, options)
          │
          ├── for each table in TABLES:
-         │     [code, git, memory, notes, docs, kv]
+         │     [code, git, memory, docs, kv]
          │     reembedTable(db, embedding, table, batchSize=50)
          │         │
          │         ├── PHASE 1: Build in temp table
@@ -1761,7 +1818,7 @@ Tables and their relationships:
   │  └── value                                               │
   │                                                          │
   │  schema_version                                          │
-  │  └── version (PK, currently 5)                           │
+  │  └── version (PK, currently 6)                           │
   └──────────────────────────────────────────────────────────┘
 
 
@@ -1809,7 +1866,7 @@ createBrain(repoPath?)  ← cli/factory.ts
          │     cache in module-level variable (reset between tests)
          │
          ├── discoverFolderPlugins()
-         │     reads .brainbank/indexers/*.ts|js|mjs
+         │     reads .brainbank/plugins/*.ts|js|mjs
          │     each file must export default Plugin with .name property
          │
          ├── setupProviders(brainOpts, config)
@@ -1876,7 +1933,7 @@ IndexAPI
 │         merge result.git
 │
 │     if want.has('docs') and registry.has('docs'):
-│       docsPlugin.indexCollections({ onProgress })
+│       docsPlugin.indexDocs({ onProgress })
 │       result.docs = { collName: { indexed, skipped, chunks } }
 │
 │     emit('indexed', result)
@@ -1936,7 +1993,7 @@ Typical state after initialization:
 Private per-plugin indices (NOT in sharedHnsw):
   DocsPlugin.hnsw    ← each docs plugin has its own (different doc sets)
   MemoryPlugin.hnsw  ← private (pattern vectors)
-  NotesPlugin.hnsw   ← private (note digest vectors)
+
   kvHnsw             ← on BrainBank directly (KV collections)
 
 
@@ -2241,7 +2298,7 @@ User → BrainBank → SearchAPI / IndexAPI / DocsPlugin / GitPlugin / ...
 ### Pattern 2: Plugin / Extension Point
 **Where:** `Plugin` interface + `PluginRegistry` + `PluginContext`
 **What:** Open/closed principle. New data sources added without modifying core.
-Custom indexers placed in `.brainbank/indexers/` are auto-discovered.
+Custom plugins placed in `.brainbank/plugins/` are auto-discovered.
 
 ### Pattern 3: Strategy
 **Where:** `SearchStrategy` interface (VectorSearch, KeywordSearch)
@@ -2389,8 +2446,7 @@ exhaustive pattern matching over the union.
                       │                │    ├── Consolidator        │
                       │                │    └── PatternDistiller    │
                       │                │                            │
-                      │                │  NotesPlugin               │
-                      │                │    └── NoteStore           │
+
                       └────────────────┘                            │
                               │         └────────────────────────────┘
                               │
@@ -2405,8 +2461,7 @@ exhaustive pattern matching over the union.
                      │    ├── sharedHnsw['code']                    │
                      │    ├── sharedHnsw['git']                     │
                      │    ├── DocsPlugin.hnsw (private)             │
-                     │    ├── MemoryPlugin.hnsw (private)           │
-                     │    └── NotesPlugin.hnsw (private)            │
+                     │    └── MemoryPlugin.hnsw (private)           │
                      │                                               │
                      │  Embedding Providers                          │
                      │    ├── LocalEmbedding (@xenova, WASM)        │
@@ -2454,7 +2509,7 @@ exhaustive pattern matching over the union.
                      │                                               │
                      │  createBrain()                                │
                      │    ├── loadConfig(.brainbank/config.json)     │
-                     │    ├── discoverFolderPlugins(.brainbank/indexers/)│
+                     │    ├── discoverFolderPlugins(.brainbank/plugins/)│
                      │    ├── setupProviders (--reranker, --embedding)│
                      │    ├── detectGitSubdirs (multi-repo)         │
                      │    └── new BrainBank() + .use(plugins)       │

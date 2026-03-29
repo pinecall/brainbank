@@ -1,0 +1,31 @@
+{
+    "name": "@brainbank/git",
+    "version": "0.1.0",
+    "description": "Git history indexing plugin for BrainBank — commit search + co-edit analysis",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "files": ["dist"],
+    "scripts": {
+        "build": "tsup"
+    },
+    "peerDependencies": {
+        "brainbank": ">=0.7.0"
+    },
+    "dependencies": {
+        "simple-git": "^3.27.0"
+    },
+    "devDependencies": {
+        "tsup": "^8.4.0",
+        "typescript": "^5.7.0"
+    },
+    "keywords": ["brainbank", "git", "search", "co-edit", "plugin"],
+    "author": "Bernardo Castro <bernardo@pinecall.io>",
+    "license": "MIT"
+}

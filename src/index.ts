@@ -29,6 +29,7 @@ export { memory } from './domain/memory/memory-plugin.ts';
 
 // Plugin types
 export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
+export { expose, getExposedMethods } from './indexers/base.ts';
 
 // Collections
 export { Collection } from './domain/collection.ts';
@@ -68,7 +69,6 @@ export { PerplexityContextEmbedding } from './providers/embeddings/perplexity-co
 export type { PerplexityContextEmbeddingOptions } from './providers/embeddings/perplexity-context-embedding.ts';
 export type { ReembedResult, ReembedOptions } from './services/reembed.ts';
 export type { WatchOptions, Watcher } from './services/watch.ts';
-export { cosineSimilarity, normalize } from './lib/math.ts';
 
 // Reranker
 export { Qwen3Reranker } from './providers/rerankers/qwen3-reranker.ts';
@@ -92,7 +92,10 @@ export { CodeChunker } from './indexers/code/code-chunker.ts';
 export { CodeWalker } from './indexers/code/code-walker.ts';
 export { GitIndexer } from './indexers/git/git-indexer.ts';
 export { DocsIndexer } from './indexers/docs/docs-indexer.ts';
-export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage } from './indexers/languages.ts';
+export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage, isIgnoredDir, isIgnoredFile } from './indexers/languages.ts';
+
+// Math utilities (needed by plugins)
+export { vecToBuffer, cosineSimilarity, normalize } from './lib/math.ts';
 
 // Agent memory stores
 export { PatternStore } from './domain/memory/pattern-store.ts';
@@ -105,6 +108,8 @@ export { VectorSearch } from './search/vector/vector-search.ts';
 export { CoEditAnalyzer } from './indexers/git/co-edit-analyzer.ts';
 export { KeywordSearch } from './search/keyword/keyword-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
+export { normalizeBM25 } from './lib/fts.ts';
+export { rerank } from './search/vector/rerank.ts';
 
 // Search types
 export type { SearchStrategy, SearchOptions } from './search/types.ts';
