@@ -322,7 +322,7 @@ const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384
 await brain.index();
 
 // Register and index document collections
-await brain.docs!.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
+brain.docs!.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
 await brain.docs!.indexDocs();
 
 // Dynamic collections — store anything
@@ -626,7 +626,7 @@ const results = await brain.hybridSearch('auth middleware', {
 Register folders of documents. Files are chunked by heading structure:
 
 ```typescript
-await brain.docs!.addCollection({
+brain.docs!.addCollection({
   name: 'docs',
   path: '~/project/docs',
   pattern: '**/*.md',

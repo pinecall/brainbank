@@ -100,32 +100,16 @@ class DocsPlugin implements Plugin {
         return results;
     }
 
-    /** @deprecated Use indexDocs(). Alias for backward compatibility. */
-    async indexCollections(options: {
-        collections?: string[];
-        onProgress?: (collection: string, file: string, current: number, total: number) => void;
-    } = {}): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>> {
-        return this.indexDocs(options);
-    }
+
 
     /** Search documents using hybrid search (vector + BM25 → RRF). */
-    async searchDocs(query: string, options?: {
-        collection?: string;
-        k?: number;
-        minScore?: number;
-        mode?: 'hybrid' | 'vector' | 'keyword';
-    }): Promise<SearchResult[]> {
-        return this._search.search(query, options);
-    }
-
-    /** Alias for backward compat — CollectionPlugin interface. */
     async search(query: string, options?: {
         collection?: string;
         k?: number;
         minScore?: number;
         mode?: 'hybrid' | 'vector' | 'keyword';
     }): Promise<SearchResult[]> {
-        return this.searchDocs(query, options);
+        return this._search.search(query, options);
     }
 
     /** Add context description for a document path. */

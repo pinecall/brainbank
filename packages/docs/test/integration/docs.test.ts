@@ -132,8 +132,8 @@ tests['setup: create brain with docs module'] = async () => {
 
 tests['register: add two document collections'] = async () => {
 
-    await brain.docs!.addCollection({ name: 'project-docs', path: docsDir, pattern: '**/*.md' });
-    await brain.docs!.addCollection({ name: 'meeting-notes', path: notesDir, pattern: '**/*.md' });
+    brain.docs!.addCollection({ name: 'project-docs', path: docsDir, pattern: '**/*.md' });
+    brain.docs!.addCollection({ name: 'meeting-notes', path: notesDir, pattern: '**/*.md' });
 
     const docsMod = brain.plugin('docs') as any;
     const collections = docsMod.listCollections();
@@ -168,14 +168,14 @@ tests['index: re-indexes only changed doc'] = async () => {
 };
 
 tests['search: finds docs by content'] = async () => {
-    const results = await brain.searchDocs('npm install setup');
+    const results = await brain.docs!.search('npm install setup');
 
     assert.ok(results.length > 0, `got ${results.length} results`);
     assert.equal(results[0].type, 'document', 'type is document');
 };
 
 tests['search: returns title and collection metadata'] = async () => {
-    const results = await brain.searchDocs('API reference search options');
+    const results = await brain.docs!.search('API reference search options');
 
     assert.ok(results.length > 0, 'has results');
     const first = results[0];
@@ -185,8 +185,8 @@ tests['search: returns title and collection metadata'] = async () => {
 
 tests['search: filters by collection'] = async () => {
 
-    const docsResults = await brain.searchDocs('search', { collection: 'project-docs' });
-    const notesResults = await brain.searchDocs('search', { collection: 'meeting-notes' });
+    const docsResults = await brain.docs!.search('search', { collection: 'project-docs' });
+    const notesResults = await brain.docs!.search('search', { collection: 'meeting-notes' });
 
     for (const r of docsResults) {
         assert.equal((r.metadata as Record<string, unknown>)?.collection, 'project-docs', 'filtered to project-docs');

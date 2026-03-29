@@ -60,7 +60,7 @@ await brain.initialize();
 
 // ─── Index Docs ─────────────────────────────────────
 
-const docsPlugin = brain.plugin('docs') as any;
+const docsPlugin = brain.docs!;
 docsPlugin.addCollection({
     name: 'project-docs',
     path: docsPath,
@@ -69,7 +69,7 @@ docsPlugin.addCollection({
 });
 
 console.log(`${ui.c.dim}  📚 Indexing docs from ${docsPath}...${ui.c.reset}`);
-const indexResults = await docsPlugin.indexCollections({
+const indexResults = await docsPlugin.indexDocs({
     onProgress: (_col: string, file: string, cur: number, total: number) => {
         process.stdout.write(`\r${ui.c.dim}  📚 [${cur}/${total}] ${file.slice(0, 50)}${ui.c.reset}      `);
     },
