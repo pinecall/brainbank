@@ -394,7 +394,7 @@ brain.listCollectionNames();            // → ['errors', 'decisions']
 | `add` | `add(content, options?): Promise<number>` | Add an item. Returns its ID. Auto-embedded for vector search. |
 | `addMany` | `addMany(items): Promise<number[]>` | Batch add (uses `embedBatch` — much faster). Returns IDs. |
 | `update` | `update(id, content, options?): Promise<number>` | Replace content, re-embed. Preserves original metadata/tags unless overridden. Returns new ID. |
-| `search` | `search(query, options?): Promise<CollectionItem[]>` | Hybrid search (vector + BM25 → RRF). Options: `k`, `mode`, `minScore`, `tags`. |
+| `search` | `search(query, options?): Promise<CollectionItem[]>` | Hybrid search. Options: `k`, `mode`, `minScore`, `tags`. |
 | `list` | `list(options?): CollectionItem[]` | List items (newest first). Options: `limit`, `offset`, `tags`. |
 | `count` | `count(): number` | Total items in collection. |
 | `remove` | `remove(id): void` | Remove a specific item by ID. |
@@ -405,6 +405,55 @@ brain.listCollectionNames();            // → ['errors', 'decisions']
 **Options for `add` / `update`:** `{ metadata?: Record, tags?: string[], ttl?: string }`
 
 > TTL: Items with a `ttl` (e.g. `'7d'`, `'24h'`) are auto-pruned from search/list results after expiration.
+
+#### Collection Search Modes
+
+Every collection has its own **HNSW vector index** and **FTS5 full-text table** — so it supports all three search modes independently:
+
+```typescript
+const errors = brain.collection('errors');
+
+// Hybrid (default) — vector + BM25 fused with RRF
+await errors.search('auth error');
+
+// Vector only — semantic search (finds related concepts)
+await errors.search('auth error', { mode: 'vector' });
+
+// Keyword only — BM25 exact term matching
+await errors.search('auth error', { mode: 'keyword' });
+
+// With filters
+await errors.search('auth error', { k: 10, tags: ['backend'], minScore: 0.3 });
+```
+
+| Mode | How it works | Best for |
+|------|-------------|----------|
+| `hybrid` (default) | Vector + BM25 → RRF fusion | General use — catches both concepts and exact terms |
+| `vector` | HNSW k-NN on embeddings | Semantic queries ("login problem" finds "auth failure") |
+| `keyword` | SQLite FTS5 BM25 | Exact terms ("TypeError" finds that exact string) |
+
+#### Collection Search vs BrainBank Search
+
+Collections are the **low-level storage primitive**. Plugins use them internally, and you can use them directly for custom data. BrainBank's top-level search methods orchestrate across *all* sources:
+
+```
+brain.hybridSearch('auth')              ← searches EVERYTHING via RRF
+  ├── SearchAPI (shared HNSW)           ← code + git vectors
+  ├── DocsPlugin.search()              ← doc collections (own HNSW)
+  └── collection('errors').search()    ← if passed in options
+
+brain.collection('errors').search('auth')  ← searches ONLY that collection
+```
+
+| Level | Method | What it searches |
+|-------|--------|-----------------|
+| **BrainBank** | `hybridSearch(q)` | All sources → RRF |
+| **BrainBank** | `search(q)` | Code + git vectors (shared HNSW) |
+| **BrainBank** | `searchBM25(q)` | Code + git text (FTS5) |
+| **Plugin** | `brain.docs!.search(q)` | Document collections only |
+| **Collection** | `collection.search(q)` | Single collection (own HNSW + FTS5) |
+
+> **Plugins use collections internally.** When a plugin calls `ctx.collection('notes')` in its `initialize()`, it gets the same Collection primitive. The plugin's `search()` method typically delegates to `this.collection.search()`. This is how custom plugins get hybrid search for free — no need to manage HNSW indices or FTS tables yourself.
 
 Collections work standalone or alongside plugins. When used with `hsearch`, pass `--<collection> <n>` to include them in hybrid search results.
 
