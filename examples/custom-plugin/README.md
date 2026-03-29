@@ -10,7 +10,7 @@ Two different BrainBank plugins showing the two ways to extend BrainBank. Both a
 | **How to use** | Import and register with `brain.use()` | Auto-discovered by CLI |
 | **Data model** | One item per `.txt` file in a directory | One item per line in `quotes.txt` |
 | **What it indexes** | Technical notes (multi-line content) | Programming quotes with author |
-| **Capabilities** | `index` + `search` + `@expose` + `watch` | `index` + `search` + `@expose` + `watch` |
+| **Capabilities** | `index` + `search` + `plugin<T>()` + `watch` | `index` + `search` + `plugin<T>()` + `watch` |
 
 ## File Structure
 
@@ -47,8 +47,8 @@ This runs the `usage.ts` script which:
 1. Creates a `BrainBank` instance with `.use(notes({ dir: './sample-data/notes' }))`
 2. Calls `brain.index()` — reads `architecture.txt` and `plugins.txt`
 3. Calls `brain.search('how does search work')` — returns relevant note chunks
-4. Uses `brain.searchNotes()` (via `@expose`) for direct notes search
-5. Uses `brain.listNotes()` to show all indexed files
+4. Uses `brain.plugin<NotesPlugin>('notes')!.searchNotes()` for direct notes search
+5. Uses `notesPlugin.listNotes()` to show all indexed files
 
 ### Plugin Code Highlights
 
@@ -64,9 +64,10 @@ await brain.index();
 // Hybrid search — notes results fused via RRF
 const results = await brain.search('vector search');
 
-// @expose methods
-const noteHits = await brain.searchNotes('plugin system');
-const allNotes = brain.listNotes();
+// Typed plugin access
+const notesPlugin = brain.plugin<NotesPlugin>('notes')!;
+const noteHits = await notesPlugin.searchNotes('plugin system');
+const allNotes = notesPlugin.listNotes();
 ```
 
 ---

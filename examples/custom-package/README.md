@@ -60,9 +60,8 @@ The plugin implements `IndexablePlugin`, `SearchablePlugin`, and `WatchablePlugi
 
 ```typescript
 import type { Plugin, PluginContext, SearchResult } from 'brainbank';
-import { expose } from 'brainbank';
 
-class CsvPlugin implements Plugin {
+export class CsvPlugin implements Plugin {
     readonly name = 'csv';
     private ctx!: PluginContext;
 
@@ -71,8 +70,8 @@ class CsvPlugin implements Plugin {
     async index() { /* read .csv files, store rows in ctx.collection('csv_data') */ }
     async search(query: string) { /* search the collection */ }
 
-    @expose async searchCsv(query: string, k = 5) { return this.search(query, { k }); }
-    @expose csvStats() { return { rows: this.ctx.collection('csv_data').count() }; }
+    async searchCsv(query: string, k = 5) { return this.search(query, { k }); }
+    csvStats() { return { rows: this.ctx.collection('csv_data').count() }; }
 
     watchPatterns() { return ['**/*.csv']; }
     async onFileChange() { await this.index(); return true; }
@@ -113,9 +112,10 @@ const brain = new BrainBank({ repoPath: '.' })
     .use(csv({ dir: './data' }));
 
 await brain.initialize();
-await brain.index();                         // indexes .csv files
-const results = await brain.search('query'); // CSV rows in results via RRF
-const csvHits = await brain.searchCsv('q');  // direct CSV search
+await brain.index();                                       // indexes .csv files
+const results = await brain.search('query');                // CSV rows in results via RRF
+const csvPlugin = brain.plugin<CsvPlugin>('csv')!;
+const csvHits = await csvPlugin.searchCsv('q');             // direct CSV search
 ```
 
 ## Checklist
@@ -125,7 +125,7 @@ const csvHits = await brain.searchCsv('q');  // direct CSV search
 | `brainbank` as `peerDependency` | Avoids bundling core; users install once |
 | `.js` extensions on local imports | Required for ESM packages built with tsup |
 | Factory function export (`csv()`) | Hides class, takes config, returns `Plugin` |
-| `@expose` on public methods | Auto-injects onto `brain` after init |
+| Export class + factory function | Class for typed access, factory for registration |
 | `index()` method | Joins `brain.index()` pipeline |
 | `search()` method | Results merge into `brain.search()` via RRF |
 | `stats()` method | Shows in `brainbank stats` CLI command |

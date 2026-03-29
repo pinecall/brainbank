@@ -1,4 +1,4 @@
-The @expose decorator marks plugin methods for automatic injection onto the BrainBank instance. After brain.initialize(), exposed methods are callable directly as brain.myMethod().
+Typed plugin accessors provide direct, type-safe access to built-in plugins: brain.docs for document operations and brain.git for git history. Custom plugins use brain.plugin<T>('name') for typed access to plugin-specific methods.
 Collections provide a high-level KV store with built-in hybrid search. Use ctx.collection('name') to get or create one — it handles embedding, HNSW, BM25, and deduplication automatically.
 IndexablePlugin makes your plugin run during brain.index(). SearchablePlugin merges results into brain.search() via Reciprocal Rank Fusion. WatchablePlugin auto-re-indexes on file changes.
 Factory functions are the recommended export pattern for plugins. Export a function like code(opts) that returns a Plugin instance, keeping the class private and accepting configuration.

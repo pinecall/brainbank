@@ -14,11 +14,10 @@
  */
 
 import type { Plugin, PluginContext, SearchResult } from 'brainbank';
-import { expose } from 'brainbank';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-class QuotesPlugin implements Plugin {
+export class QuotesPlugin implements Plugin {
     readonly name = 'quotes';
     private ctx!: PluginContext;
     private file: string;
@@ -76,12 +75,10 @@ class QuotesPlugin implements Plugin {
         }));
     }
 
-    @expose
     async searchQuotes(query: string, k = 5): Promise<SearchResult[]> {
         return this.search(query, { k });
     }
 
-    @expose
     quoteCount(): number {
         return this.ctx.collection('quotes').count();
     }
