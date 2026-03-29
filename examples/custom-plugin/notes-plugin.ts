@@ -8,7 +8,7 @@
  *   - Plugin lifecycle (initialize, index, search, close)
  *   - IndexablePlugin (joins brain.index())
  *   - SearchablePlugin (participates in brain.search() via RRF)
- *   - @expose decorator (injects methods onto brain)
+ *   - Typed plugin access: brain.plugin<NotesPlugin>('notes').searchNotes()
  *   - Collection API (add, update, search, remove)
  *   - Idempotent indexing (skip unchanged files, update modified ones)
  *   - WatchablePlugin (auto-re-index on file changes)
@@ -18,7 +18,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin, PluginContext, SearchResult } from 'brainbank';
-import { expose } from 'brainbank';
 
 // ── Options ──────────────────────────────────────────
 
@@ -31,7 +30,7 @@ export interface NotesPluginOptions {
 
 // ── Plugin Class ─────────────────────────────────────
 
-class NotesPlugin implements Plugin {
+export class NotesPlugin implements Plugin {
     readonly name: string;
     private ctx!: PluginContext;
     private dir: string;
@@ -123,15 +122,13 @@ class NotesPlugin implements Plugin {
         }));
     }
 
-    // ── @expose Methods ─────────────────────────────
-    // Injected onto brain after initialize(): brain.searchNotes(), brain.listNotes()
+    // ── Plugin-specific Methods ────────────────────
+    // Access via brain.plugin<NotesPlugin>('notes').searchNotes()
 
-    @expose
     async searchNotes(query: string, k = 5): Promise<SearchResult[]> {
         return this.search(query, { k });
     }
 
-    @expose
     listNotes(): { file: string; size: number }[] {
         return this.ctx.collection('notes').list({ limit: 1000 }).map(i => ({
             file: i.metadata.file as string,

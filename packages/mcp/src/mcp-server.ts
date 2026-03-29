@@ -296,7 +296,7 @@ server.registerTool(
             const absPath = path.resolve(docsPath);
             const collName = path.basename(absPath);
             try {
-                brainbank.addCollection({
+                brainbank.docs!.addCollection({
                     name: collName,
                     path: absPath,
                     pattern: '**/*.md',
@@ -386,7 +386,7 @@ server.registerTool(
     },
     async ({ filePath, limit, repo }) => {
         const brainbank = await getBrainBank(repo);
-        const history = await brainbank.fileHistory(filePath, limit);
+        const history = await brainbank.git!.fileHistory(filePath, limit);
 
         if (history.length === 0) {
             return { content: [{ type: 'text', text: `No git history found for "${filePath}"` }] };

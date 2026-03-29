@@ -322,8 +322,8 @@ const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384
 await brain.index();
 
 // Register and index document collections
-await brain.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
-await brain.indexDocs();
+await brain.docs!.addCollection({ name: 'wiki', path: '~/docs', pattern: '**/*.md' });
+await brain.docs!.indexDocs();
 
 // Dynamic collections — store anything
 const decisions = brain.collection('decisions');
@@ -511,7 +511,7 @@ const balanced = await brain.hybridSearch('auth', { codeK: 3, gitK: 3 });
 // Scoped search (convenience methods)
 const codeHits = await brain.searchCode('parse JSON config', 8);
 const commitHits = await brain.searchCommits('fix auth bug', 5);
-const docHits = await brain.searchDocs('getting started', { collection: 'wiki' });
+const docHits = await brain.docs!.search('getting started', { collection: 'wiki' });
 ```
 
 | Score | Meaning |
@@ -534,9 +534,9 @@ brain.hybridSearch('auth')
   │     ├── KeywordSearch ─── FTS5 BM25 ────── code + git text
   │     └── RRF fusion ────── merges all result lists
   │
-  └── Plugin search (per-plugin, via @expose)
+  └── Plugin search (per-plugin, via SearchablePlugin)
         │
-        └── DocsPlugin.searchDocs() ── own HNSW ── doc vectors
+        └── DocsPlugin.search() ── own HNSW ── doc vectors
 ```
 
 **Centralized search** (`SearchAPI`) manages a shared multi-index HNSW that holds both code and git vectors. The convenience methods `searchCode()` and `searchCommits()` are just filters on this shared index:
@@ -568,7 +568,7 @@ const results = await brain.hybridSearch('auth middleware', {
 | `searchCode(q)` | SearchAPI → VectorSearch | Code vectors only |
 | `searchCommits(q)` | SearchAPI → VectorSearch | Git vectors only |
 | `searchBM25(q)` | SearchAPI → KeywordSearch | Code + git text (FTS5) |
-| `searchDocs(q)` | DocsPlugin (via `@expose`) | Document vectors (own HNSW + BM25) |
+| `brain.docs!.search(q)` | DocsPlugin (typed accessor) | Document vectors (own HNSW + BM25) |
 | `hybridSearch(q)` | SearchAPI + plugins | **All sources** → RRF fusion |
 | `getContext(task)` | SearchAPI + plugins | All sources → formatted markdown |
 
@@ -577,7 +577,7 @@ const results = await brain.hybridSearch('auth middleware', {
 Register folders of documents. Files are chunked by heading structure:
 
 ```typescript
-await brain.addCollection({
+await brain.docs!.addCollection({
   name: 'docs',
   path: '~/project/docs',
   pattern: '**/*.md',
@@ -585,11 +585,11 @@ await brain.addCollection({
   context: 'Project documentation',
 });
 
-await brain.indexDocs();
+await brain.docs!.indexDocs();
 
 // Add context metadata (helps LLM understand what documents are about)
-brain.addContext('docs', '/api', 'REST API reference');
-brain.addContext('docs', '/guides', 'Step-by-step tutorials');
+brain.docs!.addContext('docs', '/api', 'REST API reference');
+brain.docs!.addContext('docs', '/guides', 'Step-by-step tutorials');
 ```
 
 ### Context Generation
@@ -612,7 +612,7 @@ const context = await brain.getContext('add rate limiting to the API', {
 
 ### Building Custom Plugins
 
-BrainBank plugins implement the `Plugin` interface to index any data source, participate in hybrid search, and expose convenience methods on `brain`.
+BrainBank plugins implement the `Plugin` interface to index any data source, participate in hybrid search, and expose convenience methods.
 
 > 📂 **Full working examples:** [examples/custom-plugin/](examples/custom-plugin/) — two distinct plugins with sample data: a **notes plugin** (programmatic, reads `.txt` files) and a **quotes plugin** (CLI auto-discovery, reads `quotes.txt` line by line).
 
@@ -621,7 +621,6 @@ BrainBank plugins implement the `Plugin` interface to index any data source, par
 ```
 1. brain.use(myPlugin)        →  Plugin registered (not initialized yet)
 2. await brain.initialize()   →  plugin.initialize(ctx) called
-                              →  @expose methods bound to brain instance
 3. brain.index()              →  plugin.index() called  (if IndexablePlugin)
 4. brain.search()             →  plugin.search() called (if SearchablePlugin)
 5. brain.watch()              →  plugin.onFileChange()  (if WatchablePlugin)
@@ -666,21 +665,22 @@ Every plugin receives a `PluginContext` during `initialize()`:
 | `SearchablePlugin` | `search(query, options?)` | Results merged via RRF in `brain.search()` |
 | `WatchablePlugin` | `watchPatterns()` + `onFileChange(path, event)` | Auto-re-index on file changes |
 
-#### The `@expose` Decorator
+#### Typed Plugin Access
 
-Mark methods with `@expose` to inject them onto `brain`:
+Access plugin methods via typed accessors or `plugin<T>()`:
 
 ```typescript
-import { expose } from 'brainbank';
+// Built-in plugins — typed getters
+brain.docs!.addCollection({ name: 'wiki', path: './docs' });
+brain.git!.suggestCoEdits('src/auth.ts');
 
-class MyPlugin implements Plugin {
+// Custom plugins — generic access with type parameter
+export class MyPlugin implements Plugin {
     readonly name = 'my-plugin';
     private ctx!: PluginContext;
 
     async initialize(ctx: PluginContext) { this.ctx = ctx; }
 
-    // Injected onto brain → brain.searchMyData('query')
-    @expose
     async searchMyData(query: string, k = 5): Promise<SearchResult[]> {
         const hits = await this.ctx.collection('my_data').search(query, { k });
         return hits.map(h => ({
@@ -692,12 +692,10 @@ class MyPlugin implements Plugin {
     }
 }
 
-export function myPlugin(opts?: MyOptions): Plugin {
-    return new MyPlugin(opts);
-}
+// Usage:
+const myPlugin = brain.plugin<MyPlugin>('my-plugin')!;
+const results = await myPlugin.searchMyData('query');
 ```
-
-Methods **without** `@expose` stay internal — accessible via `brain.plugin('name')`.
 
 #### CLI Auto-Discovery
 

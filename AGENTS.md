@@ -132,16 +132,16 @@ import type { SearchResult } from '../../types.ts';
 - Factory function exports: `export function code(opts): Plugin`
 - All plugins implement the `Plugin` interface from `src/indexers/base.ts`
 - Registered via `.use()` builder pattern on BrainBank
-- Access: `brain.plugin('code')` — returns a typed plugin instance
+- **Typed accessors**: `brain.docs` → `DocsPlugin`, `brain.git` → `GitPlugin` (direct, type-safe)
+- **Generic access**: `brain.plugin<T>('name')` → returns `T | undefined`
 - List: `brain.plugins` — returns all registered plugin names
-- **`@expose` decorator** — methods marked with `@expose` are auto-injected onto BrainBank after `initialize()`. Imported from `brainbank` or `@/indexers/base.ts`.
-- **Method injection** — `_bindExposedMethods()` in `brainbank.ts` discovers `@expose`-decorated methods and binds them. Collision detection prevents overrides.
 
 > **Breaking change (v0.6):** `Indexer` → `Plugin`, `IndexerContext` → `PluginContext`, `IndexerRegistry` → `PluginRegistry`.
 > `.indexer()` → `.plugin()`, `.indexers` → `.plugins`. No backward compat aliases — clean break.
 
-> **Breaking change (v0.8):** Plugin-owned methods moved from hardcoded in `brainbank.ts` to `@expose` decorator injection.
-> `indexCollections()` renamed to `indexDocs()` (backward compat alias available). `brain.coEdits()` → `brain.suggestCoEdits()`.
+> **Breaking change (v0.9):** Removed `@expose` decorator. Plugin methods no longer injected onto `BrainBank`.
+> Use `brain.docs.method()` / `brain.git.method()` for built-ins, `brain.plugin<T>('name').method()` for custom.
+> Removed `CollectionPlugin` interface. `plugin()` now returns `T | undefined` (was throwing).
 
 - `brainbank.ts` is the ONLY file at `src/` root (besides `types.ts` and `index.ts`)
 - `bootstrap/` handles system wiring — never imported by layers 0-2

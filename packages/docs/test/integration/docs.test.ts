@@ -132,8 +132,8 @@ tests['setup: create brain with docs module'] = async () => {
 
 tests['register: add two document collections'] = async () => {
 
-    await brain.addCollection({ name: 'project-docs', path: docsDir, pattern: '**/*.md' });
-    await brain.addCollection({ name: 'meeting-notes', path: notesDir, pattern: '**/*.md' });
+    await brain.docs!.addCollection({ name: 'project-docs', path: docsDir, pattern: '**/*.md' });
+    await brain.docs!.addCollection({ name: 'meeting-notes', path: notesDir, pattern: '**/*.md' });
 
     const docsMod = brain.plugin('docs') as any;
     const collections = docsMod.listCollections();
@@ -141,7 +141,7 @@ tests['register: add two document collections'] = async () => {
 };
 
 tests['index: indexes both collections'] = async () => {
-    const result = await brain.indexDocs();
+    const result = await brain.docs!.indexDocs();
 
     assert.ok(result['project-docs'], 'project-docs indexed');
     assert.ok(result['project-docs'].indexed >= 3, `docs: ${result['project-docs'].indexed} files`);
@@ -152,7 +152,7 @@ tests['index: indexes both collections'] = async () => {
 };
 
 tests['index: skips unchanged docs on re-index'] = async () => {
-    const result = await brain.indexDocs();
+    const result = await brain.docs!.indexDocs();
 
     assert.equal(result['project-docs'].indexed, 0, 'docs unchanged');
     assert.equal(result['meeting-notes'].indexed, 0, 'notes unchanged');
@@ -161,7 +161,7 @@ tests['index: skips unchanged docs on re-index'] = async () => {
 tests['index: re-indexes only changed doc'] = async () => {
 
     fs.appendFileSync(path.join(docsDir, 'getting-started.md'), '\n## Troubleshooting\n\nCommon issues and solutions.\n');
-    const result = await brain.indexDocs();
+    const result = await brain.docs!.indexDocs();
 
     assert.equal(result['project-docs'].indexed, 1, 'only changed file');
     assert.equal(result['meeting-notes'].indexed, 0, 'notes untouched');
@@ -198,8 +198,8 @@ tests['search: filters by collection'] = async () => {
 
 tests['context: add and resolve path context'] = async () => {
 
-    brain.addContext('project-docs', '/api-reference.md', 'Main API documentation for BrainBank library');
-    const contexts = brain.listContexts();
+    brain.docs!.addContext('project-docs', '/api-reference.md', 'Main API documentation for BrainBank library');
+    const contexts = brain.docs!.listContexts();
 
     assert.ok(contexts.length >= 1, 'has contexts');
     const found = contexts.find(c => c.path === '/api-reference.md');
@@ -209,8 +209,8 @@ tests['context: add and resolve path context'] = async () => {
 
 tests['context: remove context'] = async () => {
 
-    brain.removeContext('project-docs', '/api-reference.md');
-    const contexts = brain.listContexts();
+    brain.docs!.removeContext('project-docs', '/api-reference.md');
+    const contexts = brain.docs!.listContexts();
     const found = contexts.find(c => c.path === '/api-reference.md');
     assert.ok(!found, 'context removed');
 };

@@ -11,7 +11,6 @@
  */
 
 import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult } from 'brainbank';
-import { expose } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 import { DocsIndexer } from './docs-indexer.js';
 import { DocumentSearch } from './document-search.js';
@@ -45,7 +44,6 @@ class DocsPlugin implements Plugin {
     }
 
     /** Register a document collection. */
-    @expose
     addCollection(collection: DocumentCollection): void {
         this._db.prepare(`
             INSERT OR REPLACE INTO collections (name, path, pattern, ignore_json, context)
@@ -60,13 +58,11 @@ class DocsPlugin implements Plugin {
     }
 
     /** Remove a collection and its indexed data. */
-    @expose
     removeCollection(name: string): void {
         this.indexer.removeCollection(name);
     }
 
     /** List all registered collections. */
-    @expose
     listCollections(): DocumentCollection[] {
         return (this._db.prepare('SELECT * FROM collections').all() as any[]).map(row => ({
             name: row.name,
@@ -78,7 +74,6 @@ class DocsPlugin implements Plugin {
     }
 
     /** Index all (or specific) collections. Incremental. */
-    @expose
     async indexDocs(options: {
         collections?: string[];
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
@@ -114,7 +109,6 @@ class DocsPlugin implements Plugin {
     }
 
     /** Search documents using hybrid search (vector + BM25 → RRF). */
-    @expose
     async searchDocs(query: string, options?: {
         collection?: string;
         k?: number;
@@ -135,7 +129,6 @@ class DocsPlugin implements Plugin {
     }
 
     /** Add context description for a document path. */
-    @expose
     addContext(collection: string, path: string, context: string): void {
         this._db.prepare(`
             INSERT OR REPLACE INTO path_contexts (collection, path, context)
@@ -144,7 +137,6 @@ class DocsPlugin implements Plugin {
     }
 
     /** Remove context for a path. */
-    @expose
     removeContext(collection: string, path: string): void {
         this._db.prepare(
             'DELETE FROM path_contexts WHERE collection = ? AND path = ?'
@@ -152,7 +144,6 @@ class DocsPlugin implements Plugin {
     }
 
     /** List all context entries. */
-    @expose
     listContexts(): { collection: string; path: string; context: string }[] {
         return this._db.prepare('SELECT * FROM path_contexts').all() as any[];
     }

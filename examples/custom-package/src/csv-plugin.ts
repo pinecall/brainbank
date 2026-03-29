@@ -11,7 +11,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin, PluginContext, SearchResult } from 'brainbank';
-import { expose } from 'brainbank';
 
 // ── Options ──────────────────────────────────────────
 
@@ -101,14 +100,11 @@ class CsvPlugin implements Plugin {
         }));
     }
 
-    // ── @expose Methods ─────────────────────────────
 
-    @expose
     async searchCsv(query: string, k = 5): Promise<SearchResult[]> {
         return this.search(query, { k });
     }
 
-    @expose
     csvStats(): { rows: number; files: string[] } {
         const items = this.ctx.collection('csv_data').list({ limit: 10000 });
         const files = [...new Set(items.map(i => i.metadata.file as string))];

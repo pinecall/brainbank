@@ -13,7 +13,6 @@
  */
 
 import type { Plugin, PluginContext } from '@/indexers/base.ts';
-import { expose } from '@/indexers/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { GitIndexer } from './git-indexer.ts';
@@ -33,7 +32,7 @@ export interface GitPluginOptions {
     embeddingProvider?: EmbeddingProvider;
 }
 
-class GitPlugin implements Plugin {
+export class GitPlugin implements Plugin {
     readonly name: string;
     private db!: Database;
     hnsw!: HNSWIndex;
@@ -76,13 +75,12 @@ class GitPlugin implements Plugin {
         return this.indexer.index(options);
     }
 
-    @expose
+    /** Suggest files that are often changed together. */
     suggestCoEdits(filePath: string, limit: number = 5): CoEditSuggestion[] {
         return this.coEdits.suggest(filePath, limit);
     }
 
     /** Get git history for a specific file. */
-    @expose
     fileHistory(filePath: string, limit: number = 20): any[] {
         return this.db.prepare(`
             SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions

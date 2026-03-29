@@ -22,7 +22,7 @@ export async function cmdCollection(): Promise<void> {
         }
 
         const brain = await createBrain();
-        await brain.addCollection({
+        await brain.docs!.addCollection({
             name,
             path,
             pattern,
@@ -38,7 +38,7 @@ export async function cmdCollection(): Promise<void> {
     if (sub === 'list') {
         const brain = await createBrain();
         await brain.initialize();
-        const collections = brain.listCollections();
+        const collections = brain.docs!.listCollections();
         if (collections.length === 0) {
             console.log(c.yellow('  No collections registered.'));
         } else {
@@ -60,7 +60,7 @@ export async function cmdCollection(): Promise<void> {
             process.exit(1);
         }
         const brain = await createBrain();
-        await brain.removeCollection(name);
+        await brain.docs!.removeCollection(name);
         console.log(c.green(`✓ Collection '${name}' removed.`));
         brain.close();
         return;

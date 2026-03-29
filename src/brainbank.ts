@@ -24,7 +24,9 @@ import { reembedAll } from '@/services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
 import type { Plugin } from '@/indexers/base.ts';
-import { isSearchable, getExposedMethods } from '@/indexers/base.ts';
+import { isSearchable } from '@/indexers/base.ts';
+import { DocsPlugin } from '@/indexers/docs/docs-plugin.ts';
+import { GitPlugin } from '@/indexers/git/git-plugin.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
@@ -77,8 +79,22 @@ export class BrainBank extends EventEmitter {
     /** Check if a plugin is loaded. Also matches type prefix (e.g. 'code' matches 'code:frontend'). */
     has(name: string): boolean                 { return this._registry.has(name); }
 
-    /** Get a plugin instance. Throws if not loaded. */
-    plugin<T extends Plugin = Plugin>(n: string): T { return this._registry.get<T>(n); }
+    /** Get a plugin instance by name. Returns undefined if not loaded. */
+    plugin<T extends Plugin = Plugin>(n: string): T | undefined {
+        return this._registry.has(n) ? this._registry.get<T>(n) : undefined;
+    }
+
+    // ── Typed Plugin Accessors ───────────────────────
+
+    /** Typed access to the docs plugin. Returns undefined if not loaded. */
+    get docs(): DocsPlugin | undefined {
+        return this._registry.firstByType('docs') as DocsPlugin | undefined;
+    }
+
+    /** Typed access to the git plugin. Returns undefined if not loaded. */
+    get git(): GitPlugin | undefined {
+        return this._registry.firstByType('git') as GitPlugin | undefined;
+    }
 
     // ── Initialization ───────────────────────────────
 
@@ -147,23 +163,9 @@ export class BrainBank extends EventEmitter {
             emit:     (e, d) => this.emit(e, d),
         });
 
-        // Bind @expose-decorated methods from all plugins
-        for (const plugin of this._registry.all) {
-            this._bindExposedMethods(plugin);
-        }
 
         this._initialized = true;
         this.emit('initialized', { plugins: this.plugins });
-    }
-
-    /** Bind @expose-decorated methods from a plugin onto this BrainBank instance. */
-    private _bindExposedMethods(plugin: Plugin): void {
-        for (const name of getExposedMethods(plugin)) {
-            if (name in this && typeof (this as any)[name] === 'function') {
-                throw new Error(`BrainBank: Method '${name}' already exists. Plugin '${plugin.name}' cannot override it.`);
-            }
-            (this as any)[name] = (...args: unknown[]) => (plugin as any)[name](...args);
-        }
     }
 
     // ── Collections (KV) ────────────────────────────
@@ -221,22 +223,7 @@ export class BrainBank extends EventEmitter {
         return this._indexAPI!.indexGit(options);
     }
 
-    // ── Plugin-injected methods ──────────────────────
-    // Typed stubs — overwritten at runtime by @expose from plugins.
-    // Docs plugin:
-    addCollection!: (collection: DocumentCollection) => void;
-    removeCollection!: (name: string) => void;
-    listCollections!: () => DocumentCollection[];
-    indexDocs!: (options?: {
-        collections?: string[];
-        onProgress?: (collection: string, file: string, current: number, total: number) => void;
-    }) => Promise<Record<string, { indexed: number; skipped: number; chunks: number }>>;
-    addContext!: (collection: string, path: string, context: string) => void;
-    removeContext!: (collection: string, path: string) => void;
-    listContexts!: () => { collection: string; path: string; context: string }[];
-    // Git plugin:
-    suggestCoEdits!: (filePath: string, limit?: number) => CoEditSuggestion[];
-    fileHistory!: (filePath: string, limit?: number) => Record<string, unknown>[];
+
 
     // ── Search (delegated to SearchAPI) ─────────────
 
@@ -295,7 +282,8 @@ export class BrainBank extends EventEmitter {
         this._searchAPI!.rebuildFTS();
     }
 
-    // fileHistory, suggestCoEdits → injected by @expose from git plugin
+
+
 
 
     // ── Stats ────────────────────────────────────────

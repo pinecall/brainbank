@@ -313,7 +313,7 @@ export async function registerConfigCollections(brain: BrainBank, config: Projec
     for (const coll of collections) {
         const absPath = path.resolve(coll.path);
         try {
-            await brain.addCollection({
+            await brain.docs!.addCollection({
                 name: coll.name,
                 path: absPath,
                 pattern: coll.pattern ?? '**/*.md',

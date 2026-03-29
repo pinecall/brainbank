@@ -24,7 +24,7 @@ export async function cmdContext(): Promise<void> {
 
         const brain = await createBrain();
         await brain.initialize();
-        brain.addContext(collection, path, desc);
+        brain.docs!.addContext(collection, path, desc);
         console.log(c.green(`✓ Context added: ${collection}:${path} → "${desc}"`));
         brain.close();
         return;
@@ -34,7 +34,7 @@ export async function cmdContext(): Promise<void> {
     if (sub === 'list') {
         const brain = await createBrain();
         await brain.initialize();
-        const contexts = brain.listContexts();
+        const contexts = brain.docs!.listContexts();
         if (contexts.length === 0) {
             console.log(c.yellow('  No contexts configured.'));
         } else {

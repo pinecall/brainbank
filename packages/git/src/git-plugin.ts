@@ -15,7 +15,6 @@
  */
 
 import type { Plugin, PluginContext, EmbeddingProvider, IndexResult, ProgressCallback, CoEditSuggestion } from 'brainbank';
-import { expose } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 import { GitIndexer } from './git-indexer.js';
 import { CoEditAnalyzer } from './co-edit-analyzer.js';
@@ -78,13 +77,11 @@ class GitPlugin implements Plugin {
         return this.indexer.index(options);
     }
 
-    @expose
     suggestCoEdits(filePath: string, limit: number = 5): CoEditSuggestion[] {
         return this.coEdits.suggest(filePath, limit);
     }
 
     /** Get git history for a specific file. */
-    @expose
     fileHistory(filePath: string, limit: number = 20): any[] {
         return this.db.prepare(`
             SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions

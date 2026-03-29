@@ -177,7 +177,7 @@ tests['index: commit_files correctly populated from --numstat'] = async () => {
 };
 
 tests['fileHistory: returns commit history for a file'] = async () => {
-    const history = await brain.fileHistory('src/api.ts', 10);
+    const history = await brain.git!.fileHistory('src/api.ts', 10);
 
     assert.ok(Array.isArray(history), 'returns array');
     // api.ts was modified in commits 1, 2, 3, 5 = at least 3 non-merge commits
@@ -188,16 +188,17 @@ tests['fileHistory: returns commit history for a file'] = async () => {
     assert.ok(typeof history[0].deletions === 'number', 'has deletions');
 };
 
-tests['suggestCoEdits: throws before initialize'] = async () => {
+tests['suggestCoEdits: git accessor available after .use()'] = async () => {
     const uninitBrain = new BrainBank({ repoPath: tmpDir, dbPath: path.join(tmpDir, 'uninit.db'), embeddingProvider: emb })
         .use(git({ repoPath: tmpDir }));
 
-    // @expose methods aren't bound until initialize()
-    assert.equal(typeof uninitBrain.suggestCoEdits, 'undefined', 'suggestCoEdits should not exist before init');
+    // brain.git is available after .use() — typed accessor on the plugin
+    assert.ok(uninitBrain.git, 'git accessor should be defined after .use()');
+    assert.equal(typeof uninitBrain.git!.suggestCoEdits, 'function');
 };
 
 tests['co-edits: auth.ts suggests api.ts'] = async () => {
-    const suggestions = brain.suggestCoEdits('src/auth.ts', 5);
+    const suggestions = brain.git!.suggestCoEdits('src/auth.ts', 5);
 
     assert.ok(Array.isArray(suggestions), 'returns array');
     // auth.ts and api.ts were co-edited in commits 2 and 3

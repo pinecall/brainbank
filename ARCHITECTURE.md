@@ -135,7 +135,7 @@ src/
 
 │
 ├── indexers/
-│   ├── base.ts               ← Plugin interfaces, @expose decorator, type guards
+│   ├── base.ts               ← Plugin interfaces, capability interfaces, type guards
 │   ├── languages.ts          ← Supported extensions, ignore lists
 │   ├── code/
 │   │   ├── code-plugin.ts    ← Plugin entry point for code indexing
@@ -296,17 +296,11 @@ guards, and delegates every operation to a specialized subsystem. It contains
 │  .searchCommits(query) → delegates to SearchAPI                       │
 │  .getContext(task)     → delegates to SearchAPI                       │
 │                                                                        │
-│  PLUGIN-INJECTED (@expose)                                             │
+│  TYPED PLUGIN ACCESSORS                                                │
 │  ──────────────────────────────────────────────────────────────────   │
-│  .addCollection(coll)  → injected from docs plugin via @expose        │
-│  .indexDocs(opts)      → injected from docs plugin via @expose        │
-│  .searchDocs(query)    → injected from docs plugin via @expose        │
-│  .addContext(...)      → injected from docs plugin via @expose        │
-│  .removeContext(...)   → injected from docs plugin via @expose        │
-│  .listCollections()    → injected from docs plugin via @expose        │
-│  .listContexts()       → injected from docs plugin via @expose        │
-│  .suggestCoEdits(file) → injected from git plugin via @expose         │
-│  .fileHistory(file)    → injected from git plugin via @expose         │
+│  .docs                   → DocsPlugin (typed getter)                   │
+│  .git                    → GitPlugin (typed getter)                    │
+│  .plugin<T>('name')      → generic typed access for custom plugins     │
 │  .stats()              → delegates to each plugin's stats()           │
 │  .reembed(opts)        → delegates to reembedAll service              │
 │  .watch(opts)          → delegates to createWatcher service           │
@@ -315,7 +309,6 @@ guards, and delegates every operation to a specialized subsystem. It contains
 │  GUARDS                                                                │
 │  ──────────────────────────────────────────────────────────────────   │
 │  _requireInit(method)  → throws if not initialized                    │
-│  _bindExposedMethods() → discovers @expose methods, binds to this     │
 │                                                                        │
 │  EVENTS EMITTED                                                        │
 │  ──────────────────────────────────────────────────────────────────   │
@@ -389,7 +382,7 @@ BrainBank._runInitialize()
     ├── for each plugin in registry:
     │     await plugin.initialize(ctx)      ← each plugin sets itself up
     │
-    ├── _bindExposedMethods()               ← discovers @expose methods, binds to BrainBank
+
     │
     ├── saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw)  ← persist to disk
     │
@@ -509,44 +502,23 @@ Extended Capability Interfaces:
 │   → IndexResult  │  │   → SearchResult │  │ watchPatterns()  │
 └──────────────────┘  └──────────────────┘  └──────────────────┘
 
-┌──────────────────────────────────────────┐
-│           CollectionPlugin               │
-│                                          │
-│ addCollection(DocumentCollection)        │
-│ removeCollection(name)                   │
-│ listCollections() → DocumentCollection[] │
-│ indexDocs(opts) → Record<...>            │
-│ searchDocs(query, opts) → SearchResult[] │
-│ search(query, opts) → SearchResult[]     │
-│ addContext?(collection, path, context)   │
-│ removeContext?(collection, path)         │
-│ listContexts?() → any[]                  │
-└──────────────────────────────────────────┘
-
-┌──────────────────────────────────────────┐
-│         @expose Decorator                │
-│                                          │
-│  Marks plugin methods for injection      │
-│  onto the BrainBank instance.            │
-│                                          │
-│  class MyPlugin implements Plugin {      │
-│      @expose                             │
-│      myMethod() { ... }                  │
-│  }                                       │
-│                                          │
-│  After initialize():                     │
-│    brain.myMethod() → plugin.myMethod()  │
-│                                          │
-│  Collision detection prevents overrides. │
-│  Uses Symbol('brainbank:exposed') on     │
-│  the constructor to store method names.  │
-└──────────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│      Typed Plugin Accessors           │
+│                                      │
+│  brain.docs  → DocsPlugin | undefined │
+│  brain.git   → GitPlugin | undefined  │
+│  brain.plugin<T>('name')             │
+│      → T | undefined                 │
+│                                      │
+│  All access via registry.firstByType  │
+│  or registry.get() with type param.  │
+└────────────────────────────────────────┘
 
 Type Guards (runtime capability detection):
   isIndexable(p)         → p has .index() function
   isSearchable(p)        → p has .search() function
   isWatchable(p)         → p has .onFileChange() + .watchPatterns()
-  isCollectionPlugin(p)  → p has .addCollection() + .listCollections()
+  isDocsPlugin(p)        → p has .addCollection() + .listCollections()
 ```
 
 **PluginContext — what every plugin receives:**
@@ -757,7 +729,7 @@ GitPlugin.stats():
 
 ### 7.3 Docs Plugin
 
-**Pattern: CollectionPlugin + Smart Chunker**
+**Pattern: SearchablePlugin + IndexablePlugin + Smart Chunker**
 
 **Purpose:** Index folders of markdown/text files. Supports multiple named
 collections (e.g. 'docs', 'wiki'). Incremental by content hash.
