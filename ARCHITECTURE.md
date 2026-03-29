@@ -186,6 +186,7 @@ src/
     ├── utils.ts              ← Colors, arg parsing, result printer
     └── commands/
         ├── index-cmd.ts      ← brainbank index
+        ├── scan.ts           ← Interactive repo scanner + config generator
         ├── search.ts         ← brainbank search/hsearch/ksearch
         ├── docs.ts           ← brainbank docs/dsearch
         ├── collection.ts     ← brainbank collection add/list/remove
@@ -205,22 +206,45 @@ packages/
 │   │   ├── grammars.ts              ← Grammar registry (20 languages)
 │   │   ├── import-extractor.ts      ← Regex-based import graph extraction
 │   │   └── symbol-extractor.ts      ← AST symbol/call-ref extraction
+│   ├── test/
+│   │   ├── helpers.ts               ← Package-local test utilities
+│   │   ├── unit/                    ← chunker, languages, code-graph, import/symbol-extractor
+│   │   └── integration/             ← Full pipeline: index → search → incremental skip
 │   ├── package.json                 ← peerDependency: brainbank >=0.7.0
 │   └── CHANGELOG.md
-├── mcp/                             ← @brainbank/mcp
-└── memory/                          ← @brainbank/memory
+├── git/                              ← @brainbank/git (separate npm package)
+│   ├── src/
+│   │   ├── index.ts                 ← Package entry point
+│   │   ├── git-plugin.ts            ← Plugin factory
+│   │   ├── git-indexer.ts           ← Commit parsing, embedding, co-edit analysis
+│   │   └── co-edit-analyzer.ts      ← File co-occurrence queries
+│   ├── test/
+│   │   ├── helpers.ts               ← Package-local test utilities
+│   │   └── integration/             ← Full pipeline: temp repo → index → search → co-edits
+│   ├── package.json                 ← peerDependency: brainbank >=0.7.0
+│   └── CHANGELOG.md
+├── docs/                             ← @brainbank/docs (separate npm package)
+│   ├── src/
+│   │   ├── index.ts                 ← Package entry point
+│   │   ├── docs-plugin.ts           ← Plugin factory
+│   │   ├── docs-indexer.ts          ← Smart markdown chunker + incremental indexer
+│   │   └── document-search.ts       ← Hybrid search for doc collections
+│   ├── test/
+│   │   ├── helpers.ts               ← Package-local test utilities
+│   │   └── integration/             ← Full pipeline: register → index → search → context
+│   ├── package.json                 ← peerDependency: brainbank >=0.7.0
+│   └── CHANGELOG.md
+├── mcp/                              ← @brainbank/mcp
+└── memory/                           ← @brainbank/memory
 ```
 
 ### Package Dependency Graph
 
 ```
-@brainbank/code
-    └── peerDep: brainbank (core)
-                    ├── better-sqlite3
-                    ├── hnswlib-node
-                    └── picomatch
-
-@brainbank/mcp ──── peerDep: brainbank
+@brainbank/code ─── peerDep: brainbank (core)
+@brainbank/git  ─── peerDep: brainbank (core)
+@brainbank/docs ─── peerDep: brainbank (core)
+@brainbank/mcp  ─── peerDep: brainbank
 @brainbank/memory ── peerDep: brainbank
 ```
 
