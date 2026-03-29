@@ -32,9 +32,9 @@ import { z } from 'zod/v3';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BrainBank } from 'brainbank';
-import { code } from 'brainbank/code';
-import { git } from 'brainbank/git';
-import { docs } from 'brainbank/docs';
+import { code } from '@brainbank/code';
+import { git } from '@brainbank/git';
+import { docs } from '@brainbank/docs';
 
 // ── Configuration from env ──────────────────────────
 
@@ -296,7 +296,7 @@ server.registerTool(
             const absPath = path.resolve(docsPath);
             const collName = path.basename(absPath);
             try {
-                brainbank.docs!.addCollection({
+                (brainbank.docs as any)!.addCollection({
                     name: collName,
                     path: absPath,
                     pattern: '**/*.md',
@@ -317,7 +317,7 @@ server.registerTool(
         ];
 
         if (result.docs) {
-            for (const [name, stat] of Object.entries(result.docs)) {
+            for (const [name, stat] of Object.entries(result.docs) as [string, { indexed: number; skipped: number; chunks: number }][]) {
                 lines.push(`**Docs [${name}]**: ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
             }
         }
@@ -386,7 +386,7 @@ server.registerTool(
     },
     async ({ filePath, limit, repo }) => {
         const brainbank = await getBrainBank(repo);
-        const history = await brainbank.git!.fileHistory(filePath, limit);
+        const history = await (brainbank.git as any)!.fileHistory(filePath, limit);
 
         if (history.length === 0) {
             return { content: [{ type: 'text', text: `No git history found for "${filePath}"` }] };
