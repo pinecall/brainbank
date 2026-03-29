@@ -10,7 +10,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { BrainBank } from '@/brainbank.ts';
-import type { Plugin } from '@/indexers/base.ts';
+import type { Plugin } from '@/plugins/base.ts';
 import type { EmbeddingProvider, DocumentCollection } from '@/types.ts';
 import { c, getFlag } from './utils.ts';
 

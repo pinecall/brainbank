@@ -8,7 +8,7 @@
  *   brain.use(memory());
  */
 
-import type { Plugin, PluginContext } from '@/indexers/base.ts';
+import type { Plugin, PluginContext } from '@/plugins/base.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { Database } from '@/db/database.ts';
 import { PatternStore } from './pattern-store.ts';

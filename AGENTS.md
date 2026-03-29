@@ -74,7 +74,7 @@ packages/                ← All plugin implementations live here (NOT in src/)
 
 ### Key Files
 - `src/brainbank.ts` — The main orchestrator. All public API lives here.
-- `src/indexers/base.ts` — The `Plugin` interface. Read this before writing any plugin.
+- `src/plugins/base.ts` — The `Plugin` interface. Read this before writing any plugin.
 - `src/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
 - `src/search/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
@@ -142,7 +142,7 @@ import { code } from '@/indexers/code/code-plugin.ts';
 
 ### Plugin Pattern
 - Factory function exports: `export function code(opts): Plugin`
-- All plugins implement the `Plugin` interface from `src/indexers/base.ts`
+- All plugins implement the `Plugin` interface from `src/plugins/base.ts`
 - Plugins are published as independent `@brainbank/*` npm packages
 - Registered via `.use()` builder pattern on BrainBank
 - **Generic access**: `brain.plugin<T>('name')` → returns `T | undefined`

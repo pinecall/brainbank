@@ -19,7 +19,7 @@ import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from '@/se
 import type { PluginRegistry } from './registry.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
-import type { PluginContext } from '@/indexers/base.ts';
+import type { PluginContext } from '@/plugins/base.ts';
 
 // ── Result types ─────────────────────────────────────
 

@@ -21,8 +21,8 @@
 export { BrainBank } from './brainbank.ts';
 
 // Plugin types
-export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin } from './indexers/base.ts';
-export { isIndexable, isSearchable, isWatchable, isDocsPlugin } from './indexers/base.ts';
+export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin } from './plugins/base.ts';
+export { isIndexable, isSearchable, isWatchable, isDocsPlugin } from './plugins/base.ts';
 
 // Collections
 export { Collection } from './domain/collection.ts';
@@ -81,7 +81,7 @@ export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';
 
 // Language support (used by @brainbank/code)
-export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage, isIgnoredDir, isIgnoredFile } from './indexers/languages.ts';
+export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage, isIgnoredDir, isIgnoredFile } from './plugins/languages.ts';
 
 // Math utilities (needed by plugins)
 export { vecToBuffer, cosineSimilarity, normalize } from './lib/math.ts';

@@ -133,7 +133,7 @@ src/
 │       ├── consolidator.ts   ← Prune failed patterns, dedup near-duplicates
 │       └── pattern-distiller.ts ← Aggregate patterns → strategy text
 │
-├── indexers/                     ← Plugin contract ONLY (no implementations)
+├── plugins/
 │   ├── base.ts               ← Plugin + PluginContext interfaces, capability type guards
 │   └── languages.ts          ← Supported extensions, ignore lists, file filtering
 │

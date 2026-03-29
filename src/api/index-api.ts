@@ -7,7 +7,7 @@
 
 import type { PluginRegistry } from '@/bootstrap/registry.ts';
 import type { IndexResult, StageProgressCallback, ProgressCallback } from '@/types.ts';
-import { isIndexable, isDocsPlugin } from '@/indexers/base.ts';
+import { isIndexable, isDocsPlugin } from '@/plugins/base.ts';
 
 export interface IndexAPIDeps {
     registry: PluginRegistry;

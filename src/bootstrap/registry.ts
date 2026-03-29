@@ -11,7 +11,7 @@
  *   - Consistent error messages on missing plugins
  */
 
-import type { Plugin } from '@/indexers/base.ts';
+import type { Plugin } from '@/plugins/base.ts';
 
 /** Shorthand aliases that map public names to canonical plugin names. */
 const ALIASES: Readonly<Record<string, string>> = {

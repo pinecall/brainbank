@@ -23,8 +23,8 @@ import { IndexAPI } from '@/api/index-api.ts';
 import { reembedAll } from '@/services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
-import type { Plugin } from '@/indexers/base.ts';
-import { isSearchable } from '@/indexers/base.ts';
+import type { Plugin } from '@/plugins/base.ts';
+import { isSearchable } from '@/plugins/base.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
