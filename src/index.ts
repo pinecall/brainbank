@@ -96,7 +96,7 @@ export { VectorSearch } from './search/vector/vector-search.ts';
 export { KeywordSearch } from './search/keyword/keyword-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
 export { normalizeBM25 } from './lib/fts.ts';
-export { rerank } from './search/vector/rerank.ts';
+export { rerank } from './lib/rerank.ts';
 
 // Search types
 export type { SearchStrategy, SearchOptions } from './search/types.ts';

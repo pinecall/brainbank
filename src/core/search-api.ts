@@ -15,7 +15,7 @@ import type { SearchablePlugin } from '@/plugins/base.ts';
 import { isSearchable } from '@/plugins/base.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
-import { rerank } from '@/search/vector/rerank.ts';
+import { rerank } from '@/lib/rerank.ts';
 
 export interface SearchAPIDeps {
     search?:         SearchStrategy;

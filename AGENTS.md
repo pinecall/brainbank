@@ -79,7 +79,7 @@ packages/                ← All plugin implementations live here (NOT in src/)
 - `src/search/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `src/bootstrap/initializer.ts` — Two-phase system initialization (Initializer class).
-- `src/api/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
+- `src/core/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `src/cli/factory.ts` — CLI factory. Uses dynamic `import()` for `@brainbank/*` plugins.
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 

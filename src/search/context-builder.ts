@@ -7,7 +7,7 @@
  */
 
 import type { SearchResult, ContextOptions, CoEditSuggestion } from '@/types.ts';
-import type { SearchStrategy } from '@/search/types.ts';
+import type { SearchStrategy } from './types.ts';
 import type { Database } from '@/db/database.ts';
 
 /** Duck-typed interface for co-edit suggestions (provided by @brainbank/git). */

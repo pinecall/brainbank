@@ -109,7 +109,7 @@ src/
 ├── index.ts                  ← Public exports
 ├── types.ts                  ← All TypeScript interfaces
 │
-├── api/
+├── core/
 │   ├── index-api.ts          ← Indexing orchestration (delegates to plugins)
 │   └── search-api.ts         ← All search/context operations
 │
@@ -122,6 +122,7 @@ src/
 │
 ├── db/
 │   ├── database.ts           ← SQLite wrapper (better-sqlite3)
+│   ├── embedding-meta.ts     ← Track/detect embedding provider in DB
 │   ├── rows.ts               ← TypeScript row interfaces
 │   └── schema.ts             ← DDL: all tables, triggers, FTS5 virtual tables
 │
@@ -140,6 +141,7 @@ src/
 │   ├── fts.ts                ← Full-text search utilities
 │   ├── languages.ts          ← Supported extensions, ignore lists, file filtering
 │   ├── math.ts               ← Vector math (cosine similarity, normalization)
+│   ├── rerank.ts             ← Position-aware score blending with reranker
 │   └── rrf.ts                ← Reciprocal Rank Fusion
 │
 ├── providers/
@@ -161,11 +163,9 @@ src/
 │   │   └── keyword-search.ts ← FTS5 BM25 search across all tables
 │   └── vector/
 │       ├── vector-search.ts  ← Multi-HNSW search (code + git + patterns)
-│       ├── mmr.ts            ← Maximum Marginal Relevance diversification
-│       └── rerank.ts         ← Position-aware score blending with reranker
+│       └── mmr.ts            ← Maximum Marginal Relevance diversification
 │
 ├── services/
-│   ├── embedding-meta.ts     ← Track/detect embedding provider in DB
 │   ├── reembed.ts            ← Re-generate all vectors (no re-parsing)
 │   └── watch.ts              ← fs.watch auto-reindex on file changes
 │

@@ -15,7 +15,7 @@ import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
-import { rerank } from '@/search/vector/rerank.ts';
+import { rerank } from '@/lib/rerank.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 
 export interface CollectionItem {

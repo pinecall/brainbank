@@ -10,7 +10,7 @@ import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { searchMMR } from './mmr.ts';
-import { rerank } from './rerank.ts';
+import { rerank } from '@/lib/rerank.ts';
 
 export interface VectorSearchConfig {
     db: Database;

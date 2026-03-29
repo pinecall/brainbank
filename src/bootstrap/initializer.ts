@@ -15,7 +15,7 @@ import { resolveEmbedding } from '@/providers/embeddings/resolve.ts';
 import { VectorSearch } from '@/search/vector/vector-search.ts';
 import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
-import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from '@/services/embedding-meta.ts';
+import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from '@/db/embedding-meta.ts';
 import type { PluginRegistry } from './registry.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
