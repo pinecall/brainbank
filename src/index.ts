@@ -81,7 +81,7 @@ export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';
 
 // Language support (used by @brainbank/code)
-export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage, isIgnoredDir, isIgnoredFile } from './plugins/languages.ts';
+export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage, isIgnoredDir, isIgnoredFile } from './lib/languages.ts';
 
 // Math utilities (needed by plugins)
 export { vecToBuffer, cosineSimilarity, normalize } from './lib/math.ts';

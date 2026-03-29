@@ -25,7 +25,7 @@ import {
 import {
     getLanguage, isSupported, isIgnoredDir, isIgnoredFile,
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,
-} from '../src/plugins/languages.ts';
+} from '../src/lib/languages.ts';
 
 // Plugins — loaded from @brainbank/* packages
 import { code } from '@brainbank/code';

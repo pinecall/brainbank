@@ -134,11 +134,11 @@ src/
 │       └── pattern-distiller.ts ← Aggregate patterns → strategy text
 │
 ├── plugins/
-│   ├── base.ts               ← Plugin + PluginContext interfaces, capability type guards
-│   └── languages.ts          ← Supported extensions, ignore lists, file filtering
+│   └── base.ts               ← Plugin + PluginContext interfaces, capability type guards
 │
 ├── lib/
 │   ├── fts.ts                ← Full-text search utilities
+│   ├── languages.ts          ← Supported extensions, ignore lists, file filtering
 │   ├── math.ts               ← Vector math (cosine similarity, normalization)
 │   └── rrf.ts                ← Reciprocal Rank Fusion
 │

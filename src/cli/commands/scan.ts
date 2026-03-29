@@ -8,7 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execSync } from 'node:child_process';
-import { SUPPORTED_EXTENSIONS, isIgnoredDir, isIgnoredFile } from '@/plugins/languages.ts';
+import { SUPPORTED_EXTENSIONS, isIgnoredDir, isIgnoredFile } from '@/lib/languages.ts';
 
 // ── Types ───────────────────────────────────────────
 

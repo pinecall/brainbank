@@ -12,7 +12,7 @@ import { CodeChunker } from '../src/code-chunker.js';
 import {
     getLanguage, isSupported, isIgnoredDir, isIgnoredFile,
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,
-} from '../../../src/indexers/languages.ts';
+} from '../../../src/lib/languages.ts';
 import type { EmbeddingProvider } from '../../../src/types.ts';
 
 // ── Hash Embedding Provider ─────────────────────────

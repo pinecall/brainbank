@@ -2,7 +2,7 @@
  * Unit Tests — Language Registry
  */
 
-import { isSupported, getLanguage, isIgnoredDir, isIgnoredFile, SUPPORTED_EXTENSIONS, IGNORE_DIRS } from '../../../../src/indexers/languages.ts';
+import { isSupported, getLanguage, isIgnoredDir, isIgnoredFile, SUPPORTED_EXTENSIONS, IGNORE_DIRS } from '../../../../src/lib/languages.ts';
 
 export const name = 'Language Registry';
 

@@ -19,7 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { isSupported, isIgnoredDir, isIgnoredFile } from '@/plugins/languages.ts';
+import { isSupported, isIgnoredDir, isIgnoredFile } from '@/lib/languages.ts';
 import type { Plugin } from '@/plugins/base.ts';
 import { isWatchable } from '@/plugins/base.ts';
 
