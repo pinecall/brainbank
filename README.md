@@ -4,20 +4,12 @@
 
 BrainBank gives LLMs a long-term memory that persists between sessions.
 
-- **All-in-one** — core + all plugins + CLI in a single `npm i -g brainbank`
-- **Pluggable plugins** — `.use()` only what you need (code, git, docs, or custom)
-- **Dynamic collections** — `brain.collection('errors')` for any structured data
+- **Pluggable** — `.use()` only what you need: [code](#packages), [git](#packages), [docs](#packages), or [custom](docs/custom-plugins.md)
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
-- **Pluggable embeddings** — local WASM (free), OpenAI, or Perplexity (standard & contextualized)
-- **Multi-repo** — index multiple repositories into one shared database
-- **Portable** — single `.brainbank/brainbank.db` file
-- **Optional reranker** — Qwen3-0.6B cross-encoder via `Qwen3Reranker` (opt-in)
-- **Modular packages** — each plugin also published as a standalone `@brainbank/*` package
-  - [`@brainbank/code`](#packages) — AST chunking, import graph, symbols. Bundles JS/TS/HTML/Python grammars; add more with `npm i -g tree-sitter-<lang>`
-  - [`@brainbank/git`](#packages) — commit search, co-edit analysis
-  - [`@brainbank/docs`](#packages) — document collection search
-  - [`@brainbank/memory`](#memory) — fact extraction + entity graph
-  - [`@brainbank/mcp`](#mcp-server) — MCP server for AI tools
+- **Dynamic collections** — `brain.collection('errors')` for any structured data
+- **Pluggable embeddings** — local WASM (free), OpenAI, or Perplexity
+- **Portable** — single `.brainbank/brainbank.db` SQLite file
+- **Modular** — lightweight core + optional [`@brainbank/*`](#packages) packages
 
 ---
 
