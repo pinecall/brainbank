@@ -127,31 +127,20 @@ src/
 │
 ├── domain/
 │   ├── collection.ts         ← Generic KV store with vector+BM25 search
-│   ├── memory/
-│   │   ├── memory-plugin.ts  ← Plugin entry point for agent learning
-│   │   ├── pattern-store.ts  ← CRUD + vector search for LearningPattern
-│   │   ├── consolidator.ts   ← Prune failed patterns, dedup near-duplicates
-│   │   └── pattern-distiller.ts ← Aggregate patterns → strategy text
-
+│   └── memory/
+│       ├── memory-plugin.ts  ← Plugin entry point for agent learning
+│       ├── pattern-store.ts  ← CRUD + vector search for LearningPattern
+│       ├── consolidator.ts   ← Prune failed patterns, dedup near-duplicates
+│       └── pattern-distiller.ts ← Aggregate patterns → strategy text
 │
-├── indexers/
-│   ├── base.ts               ← Plugin interfaces, capability interfaces, type guards
-│   ├── languages.ts          ← Supported extensions, ignore lists
-│   ├── code/
-│   │   ├── code-plugin.ts    ← Plugin entry point for code indexing
-│   │   ├── code-walker.ts    ← File system walker + incremental indexer
-│   │   ├── code-chunker.ts   ← Tree-sitter AST chunker (+ sliding window fallback)
-│   │   ├── grammars.ts       ← Tree-sitter grammar registry (30+ languages)
-│   │   ├── import-extractor.ts ← Regex-based import graph extraction
-│   │   └── symbol-extractor.ts ← AST symbol/call-ref extraction
-│   ├── git/
-│   │   ├── git-plugin.ts     ← Plugin entry point for git history
-│   │   ├── git-indexer.ts    ← Commit parsing, embedding, co-edit analysis
-│   │   └── co-edit-analyzer.ts ← File co-occurrence queries
-│   └── docs/
-│       ├── docs-plugin.ts    ← Plugin entry point for document collections
-│       ├── docs-indexer.ts   ← Smart markdown chunker + incremental indexer
-│       └── document-search.ts ← Hybrid search for doc collections
+├── indexers/                     ← Plugin contract ONLY (no implementations)
+│   ├── base.ts               ← Plugin + PluginContext interfaces, capability type guards
+│   └── languages.ts          ← Supported extensions, ignore lists, file filtering
+│
+├── lib/
+│   ├── fts.ts                ← Full-text search utilities
+│   ├── math.ts               ← Vector math (cosine similarity, normalization)
+│   └── rrf.ts                ← Reciprocal Rank Fusion
 │
 ├── providers/
 │   ├── embeddings/
