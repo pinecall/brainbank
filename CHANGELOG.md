@@ -7,8 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
-- **`@expose` decorator** — plugin methods marked with `@expose` are automatically injected onto the `BrainBank` instance after initialization. Eliminates hardcoded proxy methods.
-- **Plugin method injection** — `suggestCoEdits`, `fileHistory` (git), `searchDocs`, `addCollection`, `removeCollection`, `listCollections`, `indexDocs`, `addContext`, `removeContext`, `listContexts` (docs) now injected via `@expose`
+- **`@expose` decorator** — plugin methods marked with `@expose` are automatically injected onto the `BrainBank` instance after initialization. Only unique plugin-specific methods use `@expose` (CRUD operations, not search/index)
+- **Plugin method injection** — `suggestCoEdits`, `fileHistory` (git), `addCollection`, `removeCollection`, `listCollections`, `indexDocs`, `addContext`, `removeContext`, `listContexts` (docs) now injected via `@expose`
 - **Package: `@brainbank/code`** — code indexer extracted as a separate npm package with tree-sitter as a peer dependency
 - **Package: `@brainbank/git`** — git history indexer extracted as a separate npm package with simple-git as a dependency
 - **Package: `@brainbank/docs`** — document collection indexer extracted as a separate npm package
@@ -41,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **All 19 tree-sitter grammars bundled** — moved from `optionalDependencies` to `dependencies`. No extra install needed for Go, Ruby, Rust, etc.
 - **Async grammar loading** — `tryGrammar` now supports ESM-only packages (e.g. `tree-sitter-css@0.25`) via `import()` fallback
 - **Graceful fallback for missing grammars** — files with unavailable grammars fall back to sliding window chunking instead of crashing the index
+- **Removed `CollectionPlugin` interface** — docs plugin now implements `SearchablePlugin` (for `search()`) and `IndexablePlugin` (for `index()`). `brain.searchDocs()` removed — use `(brain.plugin('docs') as any).search()` or `brain.hybridSearch()`. `brain.indexDocs()` still works via `@expose`
+- **`isCollectionPlugin()` → `isDocsPlugin()`** — simpler type guard for docs plugin detection
 
 ## [0.7.0] — 2026-03-27
 

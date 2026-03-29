@@ -156,7 +156,7 @@ export const tests = {
         assert.ok(result.docs, 'should have docs result');
         assert.equal(result.docs.indexed, 2);
 
-        const searchResults = await brain.searchDocs('authentication JWT');
+        const searchResults = await (brain.plugin('docs') as any).search('authentication JWT');
         assert.gt(searchResults.length, 0);
         assert.equal(searchResults[0].type, 'document');
 
@@ -400,7 +400,7 @@ export const tests = {
         assert.equal(result.test.indexed, 1);
 
         // Search should work through the per-plugin 32d embedding
-        const hits = await brain.searchDocs('per-plugin embedding');
+        const hits = await (brain.plugin('docs') as any).search('per-plugin embedding');
         assert.gt(hits.length, 0, 'should find results with per-plugin embedding');
 
         brain.close();

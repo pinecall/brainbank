@@ -11,7 +11,7 @@ import type { SearchStrategy } from '@/search/types.ts';
 import type { ContextBuilder } from '@/search/context-builder.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { PluginRegistry } from '@/bootstrap/registry.ts';
-import type { CollectionPlugin } from '@/indexers/base.ts';
+import type { SearchablePlugin } from '@/indexers/base.ts';
 import { isSearchable } from '@/indexers/base.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
@@ -23,7 +23,7 @@ export interface SearchAPIDeps {
     contextBuilder?: ContextBuilder;
     registry:        PluginRegistry;
     config:          ResolvedConfig;
-    getDocsPlugin(): CollectionPlugin | undefined;
+    getDocsPlugin(): SearchablePlugin | undefined;
     collection(name: string): Collection;
 }
 

@@ -28,7 +28,7 @@ export { memory } from './domain/memory/memory-plugin.ts';
 
 
 // Plugin types
-export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, CollectionPlugin } from './indexers/base.ts';
+export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin } from './indexers/base.ts';
 export { expose, getExposedMethods } from './indexers/base.ts';
 
 // Collections

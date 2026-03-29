@@ -125,8 +125,8 @@ tests['brain.search(): minScore filters low matches'] = async () => {
     assert.ok(all.length >= strict.length, 'high minScore fewer results');
 };
 
-tests['brain.searchDocs(): searches doc collections'] = async () => {
-    const results = await brain.searchDocs('authentication guide');
+tests['docs plugin search(): searches doc collections'] = async () => {
+    const results = await (brain.plugin('docs') as any).search('authentication guide');
 
     assert.ok(results.length > 0, 'found docs');
     assert.equal(results[0].type, 'document');

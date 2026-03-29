@@ -23,8 +23,8 @@ import { IndexAPI } from '@/api/index-api.ts';
 import { reembedAll } from '@/services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
-import type { Plugin, CollectionPlugin } from '@/indexers/base.ts';
-import { isCollectionPlugin, getExposedMethods } from '@/indexers/base.ts';
+import type { Plugin } from '@/indexers/base.ts';
+import { isSearchable, getExposedMethods } from '@/indexers/base.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
@@ -135,8 +135,8 @@ export class BrainBank extends EventEmitter {
             registry:   this._registry,
             config:     this._config,
             getDocsPlugin: () => {
-                const docs = this._registry.get('docs');
-                return docs && isCollectionPlugin(docs) ? docs : undefined;
+                const d = this._registry.get('docs');
+                return d && isSearchable(d) ? d : undefined;
             },
             collection: (n)    => this.collection(n),
         });
@@ -231,7 +231,6 @@ export class BrainBank extends EventEmitter {
         collections?: string[];
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
     }) => Promise<Record<string, { indexed: number; skipped: number; chunks: number }>>;
-    searchDocs!: (query: string, options?: { collection?: string; k?: number; minScore?: number; mode?: 'hybrid' | 'vector' | 'keyword' }) => Promise<SearchResult[]>;
     addContext!: (collection: string, path: string, context: string) => void;
     removeContext!: (collection: string, path: string) => void;
     listContexts!: () => { collection: string; path: string; context: string }[];

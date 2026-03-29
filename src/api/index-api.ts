@@ -7,7 +7,7 @@
 
 import type { PluginRegistry } from '@/bootstrap/registry.ts';
 import type { IndexResult, StageProgressCallback, ProgressCallback } from '@/types.ts';
-import { isIndexable, isCollectionPlugin } from '@/indexers/base.ts';
+import { isIndexable, isDocsPlugin } from '@/indexers/base.ts';
 
 export interface IndexAPIDeps {
     registry: PluginRegistry;
@@ -66,9 +66,9 @@ export class IndexAPI {
 
         if (want.has('docs') && this._d.registry.has('docs')) {
             const docsPlugin = this._d.registry.get('docs');
-            if (isCollectionPlugin(docsPlugin)) {
+            if (isDocsPlugin(docsPlugin)) {
                 options.onProgress?.('docs', 'Starting...');
-                result.docs = await docsPlugin.indexDocs({
+                result.docs = await (docsPlugin as any).indexDocs({
                     onProgress: (coll: string, file: string, cur: number, total: number) =>
                         options.onProgress?.('docs', `[${coll}] ${cur}/${total}: ${file}`),
                 });

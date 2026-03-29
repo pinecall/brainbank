@@ -144,7 +144,7 @@ tests['docs: indexes with per-plugin 256d embedding'] = async () => {
 };
 
 tests['docs: search works through per-plugin 256d embedding'] = async () => {
-    const hits = await brain.searchDocs('authentication setup');
+    const hits = await (brain.plugin('docs') as any).search('authentication setup');
 
     assert.ok(hits.length > 0, 'should find docs via 256d HNSW');
     assert.equal(hits[0].type, 'document');

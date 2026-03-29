@@ -108,19 +108,6 @@ export interface WatchablePlugin extends Plugin {
     watchPatterns(): string[];
 }
 
-/** Plugins that manage document collections. */
-export interface CollectionPlugin extends Plugin {
-    addCollection(collection: DocumentCollection): void;
-    removeCollection(name: string): void;
-    listCollections(): DocumentCollection[];
-    indexDocs(options?: any): Promise<any>;
-    searchDocs(query: string, options?: any): Promise<SearchResult[]>;
-    search(query: string, options?: any): Promise<SearchResult[]>;
-    addContext?(collection: string, path: string, context: string): void;
-    removeContext?(collection: string, path: string): void;
-    listContexts?(): any[];
-}
-
 // ── Type Guards ────────────────────────────────────
 
 /** Check if a plugin can scan/index content. */
@@ -140,8 +127,8 @@ export function isWatchable(i: Plugin): i is WatchablePlugin {
 }
 
 /** Check if a plugin manages document collections. */
-export function isCollectionPlugin(i: Plugin): i is CollectionPlugin {
-    return typeof (i as CollectionPlugin).addCollection === 'function'
-        && typeof (i as CollectionPlugin).listCollections === 'function';
+export function isDocsPlugin(i: Plugin): boolean {
+    return typeof (i as any).addCollection === 'function'
+        && typeof (i as any).listCollections === 'function';
 }
 

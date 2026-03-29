@@ -41,7 +41,12 @@ export async function cmdDocSearch(): Promise<void> {
 
     console.log(c.bold(`\n━━━ BrainBank Doc Search: "${query}" ━━━\n`));
 
-    const results = await brain.searchDocs(query, { collection: collection ?? undefined, k });
+    const docsPlugin = brain.plugin('docs');
+    if (!docsPlugin || typeof (docsPlugin as any).search !== 'function') {
+        console.log(c.red('Docs plugin not loaded. Add .use(docs()) to your BrainBank instance.'));
+        process.exit(1);
+    }
+    const results = await (docsPlugin as any).search(query, { collection: collection ?? undefined, k });
 
     if (results.length === 0) {
         console.log(c.yellow('  No results found.'));
