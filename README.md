@@ -19,6 +19,8 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
   - [`@brainbank/memory`](#memory) — fact extraction + entity graph
   - [`@brainbank/mcp`](#mcp-server) — MCP server for AI tools
 
+---
+
 <img src="assets/architecture.png" alt="BrainBank Architecture" width="600">
 
 ---
