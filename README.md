@@ -118,44 +118,30 @@ Extensions that connect BrainBank to external tools and workflows.
 
 ## Benchmarks
 
-Tested on a production NestJS backend (1,052 code chunks + git history):
+All benchmarks run with Perplexity Context embeddings (2560d) on Apple Silicon. Single SQLite file — no external vector DB.
 
-### Retrieval Quality
+| Benchmark | Corpus | Metric | Score |
+|-----------|--------|--------|:-----:|
+| [BEIR SciFact](https://github.com/beir-cellar/beir) | 5,183 scientific abstracts, 300 queries | NDCG@10 | **0.761** |
+| Custom RAG eval | 127 docs, 20 semantic queries | R@5 | **83%** |
 
-| Pipeline Stage | R@5 | Delta |
-|----------------|:---:|-------|
-| Vector-only (HNSW) | 57% | baseline |
-| + BM25 (RRF fusion) | 78% | **+21pp** |
-| + Qwen3 Reranker | 83% | **+5pp** |
+**Pipeline progression** — each stage's impact on the custom eval:
 
-> The hybrid pipeline improved R@5 by **+26pp over vector-only**, reducing misses from 6/20 to 1/20.
+| Stage | R@5 | Δ |
+|-------|:---:|---|
+| Vector-only (HNSW) | 57% | — |
+| + BM25 → RRF | 78% | +21pp |
+| + Qwen3 reranker | 83% | +5pp |
 
-### Performance
+**vs [QMD](https://github.com/tobi/qmd)** (fully local, embeddinggemma 768d) — same corpus, same 20 queries:
 
-| Provider | Dims | Index (1052 files) | Search | Cost |
-|----------|------|------------|--------|------|
-| **Local WASM** | 384 | 87s | **8ms** | Free |
-| **OpenAI** | 1536 | 106s | 202ms | $0.02/1M tok |
-| **Perplexity** | 2560 | **66s** ⚡ | 168ms | $0.02/1M tok |
-| **Perplexity Context** | 2560 | 78s | 135ms | $0.06/1M tok |
+| | BrainBank | QMD |
+|---|:---:|:---:|
+| R@5 | **83%** | 65% |
+| MRR | **0.57** | 0.45 |
+| Misses | **1/20** | 6/20 |
 
-### vs QMD
-
-| Metric | BrainBank | [QMD](https://github.com/tobi/qmd) |
-|--------|:---------:|:---:|
-| **R@5** | **83%** | 65% |
-| **MRR** | **0.57** | 0.45 |
-| **Misses** | **1/20** | 6/20 |
-
-> **TODO**: Additional benchmarks planned:
-> - [ ] BEIR full suite (MS MARCO, Natural Questions, HotpotQA)
-> - [ ] Large-scale stress test (50k+ files)
-> - [ ] Multi-repo indexing performance
-> - [ ] Memory usage profiling (RAM vs chunk count)
-> - [ ] Collection search latency at scale (10k+ items)
-> - [ ] Incremental re-index speed (% of changed files)
-
-See [Embeddings & Reranker](docs/embeddings.md) for full provider details and configuration.
+> Full methodology, per-category breakdowns, and reproduction commands → [docs/benchmarks.md](docs/benchmarks.md)
 
 ## Contributing
 
