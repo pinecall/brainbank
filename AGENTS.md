@@ -44,9 +44,9 @@ Layer 1 — Infrastructure (depends on Layer 0 only)
 
 Layer 2 — Domain (depends on Layers 0-1)
 ├── domain/          ← Core primitives: collection (KV store)
-├── indexers/
-│   ├── base.ts      ← Plugin + PluginContext interfaces (the plugin contract)
-│   └── languages.ts ← Language detection + file filtering utilities
+├── plugins/
+│   └── base.ts      ← Plugin + PluginContext interfaces (the plugin contract)
+├── lib/languages.ts ← Language detection + file filtering utilities
 └── services/        ← Reembed, watch
 
 Layer 3 — Application (depends on everything below)
@@ -70,16 +70,16 @@ packages/                ← All plugin implementations live here (NOT in src/)
 └── memory/          ← @brainbank/memory — Conversational memory
 ```
 
-> **CRITICAL:** Plugin implementations live ONLY in `packages/`. The core `src/indexers/` directory contains ONLY `base.ts` (Plugin interface) and `languages.ts` (file utilities). **Never add plugin logic to `src/indexers/`.**
+> **CRITICAL:** Plugin implementations live ONLY in `packages/`. The core `src/plugins/` directory contains ONLY `base.ts` (Plugin interface). `languages.ts` lives in `src/lib/`. **Never add plugin logic to `src/plugins/`.**
 
 ### Key Files
 - `src/brainbank.ts` — The main orchestrator. All public API lives here.
-- `src/plugins/base.ts` — The `Plugin` interface. Read this before writing any plugin.
+- `src/plugins/base.ts` — The `Plugin` + `PluginContext` interfaces. Read this before writing any plugin.
 - `src/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
 - `src/search/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `src/bootstrap/initializer.ts` — Two-phase system initialization (Initializer class).
-- `src/core/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
+- `src/api/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `src/cli/factory.ts` — CLI factory. Uses dynamic `import()` for `@brainbank/*` plugins.
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 

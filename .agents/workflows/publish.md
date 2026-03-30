@@ -160,10 +160,9 @@ Tell the user: "✅ Published `<package>@X.Y.Z` to npm."
 When publishing `all` or multiple packages, publish in dependency order:
 1. `brainbank` (core) — no deps on other packages
 2. `@brainbank/code` — depends on `brainbank`
-3. `@brainbank/code-grammars-all` — depends on `@brainbank/code`
-4. `@brainbank/git` — depends on `brainbank`
-5. `@brainbank/docs` — depends on `brainbank`
-6. `@brainbank/memory` — depends on `brainbank`
-7. `@brainbank/mcp` — depends on `brainbank`
+3. `@brainbank/git` — depends on `brainbank`
+4. `@brainbank/docs` — depends on `brainbank`
+5. `@brainbank/memory` — depends on `brainbank`
+6. `@brainbank/mcp` — depends on `brainbank`
 
 Bump and publish each one fully (steps 4-9) before moving to the next.

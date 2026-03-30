@@ -14,6 +14,8 @@ npm i -g brainbank
 npm i -g @brainbank/code
 ```
 
+> **⚠️ Peer dep conflict:** Some bundled `tree-sitter-*` grammars have overlapping peer dependency ranges on `tree-sitter`. If you hit an `ERESOLVE` error during install, use `npm i --force` or `npm i --legacy-peer-deps`.
+
 **Bundled grammars:** JavaScript, TypeScript (JSX/TSX), Python, and HTML ship with this package. For additional languages, install individual `tree-sitter-*` packages globally:
 
 ```bash
