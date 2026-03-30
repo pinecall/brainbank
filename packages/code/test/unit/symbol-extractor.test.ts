@@ -6,7 +6,7 @@
  */
 
 import { createRequire } from 'node:module';
-import { extractSymbols, extractCallRefs } from '../../../../src/indexers/code/symbol-extractor.ts';
+import { extractSymbols, extractCallRefs } from '../../src/symbol-extractor.ts';
 
 const require = createRequire(import.meta.url);
 

@@ -11,7 +11,6 @@ Run this when the user says `/publish` or asks to release a new version.
 The user will specify what to publish. Options:
 - **core** — `brainbank` (root package)
 - **code** — `@brainbank/code` (packages/code)
-- **grammars** — `@brainbank/code-grammars-all` (packages/code-grammars-all)
 - **git** — `@brainbank/git` (packages/git)
 - **docs** — `@brainbank/docs` (packages/docs)
 - **mcp** — `@brainbank/mcp` (packages/mcp)

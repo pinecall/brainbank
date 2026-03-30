@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-03-30
+
 ### Added
 - **Documentation refactor** — README.md rewritten as a concise landing page; all content moved to 13 focused `docs/` files (getting-started, cli, plugins, collections, search, custom-plugins, config, embeddings, multi-repo, mcp, memory, indexing, architecture). ARCHITECTURE.md moved to `docs/architecture.md`. CONTRIBUTING.md updated with current terminology and project structure
 - **Typed plugin accessors** — `brain.docs` and `brain.git` provide direct, type-safe access to built-in plugins without casting. Custom plugins use `brain.plugin<T>('name')` with generics
@@ -18,40 +20,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Plugin examples** — `examples/custom-plugin/` (notes plugin + quotes CLI plugin) and `examples/custom-package/` (CSV package scaffold) with full READMEs and sample data
 - **Custom plugin indexing** — `brain.index()` now calls `index()` on any registered `IndexablePlugin` beyond built-in code/git/docs
 - **Custom plugin search** — `brain.search()` and `brain.hybridSearch()` now call `search()` on any registered `SearchablePlugin` and fuse results via RRF
-- **New public exports** — `vecToBuffer`, `isIgnoredDir`, `isIgnoredFile`, `normalizeBM25`, `rerank`, `expose`, `getExposedMethods` now exported from `brainbank` for plugin authors
+- **New public exports** — `vecToBuffer`, `isIgnoredDir`, `isIgnoredFile`, `normalizeBM25`, `rerank` now exported from `brainbank` for plugin authors
 - **Code Graph: Import graph** — new `code_imports` table tracks file-level import relationships. Context builder shows `## Related Files (Import Graph)` section with importing/imported files
 - **Code Graph: Symbol index** — new `code_symbols` table extracts all function/class/method definitions with name, kind, and line number. Linked to chunk IDs for cross-referencing
 - **Code Graph: Call references** — new `code_refs` table tracks function calls within each chunk. Context builder annotates results with `calls:` and `called by:` info
 - **Enriched embedding text** — chunk embeddings now include import context and parent class name, improving semantic search relevance
 - **Import extractor** (`import-extractor.ts`) — regex-based, supports all 19 languages (JS/TS, Python, Go, Ruby, Rust, Java, C/C++, etc.)
 - **Symbol extractor** (`symbol-extractor.ts`) — AST-based extraction of symbols and call references using tree-sitter
+- **Benchmark suite** — professional retrieval quality and performance benchmarks restored in `test/benchmarks/` with documentation in `docs/benchmarks.md`
+- **Watch demo** — `examples/custom-plugin/` now includes `brain.watch()` usage example
 
 ### Changed
-- **tree-sitter deps moved to `optionalDependencies`** — reduces mandatory install size from ~950MB to ~60MB. Grammars are loaded on demand; missing ones fall back to sliding-window chunking
-- **Hybrid search: increased defaults** — `codeK` 6→20, `gitK` 5→8 for more candidate results
-- **CLI score filter** — `printResults` now filters results by score ≥ 70% (max 20), showing only high-quality matches
-- **CLI source filtering** — all search commands accept dynamic `--<source> <n>` flags (e.g. `--code 10 --git 0 --docs 5 --notes 3`). Replaces `--codeK`/`--gitK`/`--docsK`/`--collections` with a unified pattern that works with built-in sources and custom plugins
-- **Code ignore patterns** — `code({ ignore: ['sdk/**', 'vendor/**'] })` skips files matching glob patterns during indexing. Configurable via `code.ignore` in `.brainbank/config.json`, CLI `--ignore` flag, or programmatic API. MCP server reads config.json automatically. Uses `picomatch` for glob matching
-- **Interactive index scan** — `brainbank index` now scans the repo first, shows a summary tree (files by language, git commits, docs collections, config, DB), and prompts with interactive checkboxes to select modules. Auto-generates `.brainbank/config.json` from selections. Use `--yes` to skip prompts
-
-### Changed
-- **CLI plugin directory renamed** — `.brainbank/indexers/` → `.brainbank/plugins/` (matches the v0.6 Indexer→Plugin rename)
-- **Removed `notes` plugin** — `NoteStore` was a stripped-down `Collection` (same hybrid search, but no reranker/TTL/tags). Use `brain.collection('notes')` for equivalent functionality. Removed: `src/domain/notes/`, schema tables (`note_memories`, `note_vectors`, `fts_notes`), `brainbank/notes` subpath export
-- **Code indexer no longer indexes .md/.mdx files** — documents are handled exclusively by the docs plugin, avoiding duplication
-- **Schema version 5 → 6** — removed notes tables. Existing databases with notes data should re-create their DB
-- **All 19 tree-sitter grammars bundled** — moved from `optionalDependencies` to `dependencies`. No extra install needed for Go, Ruby, Rust, etc.
-- **Async grammar loading** — `tryGrammar` now supports ESM-only packages (e.g. `tree-sitter-css@0.25`) via `import()` fallback
-- **Graceful fallback for missing grammars** — files with unavailable grammars fall back to sliding window chunking instead of crashing the index
+- **Core decoupled from plugins** — deleted `src/indexers/code/`, `src/indexers/git/`, `src/indexers/docs/` from core. All plugin logic now lives exclusively in `packages/`. Core is framework-only
 - **Removed `@expose` decorator** — plugin methods are no longer injected onto `BrainBank` at runtime. Use `brain.docs.method()` or `brain.git.method()` for built-in plugins, `brain.plugin<T>('name').method()` for custom plugins
 - **Removed `CollectionPlugin` interface** — docs plugin now implements `SearchablePlugin` + `IndexablePlugin` directly
 - **`plugin()` returns `T | undefined`** — previously threw if plugin not found; now returns undefined for safe optional chaining
-- **Core decoupled from plugins** — deleted `src/indexers/code/`, `src/indexers/git/`, `src/indexers/docs/` from core. All plugin logic now lives exclusively in `packages/`. Core is framework-only
 - **Removed backward compat aliases** — `MultiIndexSearch`, `BM25Search` exports removed from barrel. Use `VectorSearch` and `KeywordSearch` directly
 - **Removed deprecated `builtins` config field** — use `plugins` instead in `.brainbank/config.json`
 - **Removed backward compat re-exports from `reembed.ts`** — import `setEmbeddingMeta`, `getEmbeddingMeta`, `detectProviderMismatch` from `services/embedding-meta.ts` directly
 - **Removed tree-sitter and simple-git from core** — `optionalDependencies` and subpath exports cleared. Install `@brainbank/code` for tree-sitter, `@brainbank/git` for simple-git
+- **Removed `notes` plugin** — `NoteStore` was a stripped-down `Collection` (same hybrid search, but no reranker/TTL/tags). Use `brain.collection('notes')` for equivalent functionality. Removed: `src/domain/notes/`, schema tables (`note_memories`, `note_vectors`, `fts_notes`), `brainbank/notes` subpath export
+- **Schema version 5 → 6** — removed notes tables. Existing databases with notes data should re-create their DB
+- **CLI plugin directory renamed** — `.brainbank/indexers/` → `.brainbank/plugins/` (matches the v0.6 Indexer→Plugin rename)
 - **CLI uses dynamic imports** — `src/cli/factory.ts` loads `@brainbank/*` plugins with `import()`. Missing plugins now print a warning instead of crashing
 - **`brain.docs` / `brain.git` return `Plugin | undefined`** — previously typed as concrete plugin classes, now duck-typed via the generic `Plugin` interface
+- **Directory structure reorganized** — `src/indexers/` renamed to `src/plugins/`, `languages.ts` moved to `src/lib/`
+- **tree-sitter deps moved to `optionalDependencies`** — reduces mandatory install size from ~950MB to ~60MB. Grammars are loaded on demand; missing ones fall back to sliding-window chunking
+- **Hybrid search: increased defaults** — `codeK` 6→20, `gitK` 5→8 for more candidate results
+- **CLI score filter** — `printResults` now filters results by score ≥ 70% (max 20), showing only high-quality matches
+- **CLI source filtering** — all search commands accept dynamic `--<source> <n>` flags (e.g. `--code 10 --git 0 --docs 5 --notes 3`). Replaces `--codeK`/`--gitK`/`--docsK`/`--collections` with a unified pattern that works with built-in sources and custom plugins
+- **Code ignore patterns** — `code({ ignore: ['sdk/**', 'vendor/**'] })` skips files matching glob patterns during indexing
+- **Interactive index scan** — `brainbank index` now scans the repo first, shows a summary tree, and prompts with interactive checkboxes to select modules
 
 ## [0.7.0] — 2026-03-27
 

@@ -4,7 +4,7 @@
  * Tests regex-based import extraction across all supported languages.
  */
 
-import { extractImports } from '../../../../src/indexers/code/import-extractor.ts';
+import { extractImports } from '../../src/import-extractor.ts';
 
 export const name = 'Import Extractor';
 
