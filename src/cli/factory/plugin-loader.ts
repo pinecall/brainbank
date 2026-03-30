@@ -7,7 +7,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import type { Plugin } from '@/plugins/base.ts';
+import type { Plugin } from '@/plugin.ts';
 import { c, getFlag } from '../utils.ts';
 
 const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];

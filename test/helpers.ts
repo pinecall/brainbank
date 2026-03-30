@@ -13,8 +13,8 @@ import { KeywordSearch } from '../src/search/keyword/keyword-search.ts';
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai-embedding.ts';
 import { PerplexityEmbedding, decodeBase64Int8 } from '../src/providers/embeddings/perplexity-embedding.ts';
 import { PerplexityContextEmbedding } from '../src/providers/embeddings/perplexity-context-embedding.ts';
-import { Collection } from '../src/domain/collection.ts';
-import { resolveConfig, DEFAULTS } from '../src/config/defaults.ts';
+import { Collection } from '../src/services/collection.ts';
+import { resolveConfig, DEFAULTS } from '../src/config.ts';
 import { SCHEMA_VERSION } from '../src/db/schema.ts';
 import { reciprocalRankFusion } from '../src/lib/rrf.ts';
 import { searchMMR } from '../src/search/vector/mmr.ts';
@@ -31,7 +31,7 @@ import {
 import { code } from '@brainbank/code';
 import { git } from '@brainbank/git';
 import { docs } from '@brainbank/docs';
-import { memory } from '../src/domain/memory/memory-plugin.ts';
+import { patterns, memory } from '@brainbank/memory';
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 
@@ -120,6 +120,7 @@ export {
     git,
     docs,
     memory,
+    patterns,
 
 };
 

@@ -7,8 +7,7 @@
  */
 
 import type { ContextOptions } from '@/types.ts';
-import type { SearchStrategy } from './types.ts';
-import type { Database } from '@/db/database.ts';
+import type { SearchStrategy, CodeGraphProvider } from './types.ts';
 import type { CoEditProvider } from './context/result-formatters.ts';
 import { formatCodeResults } from './context/code-formatter.ts';
 import { formatCodeGraph } from './context/graph-formatter.ts';
@@ -20,7 +19,7 @@ export class ContextBuilder {
     constructor(
         private _search: SearchStrategy,
         private _coEdits?: CoEditProvider,
-        private _db?: Database,
+        private _codeGraph?: CodeGraphProvider,
     ) {}
 
     /** Build a full context block for a task. Returns markdown for system prompt. */
@@ -39,8 +38,8 @@ export class ContextBuilder {
         const parts: string[] = [`# Context for: "${task}"\n`];
 
         const codeHits = results.filter(r => r.type === 'code').slice(0, codeResults);
-        formatCodeResults(codeHits, parts, this._db);
-        formatCodeGraph(codeHits, parts, this._db);
+        formatCodeResults(codeHits, parts, this._codeGraph);
+        formatCodeGraph(codeHits, parts, this._codeGraph);
         formatGitResults(results, gitResults, parts);
         formatCoEdits(affectedFiles, parts, this._coEdits);
         formatPatternResults(results, patternResults, parts);

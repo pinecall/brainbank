@@ -4,6 +4,9 @@ All notable changes to `@brainbank/docs` will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **HNSW persistence** — HNSW index now saved to disk via `createHnsw('doc')`, enabling fast `tryLoad()` on restart instead of rebuilding from SQLite
+
 ### Added
 - Initial release as a separate package
 - **`@expose` decorator** on all public methods — auto-injected onto BrainBank after `initialize()`

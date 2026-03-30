@@ -14,6 +14,27 @@ export interface SearchStrategy {
     rebuild?(): void;
 }
 
+/** Summary of a code chunk for import graph expansion. */
+export interface CodeChunkSummary {
+    filePath: string;
+    content: string;
+    name: string;
+    chunkType: string;
+    startLine: number;
+    endLine: number;
+    language: string;
+}
+
+/** Abstracts call-graph and import-graph queries used by ContextBuilder. */
+export interface CodeGraphProvider {
+    /** Get call/called-by info for a code chunk. */
+    getCallInfo(chunkId: number, symbolName?: string): { calls: string[]; calledBy: string[] } | null;
+    /** 2-hop import graph expansion from seed files. */
+    expandImportGraph(seedFiles: Set<string>): Set<string>;
+    /** Fetch the most informative chunk per file. */
+    fetchBestChunks(filePaths: string[]): CodeChunkSummary[];
+}
+
 export interface SearchOptions {
     /** Max code results. Default: 6 */
     codeK?: number;

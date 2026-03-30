@@ -3,7 +3,7 @@
  */
 
 import { c, args, getFlag, stripFlags } from '@/cli/utils.ts';
-import { createBrain } from '@/cli/factory.ts';
+import { createBrain } from '@/cli/factory/index.ts';
 
 export async function cmdKv(): Promise<void> {
     const pos = stripFlags(args);

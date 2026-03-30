@@ -6,16 +6,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+- **Private HNSW persistence** — `createHnsw()` now registers indexes for disk persistence via `saveAllHnsw()`. DocsPlugin and patterns plugin HNSW indexes are saved to disk, enabling fast `tryLoad()` on subsequent startups instead of rebuilding from SQLite
+
 ### Added
+- **`CodeGraphProvider` interface** (`src/search/types.ts`) — abstracts call graph and import graph queries. `SqlCodeGraphProvider` encapsulates all `code_refs`/`code_imports`/`code_chunks` SQL queries, decoupling `ContextBuilder` from the DB schema
 - **`PLUGIN` / `HNSW` constants** (`src/constants.ts`) — single source of truth for plugin type names and HNSW index keys. Exported from `brainbank` barrel
 - **`HnswPlugin` / `CoEditPlugin` interfaces** — typed capability interfaces for plugins that expose HNSW indexes or co-edit suggestions, with `isHnswPlugin()` / `isCoEditPlugin()` type guards
+- **§20 Testing Strategy** in `docs/architecture.md` — documents test infrastructure, unit/integration test coverage, and commands
+- **§21 Concurrency & WAL Strategy** in `docs/architecture.md` — documents WAL model, single-writer design, known limitations, and scaling path
+- **`docs/architecture.md` fully updated** for Phases 1-4 — reflects `KVService`, `CompositeVectorSearch` (domain split), `FTSMaintenance`, `DocumentFormatter`, `SearchLayerBuilder`, and `@brainbank/memory` patterns consolidation across all 21 sections
+- **Retrieval quality gate** (`test/integration/quality/retrieval-quality.test.ts`) — self-contained regression test with synthetic corpus, 6 golden queries, recall@5/MRR metrics, and threshold assertions. Runs with hash embeddings (~0.2s, no model download)
 
 ### Changed
+- **Adaptive Collection over-fetch** — `Collection._searchVector()` now uses density-based multiplier (ratio of total HNSW size to collection count, clamped [3, 50]) instead of hardcoded `k * 10`
+- **ContextBuilder decoupled from SQL** — `code-formatter.ts` and `graph-formatter.ts` now accept `CodeGraphProvider` interface instead of raw `Database`. SQL queries centralized in `SqlCodeGraphProvider`
+- **SearchAPI decomposed** — extracted `ResultCollector` (`src/engine/result-collector.ts`) for docs/custom-plugin/KV gathering. SearchAPI is now a thin pipeline orchestrator: collect → fuse → rerank
+- **Pattern learning moved to `@brainbank/memory`** — `PatternStore`, `Consolidator`, `PatternDistiller`, and patterns plugin moved from `src/services/memory/` to `packages/memory/src/`. Factory renamed `patterns()` (`memory()` kept as deprecated alias). Removes AGENTS.md violation and naming confusion with `@brainbank/memory`
+- **KVService extracted** — `_kvHnsw`, `_kvVecs`, `_collections` moved from `brainbank.ts` to `src/services/kv-service.ts`. BrainBank delegates `collection()`, `listCollectionNames()`, `deleteCollection()`
+- **FTSMaintenance extracted** — `KeywordSearch.rebuild()` delegates to `src/db/fts-maintenance.ts`
+- **DocumentFormatter extracted** — `SearchAPI.getContext()` doc formatting moved to `src/search/context/document-formatter.ts`
+- **VectorSearch domain split** — monolithic `VectorSearch` replaced by `CodeVectorSearch`, `GitVectorSearch`, `PatternVectorSearch`, composed by `CompositeVectorSearch`. Each domain is independently testable
+- **SearchLayerBuilder extracted** — `Initializer._buildSearchLayer()` (35 lines of inline construction) replaced by `bootstrap/search-layer-builder.ts`. Initializer no longer knows about search internals
 - **Removed `as any` casts** — `initializer.ts` and `brainbank.ts` now use typed `isHnswPlugin` / `isCoEditPlugin` type guards instead of `as any` for plugin access
+- **Flattened singletons** — `config/defaults.ts` → `config.ts`, `plugins/base.ts` → `plugin.ts`
+- **Renamed `core/` → `engine/`** — `search-api.ts` and `index-api.ts` live under `engine/`
+- **Merged `domain/` → `services/`** — `collection.ts` and `memory/` consolidated into `services/`
 - **Split `context-builder.ts`** (375 → 50 lines) — formatting logic extracted to `src/search/context/` with 4 focused modules: `code-formatter.ts`, `graph-formatter.ts`, `result-formatters.ts`, `import-graph.ts`
 - **Split `factory.ts`** (376 → 46 lines) — config loading, plugin discovery, provider setup, and builtin registration extracted to `src/cli/factory/` with 4 focused modules
+- **Split `commands/system.ts`** — into 5 focused files: `stats.ts`, `reembed.ts`, `watch.ts`, `serve.ts`, `help.ts`
+- **Renamed `index-cmd.ts` → `index.ts`** — aligns with command naming convention
 
-## [0.8.0] — 2026-03-30
+## [0.8.0] — 2026-03-30 [UNRELEASED <- CHANGE THIS BEFORE>]
 
 ### Added
 - **Documentation refactor** — README.md rewritten as a concise landing page; all content moved to 13 focused `docs/` files (getting-started, cli, plugins, collections, search, custom-plugins, config, embeddings, multi-repo, mcp, memory, indexing, architecture). ARCHITECTURE.md moved to `docs/architecture.md`. CONTRIBUTING.md updated with current terminology and project structure

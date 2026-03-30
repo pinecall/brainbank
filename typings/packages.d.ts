@@ -178,4 +178,37 @@ declare module '@brainbank/memory' {
         relationCount(): number;
         buildContext(entityName?: string): string;
     }
+
+    // Pattern learning
+    export interface PatternStoreDeps {
+        db: any;
+        hnsw: any;
+        vectorCache: Map<number, Float32Array>;
+        embedding: any;
+    }
+
+    export class PatternStore {
+        constructor(deps: PatternStoreDeps);
+        learn(pattern: any): Promise<number>;
+        search(query: string, k?: number, minSuccess?: number): Promise<any[]>;
+        getByTaskType(taskType: string, limit?: number): any[];
+        readonly count: number;
+    }
+
+    export class Consolidator {
+        constructor(db: any, vectorCache: Map<number, Float32Array>);
+        prune(maxAgeDays?: number, minSuccess?: number): number;
+        dedup(threshold?: number): number;
+        consolidate(): { pruned: number; deduped: number };
+    }
+
+    export class PatternDistiller {
+        constructor(db: any);
+        distill(taskType: string, topK?: number): any | null;
+        get(taskType: string): any | null;
+        list(): any[];
+    }
+
+    export function patterns(): any;
+    export function memory(): any;
 }

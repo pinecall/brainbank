@@ -13,11 +13,11 @@
  *     .use(code({ repoPath: '.' }));
  */
 
-import type { Database } from '@/db/database.ts';
-import type { EmbeddingProvider, SearchResult } from '@/types.ts';
-import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { ResolvedConfig, DocumentCollection } from '@/types.ts';
-import type { Collection } from '@/domain/collection.ts';
+import type { Database } from './db/database.ts';
+import type { EmbeddingProvider, SearchResult } from './types.ts';
+import type { HNSWIndex } from './providers/vector/hnsw-index.ts';
+import type { ResolvedConfig, DocumentCollection } from './types.ts';
+import type { Collection } from './services/collection.ts';
 
 // ── Plugin Context ────────────────────────────────
 // Provided to each plugin during initialization.
@@ -29,8 +29,8 @@ export interface PluginContext {
     embedding: EmbeddingProvider;
     /** Resolved BrainBank config. */
     config: ResolvedConfig;
-    /** Create and initialize an HNSW index. Optionally override dims for per-plugin embeddings. */
-    createHnsw(maxElements?: number, dims?: number): Promise<HNSWIndex>;
+    /** Create and initialize an HNSW index. Pass `name` to enable disk persistence (recommended). */
+    createHnsw(maxElements?: number, dims?: number, name?: string): Promise<HNSWIndex>;
     /** Load existing vectors from a SQLite vectors table into an HNSW index + cache. */
     loadVectors(table: string, idCol: string, hnsw: HNSWIndex, cache: Map<number, Float32Array>): void;
     /** Get or create a shared HNSW index by type (e.g. 'code', 'git'). Optionally override dims for per-plugin embeddings. */

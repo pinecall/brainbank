@@ -11,8 +11,8 @@ import * as os from 'node:os';
 import { BrainBank } from '../../../src/brainbank.ts';
 import { docs } from '@brainbank/docs';
 import type { EmbeddingProvider } from '../../../src/types.ts';
-import type { ProjectConfig } from '../../../src/cli/factory.ts';
-import { registerConfigCollections } from '../../../src/cli/factory.ts';
+import type { ProjectConfig } from '../../../src/cli/factory/index.ts';
+import { registerConfigCollections } from '../../../src/cli/factory/index.ts';
 
 export const name = 'Project Config';
 

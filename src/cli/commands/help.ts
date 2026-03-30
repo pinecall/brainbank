@@ -1,0 +1,64 @@
+/** brainbank help — Show CLI usage. */
+
+import { c } from '@/cli/utils.ts';
+
+export function showHelp(): void {
+    console.log(c.bold('\n━━━ BrainBank — Semantic Knowledge Bank ━━━\n'));
+    console.log(c.bold('Indexing:'));
+    console.log(`  ${c.cyan('index')} [path]                      Index code + git history`);
+    console.log(`  ${c.cyan('collection add')} <path> --name      Add a document collection`);
+    console.log(`  ${c.cyan('collection list')}                    List collections`);
+    console.log(`  ${c.cyan('collection remove')} <name>           Remove a collection`);
+    console.log(`  ${c.cyan('docs')} [--collection <name>]         Index document collections`);
+    console.log('');
+    console.log(c.bold('Search:'));
+    console.log(`  ${c.cyan('search')} <query>                     Semantic search (vector)`);
+    console.log(`  ${c.cyan('hsearch')} <query>                    Hybrid search (${c.bold('best quality')})`);
+    console.log(`  ${c.cyan('ksearch')} <query>                    Keyword search (BM25, instant)`);
+    console.log(`  ${c.cyan('dsearch')} <query>                    Document search`);
+    console.log(c.dim('    All search commands accept --<source> <n> to filter by source'));
+    console.log('');
+    console.log(c.bold('Context:'));
+    console.log(`  ${c.cyan('context')} <task>                     Get formatted context for a task`);
+    console.log(`  ${c.cyan('context add')} <col> <path> <desc>    Add context metadata`);
+    console.log(`  ${c.cyan('context list')}                       List all context metadata`);
+    console.log('');
+    console.log(c.bold('KV Store:'));
+    console.log(`  ${c.cyan('kv add')} <coll> <content>            Add item to a collection`);
+    console.log(`  ${c.cyan('kv search')} <coll> <query>           Search a collection`);
+    console.log(`  ${c.cyan('kv list')} [coll]                     List collections or items`);
+    console.log(`  ${c.cyan('kv trim')} <coll> --keep <n>          Keep only N most recent`);
+    console.log(`  ${c.cyan('kv clear')} <coll>                    Clear all items`);
+    console.log('');
+    console.log(c.bold('Utility:'));
+    console.log(`  ${c.cyan('stats')}                              Show index statistics`);
+    console.log(`  ${c.cyan('reembed')}                            Re-embed all vectors`);
+    console.log(`  ${c.cyan('watch')}                              Watch files, auto-re-index`);
+    console.log(`  ${c.cyan('serve')}                              Start MCP server (stdio)`);
+    console.log('');
+    console.log(c.bold('Options:'));
+    console.log(`  ${c.dim('--repo <path>')}           Repository path (default: .)`);
+    console.log(`  ${c.dim('--force')}                 Force re-index all files`);
+    console.log(`  ${c.dim('--depth <n>')}             Git history depth (default: 500)`);
+    console.log(`  ${c.dim('--collection <name>')}     Filter by collection`);
+    console.log(`  ${c.dim('--pattern <glob>')}        Collection glob (default: **/*.md)`);
+    console.log(`  ${c.dim('--context <desc>')}        Context description`);
+    console.log(`  ${c.dim('--<source> <n>')}          Source filter: max results from <source> (0 = skip)`);
+    console.log(`  ${c.dim('--ignore <globs>')}        Ignore glob patterns for code indexing (comma-separated)`);
+    console.log(`  ${c.dim('--yes / -y')}              Skip interactive prompt (auto-select all available)`);
+    console.log(`  ${c.dim('--reranker <name>')}       Reranker to use (qwen3)`);
+    console.log('');
+    console.log(c.bold('Examples:'));
+    console.log(c.dim('  brainbank index .'));
+    console.log(c.dim('  brainbank index . --ignore "sdk/**,vendor/**"'));
+    console.log(c.dim('  brainbank kv add errors "Fixed null pointer in api.ts"'));
+    console.log(c.dim('  brainbank kv search errors "null pointer"'));
+    console.log(c.dim('  brainbank kv list'));
+    console.log(c.dim('  brainbank hsearch "authentication middleware"'));
+    console.log(c.dim('  brainbank hsearch "auth" --code 0 --git 10           # git only'));
+    console.log(c.dim('  brainbank search "handler" --git 0                   # code only'));
+    console.log(c.dim('  brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only'));
+    console.log(c.dim('  brainbank hsearch "bug" --notes 5 --git 3            # custom plugin'));
+    console.log(c.dim('  brainbank context "add rate limiting to the API"'));
+    console.log(c.dim('  brainbank serve'));
+}

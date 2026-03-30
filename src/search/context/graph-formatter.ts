@@ -2,19 +2,18 @@
  * BrainBank — Graph Formatter
  *
  * Formats import graph expansion results: discovers related files
- * via 2-hop traversal and renders their best code chunks.
+ * via CodeGraphProvider and renders their best code chunks.
  */
 
 import type { SearchResult } from '@/types.ts';
-import type { Database } from '@/db/database.ts';
-import { expandViaImportGraph, fetchBestChunks } from './import-graph.ts';
+import type { CodeGraphProvider } from '../types.ts';
 
 /** Format import graph expansion results with code chunks. */
-export function formatCodeGraph(codeHits: SearchResult[], parts: string[], db?: Database): void {
-    if (!db || codeHits.length === 0) return;
+export function formatCodeGraph(codeHits: SearchResult[], parts: string[], codeGraph?: CodeGraphProvider): void {
+    if (!codeGraph || codeHits.length === 0) return;
 
     const hitFiles = new Set(codeHits.map(r => r.filePath).filter(Boolean) as string[]);
-    const graphFiles = expandViaImportGraph(db, hitFiles);
+    const graphFiles = codeGraph.expandImportGraph(hitFiles);
 
     if (graphFiles.size === 0) return;
 
@@ -27,7 +26,7 @@ export function formatCodeGraph(codeHits: SearchResult[], parts: string[], db?: 
         return aLocal - bLocal;
     });
 
-    const expanded = fetchBestChunks(db, sorted);
+    const expanded = codeGraph.fetchBestChunks(sorted);
     if (expanded.length === 0) return;
 
     parts.push('## Related Code (Import Graph)\n');

@@ -34,8 +34,8 @@ Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node.
 ```
 Layer 0 — Foundation (no deps, imported by everyone)
 ├── types.ts         ← All shared types and interfaces
+├── config.ts        ← Defaults + resolver (flattened from config/)
 ├── lib/             ← Pure functions: math, rrf, fts
-├── config/          ← Defaults, resolver
 └── db/              ← SQLite schema, database wrapper
 
 Layer 1 — Infrastructure (depends on Layer 0 only)
@@ -43,18 +43,16 @@ Layer 1 — Infrastructure (depends on Layer 0 only)
 └── search/          ← SearchStrategy implementations: vector/, keyword/, context/
 
 Layer 2 — Domain (depends on Layers 0-1)
-├── domain/          ← Core primitives: collection (KV store)
-├── plugins/
-│   └── base.ts      ← Plugin + PluginContext interfaces (the plugin contract)
-├── lib/languages.ts ← Language detection + file filtering utilities
-└── services/        ← Reembed, watch
+├── plugin.ts        ← Plugin + PluginContext + capability interfaces (flattened from plugins/)
+├── services/        ← Collection, reembed, watch, memory/
+└── lib/languages.ts ← Language detection + file filtering utilities
 
 Layer 3 — Application (depends on everything below)
-├── brainbank.ts     ← The main orchestrator, sole root-level file
+├── brainbank.ts     ← The main orchestrator
 ├── constants.ts     ← PLUGIN / HNSW typed constants
 ├── bootstrap/       ← System wiring: initializer, registry
-├── core/            ← Use cases: search-api, index-api
-└── cli/             ← CLI commands and factory/ (dynamic plugin loading)
+├── engine/          ← Use cases: search-api, index-api
+└── cli/             ← CLI commands/ and factory/ (dynamic plugin loading)
 ```
 
 ```
@@ -71,17 +69,19 @@ packages/                ← All plugin implementations live here (NOT in src/)
 └── memory/          ← @brainbank/memory — Conversational memory
 ```
 
-> **CRITICAL:** Plugin implementations live ONLY in `packages/`. The core `src/plugins/` directory contains ONLY `base.ts` (Plugin interface). `languages.ts` lives in `src/lib/`. **Never add plugin logic to `src/plugins/`.**
+> **CRITICAL:** Plugin implementations live ONLY in `packages/`. The core `src/plugin.ts` defines the `Plugin` interface. `languages.ts` lives in `src/lib/`. **Never add plugin logic to `src/`.**
 
 ### Key Files
 - `src/brainbank.ts` — The main orchestrator. All public API lives here.
-- `src/plugins/base.ts` — The `Plugin` + `PluginContext` interfaces. Read this before writing any plugin.
-- `src/domain/collection.ts` — Universal KV store with hybrid search. Core primitive.
-- `src/search/context-builder.ts` — Builds formatted context blocks from search results.
+- `src/plugin.ts` — `Plugin` + `PluginContext` + capability interfaces (`HnswPlugin`, `CoEditPlugin`).
+- `src/constants.ts` — `PLUGIN` / `HNSW` typed constants. Single source of truth for string keys.
+- `src/services/collection.ts` — Universal KV store with hybrid search. Core primitive.
+- `src/search/context-builder.ts` — Builds formatted context blocks (delegates to `context/` formatters).
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `src/bootstrap/initializer.ts` — Two-phase system initialization (Initializer class).
-- `src/core/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
-- `src/cli/factory.ts` — CLI factory. Uses dynamic `import()` for `@brainbank/*` plugins.
+- `src/engine/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
+- `src/cli/factory/index.ts` — CLI factory (delegates to config-loader, plugin-loader, provider-setup, builtin-registration).
+- `scripts/lint-imports.mjs` — Lint script: detects `@/` imports that should be `./` (same-directory).
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
 ## Code Conventions

@@ -1,14 +1,14 @@
 /**
- * BrainBank — Consolidator
- * 
- * Maintenance operations for the agent memory:
+ * @brainbank/memory — Consolidator
+ *
+ * Maintenance operations for agent pattern memory:
  *   - prune: remove old failed patterns
  *   - dedup: merge near-duplicate patterns (cosine > 0.95)
  *   - consolidate: run both
  */
 
-import type { Database } from '@/db/database.ts';
-import { cosineSimilarity } from '@/lib/math.ts';
+import type { Database } from 'brainbank';
+import { cosineSimilarity } from 'brainbank';
 
 export class Consolidator {
     constructor(
@@ -16,10 +16,7 @@ export class Consolidator {
         private _vectorCache: Map<number, Float32Array>,
     ) {}
 
-    /**
-     * Remove old failed patterns.
-     * Criteria: success_rate < 0.3 AND created > 90 days ago.
-     */
+    /** Remove old failed patterns. Criteria: success_rate < 0.3 AND created > 90 days ago. */
     prune(maxAgeDays: number = 90, minSuccess: number = 0.3): number {
         const cutoff = Math.floor(Date.now() / 1000) - maxAgeDays * 86400;
         const result = this._db.prepare(
@@ -28,11 +25,7 @@ export class Consolidator {
         return result.changes;
     }
 
-    /**
-     * Merge near-duplicate patterns.
-     * Keeps the one with higher success_rate.
-     * Threshold: cosine similarity > 0.95.
-     */
+    /** Merge near-duplicate patterns. Keeps the one with higher success_rate. */
     dedup(threshold: number = 0.95): number {
         const entries = Array.from(this._vectorCache.entries());
         const toDelete = new Set<number>();
@@ -45,7 +38,6 @@ export class Consolidator {
 
                 const sim = cosineSimilarity(entries[i][1], entries[j][1]);
                 if (sim > threshold) {
-                    // Keep the one with higher success rate
                     const pi = this._db.prepare(
                         'SELECT success_rate FROM memory_patterns WHERE id = ?'
                     ).get(entries[i][0]) as any;
@@ -70,7 +62,6 @@ export class Consolidator {
                 `DELETE FROM memory_patterns WHERE id IN (${placeholders})`
             ).run(...ids);
 
-            // Clean vector cache
             for (const id of ids) {
                 this._vectorCache.delete(id);
             }
@@ -79,9 +70,7 @@ export class Consolidator {
         return toDelete.size;
     }
 
-    /**
-     * Run full consolidation: prune + dedup.
-     */
+    /** Run full consolidation: prune + dedup. */
     consolidate(): { pruned: number; deduped: number } {
         const pruned = this.prune();
         const deduped = this.dedup();

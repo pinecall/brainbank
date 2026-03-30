@@ -5,10 +5,10 @@
  */
 
 import type { SearchResult } from '@/types.ts';
-import type { Database } from '@/db/database.ts';
+import type { CodeGraphProvider } from '../types.ts';
 
 /** Format code search results grouped by file with call graph info. */
-export function formatCodeResults(codeHits: SearchResult[], parts: string[], db?: Database): void {
+export function formatCodeResults(codeHits: SearchResult[], parts: string[], codeGraph?: CodeGraphProvider): void {
     if (codeHits.length === 0) return;
 
     parts.push('## Relevant Code\n');
@@ -28,7 +28,7 @@ export function formatCodeResults(codeHits: SearchResult[], parts: string[], db?
                 ? `${m.chunkType} \`${m.name}\` (L${m.startLine}-${m.endLine})`
                 : `L${m.startLine}-${m.endLine}`;
 
-            const callInfo = db ? getCallInfo(c, db) : null;
+            const callInfo = codeGraph ? getCallAnnotation(c, codeGraph) : null;
             const annotation = callInfo ? ` ${callInfo}` : '';
 
             parts.push(`**${label}** — ${Math.round(c.score * 100)}% match${annotation}`);
@@ -39,29 +39,18 @@ export function formatCodeResults(codeHits: SearchResult[], parts: string[], db?
     }
 }
 
-/** Get call graph info for a single search result. */
-function getCallInfo(result: SearchResult, db: Database): string | null {
+/** Get call graph annotation string for a single search result. */
+function getCallAnnotation(result: SearchResult, codeGraph: CodeGraphProvider): string | null {
     const chunkId = (result.metadata as Record<string, any>)?.id;
     if (!chunkId) return null;
 
-    try {
-        const calls = db.prepare(
-            'SELECT DISTINCT symbol_name FROM code_refs WHERE chunk_id = ? LIMIT 5'
-        ).all(chunkId) as { symbol_name: string }[];
+    const name = (result.metadata as Record<string, any>)?.name;
+    const info = codeGraph.getCallInfo(chunkId, name);
+    if (!info) return null;
 
-        const name = (result.metadata as Record<string, any>)?.name;
-        const callers = name ? db.prepare(
-            `SELECT DISTINCT cc.file_path, cc.name FROM code_refs cr
-             JOIN code_chunks cc ON cc.id = cr.chunk_id
-             WHERE cr.symbol_name = ? LIMIT 5`
-        ).all(name) as { file_path: string; name: string }[] : [];
+    const infoParts: string[] = [];
+    if (info.calls.length > 0) infoParts.push(`calls: ${info.calls.join(', ')}`);
+    if (info.calledBy.length > 0) infoParts.push(`called by: ${info.calledBy.join(', ')}`);
 
-        const infoParts: string[] = [];
-        if (calls.length > 0) infoParts.push(`calls: ${calls.map(c => c.symbol_name).join(', ')}`);
-        if (callers.length > 0) infoParts.push(`called by: ${callers.map(c => c.name || c.file_path).join(', ')}`);
-
-        return infoParts.length > 0 ? `*(${infoParts.join(' | ')})*` : null;
-    } catch {
-        return null;
-    }
+    return infoParts.length > 0 ? `*(${infoParts.join(' | ')})*` : null;
 }

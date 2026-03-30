@@ -294,8 +294,8 @@ export class Collection {
         if (this._hnsw.size === 0) return [];
 
         const queryVec = await this._embedding.embed(query);
-        // Over-fetch from shared HNSW to compensate for cross-collection filtering
-        const searchK = Math.min(k * 10, this._hnsw.size);
+        // Adaptive over-fetch: proportional to total/collection density, clamped [3, 50]
+        const searchK = this._adaptiveSearchK(k);
         const hits = this._hnsw.search(queryVec, searchK);
 
         const ids = hits.map(h => h.id);
@@ -313,6 +313,17 @@ export class Collection {
             .filter(r => r.score >= minScore)
             .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
             .slice(0, k);
+    }
+
+    /** Compute adaptive over-fetch multiplier based on collection density in shared HNSW. */
+    private _adaptiveSearchK(k: number): number {
+        const totalSize = this._hnsw.size;
+        if (totalSize === 0) return 0;
+        const collectionCount = this.count();
+        if (collectionCount === 0) return Math.min(k * 3, totalSize);
+        const ratio = Math.ceil(totalSize / collectionCount);
+        const multiplier = Math.max(3, Math.min(ratio, 50));
+        return Math.min(k * multiplier, totalSize);
     }
 
     private _searchBM25(query: string, k: number, minScore: number): CollectionItem[] {

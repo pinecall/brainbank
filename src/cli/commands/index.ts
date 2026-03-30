@@ -8,7 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { c, args, getFlag, hasFlag } from '@/cli/utils.ts';
-import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory.ts';
+import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory/index.ts';
 import { scanRepo, type ScanResult } from './scan.ts';
 
 export async function cmdIndex(): Promise<void> {

@@ -7,13 +7,17 @@
  */
 
 import { args, c } from './utils.ts';
-import { cmdIndex } from './commands/index-cmd.ts';
+import { cmdIndex } from './commands/index.ts';
 import { cmdCollection } from './commands/collection.ts';
 import { cmdKv } from './commands/kv.ts';
 import { cmdDocs, cmdDocSearch } from './commands/docs.ts';
 import { cmdSearch, cmdHybridSearch, cmdKeywordSearch } from './commands/search.ts';
 import { cmdContext } from './commands/context.ts';
-import { cmdStats, cmdReembed, cmdWatch, cmdServe, showHelp } from './commands/system.ts';
+import { cmdStats } from './commands/stats.ts';
+import { cmdReembed } from './commands/reembed.ts';
+import { cmdWatch } from './commands/watch.ts';
+import { cmdServe } from './commands/serve.ts';
+import { showHelp } from './commands/help.ts';
 
 const command = args[0];
 

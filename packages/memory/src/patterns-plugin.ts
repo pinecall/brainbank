@@ -1,22 +1,19 @@
 /**
- * BrainBank — Memory Plugin
- * 
+ * @brainbank/memory — Patterns Plugin
+ *
  * Agent learns from completed tasks — stores patterns,
  * consolidates failures, distills strategies.
- * 
- *   import { memory } from 'brainbank/memory';
- *   brain.use(memory());
+ *
+ *   import { patterns } from '@brainbank/memory';
+ *   brain.use(patterns());
  */
 
-import type { Plugin, PluginContext } from '@/plugins/base.ts';
-import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { Database } from '@/db/database.ts';
-import { PatternStore } from './pattern-store.ts';
-import { Consolidator } from './consolidator.ts';
-import { PatternDistiller } from './pattern-distiller.ts';
-import type { LearningPattern, DistilledStrategy } from '@/types.ts';
+import type { Plugin, PluginContext, HNSWIndex, Database, LearningPattern, DistilledStrategy } from 'brainbank';
+import { PatternStore } from './pattern-store.js';
+import { Consolidator } from './consolidator.js';
+import { PatternDistiller } from './pattern-distiller.js';
 
-class MemoryPlugin implements Plugin {
+class PatternsPlugin implements Plugin {
     readonly name = 'memory';
     hnsw!: HNSWIndex;
     patternStore!: PatternStore;
@@ -27,7 +24,7 @@ class MemoryPlugin implements Plugin {
 
     async initialize(ctx: PluginContext): Promise<void> {
         this._db = ctx.db;
-        this.hnsw = await ctx.createHnsw(100_000);
+        this.hnsw = await ctx.createHnsw(100_000, undefined, 'memory');
         ctx.loadVectors('memory_vectors', 'pattern_id', this.hnsw, this.vecCache);
 
         this.patternStore = new PatternStore({
@@ -45,7 +42,6 @@ class MemoryPlugin implements Plugin {
     async learn(pattern: LearningPattern): Promise<number> {
         const id = await this.patternStore.learn(pattern);
 
-        // Auto-consolidate every 50 patterns (guard against count=0)
         if (this.patternStore.count > 0 && this.patternStore.count % 50 === 0) {
             this.consolidator.consolidate();
         }
@@ -77,7 +73,12 @@ class MemoryPlugin implements Plugin {
     }
 }
 
-/** Create an agent memory plugin. */
-export function memory(): Plugin {
-    return new MemoryPlugin();
+/** Create a pattern learning plugin (registers as 'memory'). */
+export function patterns(): Plugin {
+    return new PatternsPlugin();
 }
+
+/**
+ * @deprecated Use `patterns()` instead. Alias kept for backwards compatibility.
+ */
+export const memory = patterns;

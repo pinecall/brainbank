@@ -12,43 +12,40 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { resolveConfig } from '@/config/defaults.ts';
-import { Database } from '@/db/database.ts';
-import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import { Collection } from '@/domain/collection.ts';
-import { PluginRegistry } from '@/bootstrap/registry.ts';
-import { Initializer } from '@/bootstrap/initializer.ts';
-import { SearchAPI } from '@/core/search-api.ts';
-import { IndexAPI } from '@/core/index-api.ts';
-import { reembedAll } from '@/services/reembed.ts';
-import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
-import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
-import type { Plugin } from '@/plugins/base.ts';
-import { isSearchable, isHnswPlugin } from '@/plugins/base.ts';
-import { PLUGIN, HNSW } from '@/constants.ts';
+import { resolveConfig } from './config.ts';
+import { Database } from './db/database.ts';
+import { HNSWIndex } from './providers/vector/hnsw-index.ts';
+import { KVService } from './services/kv-service.ts';
+import type { Collection } from './services/collection.ts';
+import { PluginRegistry } from './bootstrap/registry.ts';
+import { Initializer } from './bootstrap/initializer.ts';
+import { SearchAPI } from './engine/search-api.ts';
+import { IndexAPI } from './engine/index-api.ts';
+import { reembedAll } from './services/reembed.ts';
+import { createWatcher, type WatchOptions, type Watcher } from './services/watch.ts';
+import type { ReembedResult, ReembedOptions } from './services/reembed.ts';
+import type { Plugin } from './plugin.ts';
+import { isSearchable, isHnswPlugin } from './plugin.ts';
+import { PLUGIN, HNSW } from './constants.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
     ContextOptions, CoEditSuggestion, ProgressCallback, StageProgressCallback,
     DocumentCollection,
-} from '@/types.ts';
+} from './types.ts';
 
 export class BrainBank extends EventEmitter {
     // ── State ───────────────────────────────────────
     private _config: ResolvedConfig;
     private _db!: Database;
     private _embedding!: EmbeddingProvider;
-    private _registry   = new PluginRegistry();
+    private _registry = new PluginRegistry();
     private _searchAPI?: SearchAPI;
-    private _indexAPI?:  IndexAPI;
-    private _initialized  = false;
+    private _indexAPI?: IndexAPI;
+    private _kvService?: KVService;
+    private _initialized = false;
     private _initPromise: Promise<void> | null = null;
     private _watcher?: Watcher;
-
-    // Collections (KV store)
-    private _collections = new Map<string, Collection>();
-    private _kvHnsw?: HNSWIndex;
-    private _kvVecs   = new Map<number, Float32Array>();
 
     // Shared HNSW pool — code:frontend + code:backend share one index
     private _sharedHnsw = new Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>();
@@ -73,10 +70,10 @@ export class BrainBank extends EventEmitter {
     }
 
     /** Get the list of registered plugin names. */
-    get plugins(): string[]                    { return this._registry.names; }
+    get plugins(): string[] { return this._registry.names; }
 
     /** Check if a plugin is loaded. Also matches type prefix (e.g. 'code' matches 'code:frontend'). */
-    has(name: string): boolean                 { return this._registry.has(name); }
+    has(name: string): boolean { return this._registry.has(name); }
 
     /** Get a plugin instance by name. Returns undefined if not loaded. */
     plugin<T extends Plugin = Plugin>(n: string): T | undefined {
@@ -109,14 +106,14 @@ export class BrainBank extends EventEmitter {
         this._initPromise = this._runInitialize(options)
             .catch(err => {
                 // Reset shared state so a retry starts clean
-                for (const { hnsw } of this._sharedHnsw.values()) try { hnsw.reinit(); } catch {}
-                this._kvVecs.clear();
-                if (this._kvHnsw) try { this._kvHnsw.reinit(); } catch {}
-                try { this._db?.close(); } catch {}
-                this._db        = undefined!;
-                this._kvHnsw    = undefined!;
+                for (const { hnsw } of this._sharedHnsw.values()) try { hnsw.reinit(); } catch { }
+                this._kvService?.clear();
+                if (this._kvService) try { this._kvService.hnsw.reinit(); } catch { }
+                try { this._db?.close(); } catch { }
+                this._db = undefined!;
+                this._kvService = undefined;
                 this._searchAPI = undefined;
-                this._indexAPI  = undefined;
+                this._indexAPI = undefined;
                 throw err;
             })
             .finally(() => { this._initPromise = null; });
@@ -129,37 +126,37 @@ export class BrainBank extends EventEmitter {
 
         const initializer = new Initializer(this._config, (e, d) => this.emit(e, d));
 
-        // Phase 1: set this._kvHnsw BEFORE phase 2 so collection() works
-        // when indexers call ctx.collection() during their initialize()
+        // Phase 1: create KVService BEFORE phase 2 so collection() works
+        // when plugins call ctx.collection() during their initialize()
         const early = await initializer.early(options);
-        this._db        = early.db;
+        this._db = early.db;
         this._embedding = early.embedding;
-        this._kvHnsw    = early.kvHnsw;
+        this._kvService = new KVService(early.db, early.embedding, early.kvHnsw, new Map(), this._config.reranker);
 
-        // Phase 2: load vectors, run indexers, build search services
+        // Phase 2: load vectors, run plugins, build search services
         const late = await initializer.late(
             early,
             this._registry,
             this._sharedHnsw,
-            this._kvVecs,
+            this._kvService.vecs,
             (name) => this.collection(name),
         );
 
         this._searchAPI = new SearchAPI({
             ...late,
-            registry:   this._registry,
-            config:     this._config,
+            registry: this._registry,
+            config: this._config,
             getDocsPlugin: () => {
                 const d = this._registry.get(PLUGIN.DOCS);
                 return d && isSearchable(d) ? d : undefined;
             },
-            collection: (n)    => this.collection(n),
+            collection: (n) => this.collection(n),
         });
 
         this._indexAPI = new IndexAPI({
             registry: this._registry,
             gitDepth: this._config.gitDepth,
-            emit:     (e, d) => this.emit(e, d),
+            emit: (e, d) => this.emit(e, d),
         });
 
 
@@ -178,26 +175,21 @@ export class BrainBank extends EventEmitter {
      *   const hits = await errors.search('null pointer');
      */
     collection(name: string): Collection {
-        if (this._collections.has(name)) return this._collections.get(name)!;
-        if (!this._kvHnsw)
+        if (!this._kvService)
             throw new Error('BrainBank: Collections not ready. Call await brain.initialize() first.');
-        const coll = new Collection(name, this._db, this._embedding, this._kvHnsw, this._kvVecs, this._config.reranker);
-        this._collections.set(name, coll);
-        return coll;
+        return this._kvService.collection(name);
     }
 
     /** List all collection names that have data. */
     listCollectionNames(): string[] {
         this._requireInit('listCollectionNames');
-        return (this._db.prepare('SELECT DISTINCT collection FROM kv_data ORDER BY collection').all() as any[])
-            .map(r => r.collection);
+        return this._kvService!.listNames();
     }
 
     /** Delete a collection's data and evict from cache. */
     deleteCollection(name: string): void {
         this._requireInit('deleteCollection');
-        this._db.prepare('DELETE FROM kv_data WHERE collection = ?').run(name);
-        this._collections.delete(name);
+        this._kvService!.delete(name);
     }
 
     // ── Indexing (delegated to IndexAPI) ─────────────
@@ -334,7 +326,7 @@ export class BrainBank extends EventEmitter {
 
         const hnswMap = new Map<string, { hnsw: HNSWIndex; vecs: Map<number, Float32Array> }>();
 
-        if (this._kvHnsw) hnswMap.set(HNSW.KV, { hnsw: this._kvHnsw, vecs: this._kvVecs });
+        if (this._kvService) hnswMap.set(HNSW.KV, { hnsw: this._kvService.hnsw, vecs: this._kvService.vecs });
 
         for (const [type, shared] of this._sharedHnsw) {
             hnswMap.set(type, { hnsw: shared.hnsw, vecs: shared.vecCache });
@@ -356,23 +348,22 @@ export class BrainBank extends EventEmitter {
     close(): void {
         this._watcher?.close();
         for (const indexer of this._registry.all) indexer.close?.();
-        this._embedding?.close().catch(() => {});
+        this._embedding?.close().catch(() => { });
         this._db?.close();
         this._initialized = false;
-        this._collections.clear();
+        this._kvService?.clear();
         this._sharedHnsw.clear();
-        this._kvVecs.clear();
-        this._kvHnsw    = undefined!;
+        this._kvService = undefined;
         this._searchAPI = undefined;
-        this._indexAPI  = undefined;
+        this._indexAPI = undefined;
         this._registry.clear();
     }
 
     /** Whether the brainbank has been initialized. */
-    get isInitialized(): boolean            { return this._initialized; }
+    get isInitialized(): boolean { return this._initialized; }
 
     /** The resolved configuration. */
-    get config(): Readonly<ResolvedConfig>  { return this._config; }
+    get config(): Readonly<ResolvedConfig> { return this._config; }
 
     // ── Internal guard ───────────────────────────────
 

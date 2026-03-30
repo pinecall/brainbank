@@ -1,21 +1,24 @@
 /**
  * BrainBank — Search API
  *
- * All search and context operations in one place.
- * Composed from VectorSearch, KeywordSearch, ContextBuilder, and KV collections.
+ * Thin orchestrator for all search operations.
+ * Pipeline: collect → fuse (RRF) → rerank.
+ *
+ * Result gathering is delegated to ResultCollector.
  * Always created after initialization (even when search services are absent),
  * so BrainBank can unconditionally delegate to it.
  */
 
 import type { SearchStrategy } from '@/search/types.ts';
 import type { ContextBuilder } from '@/search/context-builder.ts';
-import type { Collection } from '@/domain/collection.ts';
+import { formatDocuments } from '@/search/context/document-formatter.ts';
+import type { Collection } from '@/services/collection.ts';
 import type { PluginRegistry } from '@/bootstrap/registry.ts';
-import type { SearchablePlugin } from '@/plugins/base.ts';
-import { isSearchable } from '@/plugins/base.ts';
+import type { SearchablePlugin } from '@/plugin.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { rerank } from '@/lib/rerank.ts';
+import { ResultCollector } from './result-collector.ts';
 
 export interface SearchAPIDeps {
     search?:         SearchStrategy;
@@ -28,7 +31,15 @@ export interface SearchAPIDeps {
 }
 
 export class SearchAPI {
-    constructor(private _d: SearchAPIDeps) {}
+    private _collector: ResultCollector;
+
+    constructor(private _d: SearchAPIDeps) {
+        this._collector = new ResultCollector({
+            registry:      _d.registry,
+            getDocsPlugin: _d.getDocsPlugin,
+            collection:    _d.collection,
+        });
+    }
 
     // ── Vector ──────────────────────────────────────
 
@@ -36,22 +47,26 @@ export class SearchAPI {
         codeK?: number; gitK?: number; patternK?: number;
         minScore?: number; useMMR?: boolean;
     }): Promise<SearchResult[]> {
-        const resultLists: SearchResult[][] = [];
+        const lists: SearchResult[][] = [];
 
         if (this._d.search) {
-            resultLists.push(await this._d.search.search(query, options));
+            lists.push(await this._d.search.search(query, options));
         } else if (this._d.registry.has('docs')) {
-            resultLists.push(await this._searchDocs(query, { k: 8 }));
+            lists.push(await this._collector.collectDocs(query, { k: 8 }));
         }
 
-        // Include custom SearchablePlugin results
-        await this._searchCustomPlugins(query, options, resultLists);
+        lists.push(...await this._collector.collectCustomPlugins(query, options));
 
-        if (resultLists.length === 0) return [];
-        if (resultLists.length === 1) return resultLists[0];
-        return reciprocalRankFusion(resultLists);
+        if (lists.length === 0) return [];
+        if (lists.length === 1) return lists[0];
+        return reciprocalRankFusion(lists);
     }
 
+    /**
+     * Convenience shortcut for code-only vector search.
+     * Delegates to VectorSearch.search() with gitK=0, patternK=0 — does not
+     * bypass SearchStrategy, simply scopes the multi-index search to code.
+     */
     async searchCode(query: string, k = 8): Promise<SearchResult[]> {
         if (!this._d.registry.firstByType('code'))
             throw new Error("BrainBank: Plugin 'code' is not loaded. Install @brainbank/code and add .use(code()).");
@@ -60,6 +75,11 @@ export class SearchAPI {
         return this._d.search.search(query, { codeK: k, gitK: 0, patternK: 0 });
     }
 
+    /**
+     * Convenience shortcut for commit-only vector search.
+     * Delegates to VectorSearch.search() with codeK=0, patternK=0 — does not
+     * bypass SearchStrategy, simply scopes the multi-index search to git.
+     */
     async searchCommits(query: string, k = 8): Promise<SearchResult[]> {
         if (!this._d.registry.firstByType('git'))
             throw new Error("BrainBank: Plugin 'git' is not loaded. Install @brainbank/git and add .use(git()).");
@@ -80,77 +100,28 @@ export class SearchAPI {
         const gitK  = cols.git  ?? options?.gitK  ?? 8;
         const docsK = cols.docs ?? 8;
 
-        const resultLists: SearchResult[][] = [];
+        const lists: SearchResult[][] = [];
 
+        // Core search strategies
         if (this._d.search) {
             const [vec, kw] = await Promise.all([
                 this._d.search.search(query, { ...options, codeK, gitK }),
                 Promise.resolve(this._d.bm25?.search(query, { codeK, gitK }) ?? []),
             ]);
-            resultLists.push(vec, kw);
+            lists.push(vec, kw);
         }
 
+        // Delegated gathering
         if (this._d.registry.has('docs')) {
-            const docs = await this._searchDocs(query, { k: docsK });
-            if (docs.length > 0) resultLists.push(docs);
+            const docs = await this._collector.collectDocs(query, { k: docsK });
+            if (docs.length > 0) lists.push(docs);
         }
+        lists.push(...await this._collector.collectCustomPlugins(query, options));
+        lists.push(...await this._collector.collectKvCollections(query, cols));
 
-        // Include custom SearchablePlugin results
-        await this._searchCustomPlugins(query, options, resultLists);
-
-        await this._searchKvCollections(query, cols, resultLists);
-        if (resultLists.length === 0) return [];
-
-        const fused = reciprocalRankFusion(resultLists);
+        if (lists.length === 0) return [];
+        const fused = reciprocalRankFusion(lists);
         return this._rerankResults(query, fused);
-    }
-
-    /** Search non-reserved KV collections and push results. */
-    private async _searchKvCollections(
-        query: string, cols: Record<string, number>, resultLists: SearchResult[][],
-    ): Promise<void> {
-        const reserved = new Set(['code', 'git', 'docs']);
-        for (const [name, k] of Object.entries(cols)) {
-            if (reserved.has(name)) continue;
-            const hits = await this._d.collection(name).search(query, { k });
-            if (hits.length > 0) {
-                resultLists.push(hits.map(h => ({
-                    type: 'collection' as const,
-                    score: h.score ?? 0,
-                    content: h.content,
-                    metadata: { collection: name, id: h.id, ...h.metadata },
-                })));
-            }
-        }
-    }
-
-    /** Search custom plugins (any SearchablePlugin that isn't code/git/docs). */
-    private async _searchCustomPlugins(
-        query: string, options: Record<string, any> | undefined, resultLists: SearchResult[][],
-    ): Promise<void> {
-        const builtinTypes = new Set(['code', 'git', 'docs']);
-        for (const mod of this._d.registry.all) {
-            const baseType = mod.name.split(':')[0];
-            if (builtinTypes.has(baseType)) continue;
-            if (!isSearchable(mod)) continue;
-            const hits = await mod.search(query, options);
-            if (hits.length > 0) resultLists.push(hits);
-        }
-    }
-
-    /** Apply reranking if a reranker is configured. */
-    private async _rerankResults(query: string, fused: SearchResult[]): Promise<SearchResult[]> {
-        if (!this._d.config.reranker || fused.length <= 1) return fused;
-        return rerank(query, fused, this._d.config.reranker);
-    }
-
-    /** Search docs directly via the plugin — no circular callback. */
-    private async _searchDocs(
-        query: string, options?: { collection?: string; k?: number; minScore?: number },
-    ): Promise<SearchResult[]> {
-        const plugin = this._d.getDocsPlugin();
-        if (!plugin) return [];
-        return plugin.search(query, options);
     }
 
     // ── Keyword ─────────────────────────────────────
@@ -172,19 +143,17 @@ export class SearchAPI {
         }
 
         if (this._d.registry.has('docs')) {
-            const docs = await this._searchDocs(task, { k: options.codeResults ?? 4 });
-            if (docs.length > 0) {
-                const body = docs.map(r => {
-                    const m = r.metadata as Record<string, any>;
-                    const h = r.context
-                        ? `**[${m.collection}]** ${m.title} — _${r.context}_`
-                        : `**[${m.collection}]** ${m.title}`;
-                    return `${h}\n\n${r.content}`;
-                }).join('\n\n---\n\n');
-                sections.push(`## Relevant Documents\n\n${body}`);
-            }
+            const docs = await this._collector.collectDocs(task, { k: options.codeResults ?? 4 });
+            const docSection = formatDocuments(docs);
+            if (docSection) sections.push(docSection);
         }
 
         return sections.join('\n\n');
+    }
+
+    /** Apply reranking if a reranker is configured. */
+    private async _rerankResults(query: string, fused: SearchResult[]): Promise<SearchResult[]> {
+        if (!this._d.config.reranker || fused.length <= 1) return fused;
+        return rerank(query, fused, this._d.config.reranker);
     }
 }

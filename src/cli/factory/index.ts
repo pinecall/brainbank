@@ -7,13 +7,13 @@
  */
 
 import { BrainBank } from '@/brainbank.ts';
-import { getFlag } from './utils.ts';
-import { loadConfig, getConfig, resetConfigCache } from './factory/config-loader.ts';
-import { discoverFolderPlugins, resetPluginCache } from './factory/plugin-loader.ts';
-import { setupProviders } from './factory/provider-setup.ts';
-import { registerBuiltins, registerConfigCollections } from './factory/builtin-registration.ts';
+import { getFlag } from '../utils.ts';
+import { loadConfig, getConfig, resetConfigCache } from './config-loader.ts';
+import { discoverFolderPlugins, resetPluginCache } from './plugin-loader.ts';
+import { setupProviders } from './provider-setup.ts';
+import { registerBuiltins, registerConfigCollections } from './builtin-registration.ts';
 
-export type { ProjectConfig } from './factory/config-loader.ts';
+export type { ProjectConfig } from './config-loader.ts';
 export { getConfig, registerConfigCollections };
 
 /** Reset factory caches. Useful for tests. */

@@ -14,7 +14,7 @@
  */
 
 import { c, args, stripFlags, printResults } from '@/cli/utils.ts';
-import { createBrain } from '@/cli/factory.ts';
+import { createBrain } from '@/cli/factory/index.ts';
 
 /**
  * Parse dynamic source flags: any --<name> <number> becomes { name: number }.

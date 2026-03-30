@@ -10,6 +10,7 @@ import type { Database } from '@/db/database.ts';
 import type { SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
+import { FTSMaintenance } from '@/db/fts-maintenance.ts';
 
 /** Check if an error is an FTS5 query syntax error (expected, safe to ignore). */
 function isFTSError(e: unknown): boolean {
@@ -170,10 +171,6 @@ export class KeywordSearch implements SearchStrategy {
 
     /** Rebuild the FTS index from scratch. */
     rebuild(): void {
-        try {
-            this._db.prepare("INSERT INTO fts_code(fts_code) VALUES('rebuild')").run();
-            this._db.prepare("INSERT INTO fts_commits(fts_commits) VALUES('rebuild')").run();
-            this._db.prepare("INSERT INTO fts_patterns(fts_patterns) VALUES('rebuild')").run();
-        } catch {}
+        new FTSMaintenance(this._db).rebuild();
     }
 }

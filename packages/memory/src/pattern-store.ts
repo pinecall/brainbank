@@ -1,15 +1,13 @@
 /**
- * BrainBank — Pattern Store (Agent Memory)
- * 
+ * @brainbank/memory — Pattern Store
+ *
  * Stores what the agent learned from past tasks.
  * Each pattern records task, approach, and success rate.
  * Searchable by semantic similarity via HNSW.
  */
 
-import type { Database } from '@/db/database.ts';
-import { vecToBuffer } from '@/lib/math.ts';
-import type { EmbeddingProvider, LearningPattern } from '@/types.ts';
-import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { Database, EmbeddingProvider, HNSWIndex, LearningPattern } from 'brainbank';
+import { vecToBuffer } from 'brainbank';
 
 export interface PatternStoreDeps {
     db: Database;
@@ -25,10 +23,7 @@ export class PatternStore {
         this._deps = deps;
     }
 
-    /**
-     * Store a learned pattern.
-     * Returns the pattern ID.
-     */
+    /** Store a learned pattern. Returns the pattern ID. */
     async learn(pattern: LearningPattern): Promise<number> {
         const result = this._deps.db.prepare(`
             INSERT INTO memory_patterns (task_type, task, approach, outcome, success_rate, critique, tokens_used, latency_ms)
@@ -46,7 +41,6 @@ export class PatternStore {
 
         const id = Number(result.lastInsertRowid);
 
-        // Embed and store vector
         const text = `${pattern.taskType} ${pattern.task} ${pattern.approach}`;
         const vec = await this._deps.embedding.embed(text);
 
@@ -60,10 +54,7 @@ export class PatternStore {
         return id;
     }
 
-    /**
-     * Search for similar successful patterns.
-     * Filters by minimum success rate.
-     */
+    /** Search for similar successful patterns. Filters by minimum success rate. */
     async search(query: string, k: number = 4, minSuccess: number = 0.5): Promise<(LearningPattern & { score: number })[]> {
         if (this._deps.hnsw.size === 0) return [];
 
@@ -97,9 +88,7 @@ export class PatternStore {
             .slice(0, k);
     }
 
-    /**
-     * Get all patterns for a specific task type.
-     */
+    /** Get all patterns for a specific task type. */
     getByTaskType(taskType: string, limit: number = 20): LearningPattern[] {
         const rows = this._deps.db.prepare(
             `SELECT * FROM memory_patterns WHERE task_type = ? ORDER BY success_rate DESC LIMIT ?`

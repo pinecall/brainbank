@@ -21,16 +21,16 @@
 export { BrainBank } from './brainbank.ts';
 
 // Plugin types
-export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, HnswPlugin, CoEditPlugin } from './plugins/base.ts';
-export { isIndexable, isSearchable, isWatchable, isDocsPlugin, isHnswPlugin, isCoEditPlugin } from './plugins/base.ts';
+export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, HnswPlugin, CoEditPlugin } from './plugin.ts';
+export { isIndexable, isSearchable, isWatchable, isDocsPlugin, isHnswPlugin, isCoEditPlugin } from './plugin.ts';
 
 // Constants
 export { PLUGIN, HNSW } from './constants.ts';
 export type { PluginType, HnswKey } from './constants.ts';
 
 // Collections
-export { Collection } from './domain/collection.ts';
-export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './domain/collection.ts';
+export { Collection } from './services/collection.ts';
+export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './services/collection.ts';
 
 // Types
 export type {
@@ -76,7 +76,7 @@ export { resolveEmbedding, providerKey } from './providers/embeddings/resolve.ts
 export type { EmbeddingKey } from './providers/embeddings/resolve.ts';
 
 // Config
-export { resolveConfig, DEFAULTS } from './config/defaults.ts';
+export { resolveConfig, DEFAULTS } from './config.ts';
 
 // ── Internals (for plugin authors & power users) ────
 
@@ -90,20 +90,24 @@ export { SUPPORTED_EXTENSIONS, IGNORE_DIRS, isSupported, getLanguage, isIgnoredD
 // Math utilities (needed by plugins)
 export { vecToBuffer, cosineSimilarity, normalize } from './lib/math.ts';
 
-// Agent memory stores
-export { PatternStore } from './domain/memory/pattern-store.ts';
-export { Consolidator } from './domain/memory/consolidator.ts';
+// KV service (collection infrastructure)
+export { KVService } from './services/kv-service.ts';
 
 // Search internals
 export { ContextBuilder } from './search/context-builder.ts';
 export { VectorSearch } from './search/vector/vector-search.ts';
+export { CompositeVectorSearch } from './search/vector/composite-vector-search.ts';
+export { CodeVectorSearch } from './search/vector/code-vector-search.ts';
+export { GitVectorSearch } from './search/vector/git-vector-search.ts';
+export { PatternVectorSearch } from './search/vector/pattern-vector-search.ts';
 export { KeywordSearch } from './search/keyword/keyword-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
 export { normalizeBM25 } from './lib/fts.ts';
 export { rerank } from './lib/rerank.ts';
 
 // Search types
-export type { SearchStrategy, SearchOptions } from './search/types.ts';
+export type { SearchStrategy, SearchOptions, CodeGraphProvider, CodeChunkSummary } from './search/types.ts';
+export { SqlCodeGraphProvider } from './search/context/sql-code-graph.ts';
 
 // Database (for plugin access)
 export type { Database } from './db/database.ts';

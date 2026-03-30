@@ -11,7 +11,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createWatcher } from '../../../src/services/watch.ts';
-import type { Plugin, WatchablePlugin } from '../../../src/plugins/base.ts';
+import type { Plugin, WatchablePlugin } from '../../../src/plugin.ts';
 
 export const name = 'Watch Mode';
 

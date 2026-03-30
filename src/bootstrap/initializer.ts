@@ -12,15 +12,13 @@ import { dirname, join } from 'node:path';
 import { Database } from '@/db/database.ts';
 import { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import { resolveEmbedding } from '@/providers/embeddings/resolve.ts';
-import { VectorSearch } from '@/search/vector/vector-search.ts';
-import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
-import { ContextBuilder } from '@/search/context-builder.ts';
+import { buildSearchLayer, type SearchLayer } from './search-layer-builder.ts';
 import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from '@/db/embedding-meta.ts';
 import type { PluginRegistry } from './registry.ts';
-import type { Collection } from '@/domain/collection.ts';
+import type { Collection } from '@/services/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
-import type { PluginContext } from '@/plugins/base.ts';
-import { isHnswPlugin, isCoEditPlugin } from '@/plugins/base.ts';
+import type { PluginContext } from '@/plugin.ts';
+import { isHnswPlugin, isCoEditPlugin } from '@/plugin.ts';
 import { PLUGIN } from '@/constants.ts';
 
 // ── Result types ─────────────────────────────────────
@@ -34,12 +32,8 @@ export interface EarlyInit {
     skipVectorLoad: boolean;
 }
 
-/** Available after phase 2 — once indexers have initialized. */
-export interface LateInit {
-    search?: VectorSearch;
-    bm25?: KeywordSearch;
-    contextBuilder?: ContextBuilder;
-}
+/** Available after phase 2 — once plugins have initialized. */
+export type LateInit = SearchLayer;
 
 // ── Initializer class ────────────────────────────────
 
@@ -106,13 +100,14 @@ export class Initializer {
             }
         }
 
-        const ctx = this._buildPluginContext(db, embedding, sharedHnsw, skipVectorLoad, getCollection);
+        const privateHnsw = new Map<string, HNSWIndex>();
+        const ctx = this._buildPluginContext(db, embedding, sharedHnsw, skipVectorLoad, getCollection, privateHnsw);
 
         for (const mod of registry.all) {
             await mod.initialize(ctx);
         }
 
-        saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw);
+        saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw, privateHnsw);
 
         return this._buildSearchLayer(db, embedding, registry, sharedHnsw);
     }
@@ -124,21 +119,27 @@ export class Initializer {
         sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
         skipVectorLoad: boolean,
         getCollection: (name: string) => Collection,
+        privateHnsw: Map<string, HNSWIndex>,
     ): PluginContext {
         const { _config: config } = this;
+        let _autoId = 0;
         return {
             db,
             embedding,
             config,
 
-            createHnsw: (maxElements?: number, dims?: number) =>
-                new HNSWIndex(
+            createHnsw: async (maxElements?: number, dims?: number, name?: string) => {
+                const hnsw = await new HNSWIndex(
                     dims ?? config.embeddingDims,
                     maxElements ?? config.maxElements,
                     config.hnswM,
                     config.hnswEfConstruction,
                     config.hnswEfSearch,
-                ).init(),
+                ).init();
+                const key = name ?? `private-${_autoId++}`;
+                privateHnsw.set(key, hnsw);
+                return hnsw;
+            },
 
             loadVectors: (table, idCol, hnsw, cache) => {
                 if (skipVectorLoad) return;
@@ -174,39 +175,14 @@ export class Initializer {
         };
     }
 
-    /** Build VectorSearch + KeywordSearch + ContextBuilder from initialized plugins. */
+    /** Build search layer from initialized plugins. */
     private _buildSearchLayer(
         db: Database,
         embedding: EmbeddingProvider,
         registry: PluginRegistry,
         sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
-    ): LateInit {
-        const { _config: config } = this;
-        const codeMod = sharedHnsw.get(PLUGIN.CODE);
-        const gitMod  = sharedHnsw.get(PLUGIN.GIT);
-        const memPlugin = registry.firstByType(PLUGIN.MEMORY);
-        const memMod    = memPlugin && isHnswPlugin(memPlugin) ? memPlugin : undefined;
-
-        if (!codeMod && !gitMod && !memMod) return {};
-
-        const search = new VectorSearch({
-            db,
-            codeHnsw:    codeMod?.hnsw,
-            gitHnsw:     gitMod?.hnsw,
-            patternHnsw: memMod?.hnsw,
-            codeVecs:    codeMod?.vecCache ?? new Map(),
-            gitVecs:     gitMod?.vecCache  ?? new Map(),
-            patternVecs: memMod?.vecCache  ?? new Map(),
-            embedding,
-            reranker: config.reranker,
-        });
-        const bm25 = new KeywordSearch(db);
-
-        const gitPlugin = registry.firstByType(PLUGIN.GIT);
-        const coEdits   = gitPlugin && isCoEditPlugin(gitPlugin) ? gitPlugin.coEdits : undefined;
-        const contextBuilder = new ContextBuilder(search, coEdits, db);
-
-        return { search, bm25, contextBuilder };
+    ): SearchLayer {
+        return buildSearchLayer(db, embedding, this._config, registry, sharedHnsw);
     }
 
     /** Resolve embedding: explicit config > stored DB key > local default. */
@@ -239,10 +215,14 @@ function saveAllHnsw(
     dbPath: string,
     kvHnsw: HNSWIndex,
     sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
+    privateHnsw: Map<string, HNSWIndex>,
 ): void {
     try {
         kvHnsw.save(hnswPath(dbPath, 'kv'));
         for (const [name, { hnsw }] of sharedHnsw) {
+            hnsw.save(hnswPath(dbPath, name));
+        }
+        for (const [name, hnsw] of privateHnsw) {
             hnsw.save(hnswPath(dbPath, name));
         }
     } catch {

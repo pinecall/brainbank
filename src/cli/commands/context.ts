@@ -5,7 +5,7 @@
  */
 
 import { c, args, stripFlags } from '@/cli/utils.ts';
-import { createBrain } from '@/cli/factory.ts';
+import { createBrain } from '@/cli/factory/index.ts';
 
 export async function cmdContext(): Promise<void> {
     const pos = stripFlags(args);

@@ -31,7 +31,7 @@ class DocsPlugin implements Plugin {
         this._db = ctx.db;
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
-        this.hnsw = await ctx.createHnsw(undefined, embedding.dims);
+        this.hnsw = await ctx.createHnsw(undefined, embedding.dims, 'doc');
         ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
         this.indexer = new DocsIndexer(ctx.db, embedding, this.hnsw, this.vecCache);
         this._search = new DocumentSearch({

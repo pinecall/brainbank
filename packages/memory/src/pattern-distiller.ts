@@ -1,20 +1,16 @@
 /**
- * BrainBank — Strategy Distiller
- * 
+ * @brainbank/memory — Pattern Distiller
+ *
  * Aggregates top patterns for a task type into a single strategy text.
  * Analogous to SONA's Deep Loop — periodic knowledge distillation.
  */
 
-import type { Database } from '@/db/database.ts';
-import type { DistilledStrategy } from '@/types.ts';
+import type { Database, DistilledStrategy } from 'brainbank';
 
 export class PatternDistiller {
     constructor(private _db: Database) {}
 
-    /**
-     * Distill top patterns for a task type into a strategy.
-     * Updates the distilled_strategies table.
-     */
+    /** Distill top patterns for a task type into a strategy. Updates distilled_strategies table. */
     distill(taskType: string, topK: number = 10): DistilledStrategy | null {
         const patterns = this._db.prepare(`
             SELECT task, approach, outcome, critique, success_rate
@@ -26,7 +22,6 @@ export class PatternDistiller {
 
         if (patterns.length === 0) return null;
 
-        // Build strategy text from top patterns
         const lines: string[] = [];
         const avgSuccess = patterns.reduce((sum: number, p: any) => sum + p.success_rate, 0) / patterns.length;
 
@@ -54,9 +49,7 @@ export class PatternDistiller {
         return { taskType, strategy, confidence, updatedAt: now };
     }
 
-    /**
-     * Get a distilled strategy for a task type.
-     */
+    /** Get a distilled strategy for a task type. */
     get(taskType: string): DistilledStrategy | null {
         const row = this._db.prepare(
             'SELECT * FROM distilled_strategies WHERE task_type = ?'
@@ -71,9 +64,7 @@ export class PatternDistiller {
         };
     }
 
-    /**
-     * List all distilled strategies.
-     */
+    /** List all distilled strategies. */
     list(): DistilledStrategy[] {
         const rows = this._db.prepare(
             'SELECT * FROM distilled_strategies ORDER BY confidence DESC'

@@ -6,7 +6,7 @@
  * to update the metadata after re-embedding.
  */
 
-import type { Database } from '@/db/database.ts';
+import type { Database } from './database.ts';
 import type { EmbeddingProvider } from '@/types.ts';
 import { providerKey } from '@/providers/embeddings/resolve.ts';
 

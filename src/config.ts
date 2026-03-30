@@ -1,4 +1,4 @@
-import type { BrainBankConfig, ResolvedConfig } from '@/types.ts';
+import type { BrainBankConfig, ResolvedConfig } from './types.ts';
 import * as path from 'node:path';
 
 // ── Defaults ────────────────────────────────────────
