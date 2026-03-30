@@ -116,6 +116,47 @@ Extensions that connect BrainBank to external tools and workflows.
 
 ---
 
+## Benchmarks
+
+Tested on a production NestJS backend (1,052 code chunks + git history):
+
+### Retrieval Quality
+
+| Pipeline Stage | R@5 | Delta |
+|----------------|:---:|-------|
+| Vector-only (HNSW) | 57% | baseline |
+| + BM25 (RRF fusion) | 78% | **+21pp** |
+| + Qwen3 Reranker | 83% | **+5pp** |
+
+> The hybrid pipeline improved R@5 by **+26pp over vector-only**, reducing misses from 6/20 to 1/20.
+
+### Performance
+
+| Provider | Dims | Index (1052 files) | Search | Cost |
+|----------|------|------------|--------|------|
+| **Local WASM** | 384 | 87s | **8ms** | Free |
+| **OpenAI** | 1536 | 106s | 202ms | $0.02/1M tok |
+| **Perplexity** | 2560 | **66s** ⚡ | 168ms | $0.02/1M tok |
+| **Perplexity Context** | 2560 | 78s | 135ms | $0.06/1M tok |
+
+### vs QMD
+
+| Metric | BrainBank | [QMD](https://github.com/tobi/qmd) |
+|--------|:---------:|:---:|
+| **R@5** | **83%** | 65% |
+| **MRR** | **0.57** | 0.45 |
+| **Misses** | **1/20** | 6/20 |
+
+> **TODO**: Additional benchmarks planned:
+> - [ ] BEIR full suite (MS MARCO, Natural Questions, HotpotQA)
+> - [ ] Large-scale stress test (50k+ files)
+> - [ ] Multi-repo indexing performance
+> - [ ] Memory usage profiling (RAM vs chunk count)
+> - [ ] Collection search latency at scale (10k+ items)
+> - [ ] Incremental re-index speed (% of changed files)
+
+See [Embeddings & Reranker](docs/embeddings.md) for full provider details and configuration.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
