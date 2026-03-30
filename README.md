@@ -118,12 +118,12 @@ Extensions that connect BrainBank to external tools and workflows.
 
 ## Benchmarks
 
-All benchmarks run with Perplexity Context embeddings (2560d) on Apple Silicon. Single SQLite file — no external vector DB.
+Early benchmarks on Apple Silicon — single SQLite file, no external vector DB.
 
 | Benchmark | Corpus | Metric | Score |
 |-----------|--------|--------|:-----:|
 | [BEIR SciFact](https://github.com/beir-cellar/beir) | 5,183 scientific abstracts, 300 queries | NDCG@10 | **0.761** |
-| Custom RAG eval | 127 docs, 20 semantic queries | R@5 | **83%** |
+| Custom RAG eval | 127 Pinecall.io docs, 20 queries — 1 miss | R@5 | **83%** |
 
 **Pipeline progression** — each stage's impact on the custom eval:
 
@@ -133,15 +133,8 @@ All benchmarks run with Perplexity Context embeddings (2560d) on Apple Silicon. 
 | + BM25 → RRF | 78% | +21pp |
 | + Qwen3 reranker | 83% | +5pp |
 
-**vs [QMD](https://github.com/tobi/qmd)** (fully local, embeddinggemma 768d) — same corpus, same 20 queries:
-
-| | BrainBank | QMD |
-|---|:---:|:---:|
-| R@5 | **83%** | 65% |
-| MRR | **0.57** | 0.45 |
-| Misses | **1/20** | 6/20 |
-
-> Full methodology, per-category breakdowns, and reproduction commands → [docs/benchmarks.md](docs/benchmarks.md)
+> More benchmarks (code+graph retrieval, large-scale stress tests, multi-provider comparisons) are in progress.
+> Full methodology and reproduction commands → [docs/benchmarks.md](docs/benchmarks.md)
 
 ## Contributing
 

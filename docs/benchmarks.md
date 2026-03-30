@@ -42,7 +42,7 @@ PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset f
 
 ## Custom RAG Evaluation (Semantic Document Retrieval)
 
-A 20-query evaluation designed to measure the impact of each pipeline stage on retrieval quality. Tested on a real-world documentation corpus (127 markdown files from a production healthcare SaaS platform).
+A 20-query evaluation designed to measure the impact of each pipeline stage on retrieval quality. Tested on the [Pinecall.io](https://pinecall.io) internal documentation corpus (127 markdown files).
 
 **Key constraint**: None of the queries contain keywords from document filenames or titles — this tests pure semantic understanding.
 
@@ -72,21 +72,13 @@ Shows the incremental impact of each technique BrainBank adds:
 
 | Technique | What it does | Measured Impact |
 |---|---|---|
-| **OR-mode BM25** | Strips stop words, matches any keyword | Finds docs with specific terms (Swagger, SONARQUBE) that vector misses |
+| **OR-mode BM25** | Strips stop words, matches any keyword | Finds docs with specific terms that vector misses |
 | **RRF fusion** | Merges vector + BM25 ranked lists | Docs appearing in both lists get boosted — R@5: 57% → 78% |
 | **File-level dedup** | Keeps best-scoring chunk per file | Prevents one doc from eating multiple result slots |
 | **BM25 title weight 10×** | Boosts title column in FTS5 | Doc titles are the strongest relevance signal |
 | **Qwen3 Reranker** | Cross-encoder rescoring on top-k | Promotes semantically relevant docs — R@5: 78% → 83% |
 
-### How to Reproduce
-
-```bash
-# Custom eval on your own docs
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs
-
-# With Qwen3 reranker
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to/docs --reranker
-```
+> The custom eval script used for these results tested against Pinecall.io's internal documentation and is not included in the repo. Use `beir-eval.ts` to run reproducible benchmarks on public datasets.
 
 ---
 
@@ -134,14 +126,17 @@ PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/eval.ts --docs ~/path/to
 ### How to Reproduce
 
 ```bash
+# BEIR SciFact head-to-head (auto-downloads dataset)
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts
+
+# BrainBank only
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts --skip-qmd
+
 # QMD only (no API key needed)
-npx tsx test/benchmarks/rag/benchmark-vs-qmd-aurora.ts --skip-brainbank
+npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts --skip-brainbank
 
-# QMD with reranker
-npx tsx test/benchmarks/rag/benchmark-vs-qmd-aurora.ts --skip-brainbank --reranker
-
-# Full head-to-head
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd-aurora.ts --reranker
+# With Qwen3 reranker (both engines)
+PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts --reranker
 ```
 
 ---
@@ -158,4 +153,15 @@ PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd-aurora.
 
 ---
 
-*Last updated: March 2026*
+## TODO
+
+Planned benchmarks not yet implemented:
+
+- [ ] **Code + graph evaluation** — measure retrieval improvement from import graph expansion and symbol cross-references
+- [ ] BEIR full suite (MS MARCO, Natural Questions, HotpotQA)
+- [ ] Large-scale stress test (50k+ files)
+- [ ] Multi-repo indexing performance
+- [ ] Memory usage profiling (RAM vs chunk count)
+- [ ] Collection search latency at scale (10k+ items)
+- [ ] Incremental re-index speed (% of changed files)
+- [ ] Embedding provider comparison on BEIR (Local vs OpenAI vs Perplexity)
