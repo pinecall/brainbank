@@ -20,6 +20,8 @@ import type { PluginRegistry } from './registry.ts';
 import type { Collection } from '@/domain/collection.ts';
 import type { ResolvedConfig, EmbeddingProvider } from '@/types.ts';
 import type { PluginContext } from '@/plugins/base.ts';
+import { isHnswPlugin, isCoEditPlugin } from '@/plugins/base.ts';
+import { PLUGIN } from '@/constants.ts';
 
 // ── Result types ─────────────────────────────────────
 
@@ -180,9 +182,10 @@ export class Initializer {
         sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
     ): LateInit {
         const { _config: config } = this;
-        const codeMod = sharedHnsw.get('code');
-        const gitMod  = sharedHnsw.get('git');
-        const memMod  = registry.firstByType('memory') as any;
+        const codeMod = sharedHnsw.get(PLUGIN.CODE);
+        const gitMod  = sharedHnsw.get(PLUGIN.GIT);
+        const memPlugin = registry.firstByType(PLUGIN.MEMORY);
+        const memMod    = memPlugin && isHnswPlugin(memPlugin) ? memPlugin : undefined;
 
         if (!codeMod && !gitMod && !memMod) return {};
 
@@ -199,8 +202,9 @@ export class Initializer {
         });
         const bm25 = new KeywordSearch(db);
 
-        const firstGit = registry.firstByType('git') as any;
-        const contextBuilder = new ContextBuilder(search, firstGit?.coEdits, db);
+        const gitPlugin = registry.firstByType(PLUGIN.GIT);
+        const coEdits   = gitPlugin && isCoEditPlugin(gitPlugin) ? gitPlugin.coEdits : undefined;
+        const contextBuilder = new ContextBuilder(search, coEdits, db);
 
         return { search, bm25, contextBuilder };
     }

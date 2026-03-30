@@ -40,7 +40,7 @@ Layer 0 — Foundation (no deps, imported by everyone)
 
 Layer 1 — Infrastructure (depends on Layer 0 only)
 ├── providers/       ← Embeddings (local WASM, OpenAI), vector (HNSW), rerankers
-└── search/          ← SearchStrategy implementations: vector/, keyword/, context-builder
+└── search/          ← SearchStrategy implementations: vector/, keyword/, context/
 
 Layer 2 — Domain (depends on Layers 0-1)
 ├── domain/          ← Core primitives: collection (KV store)
@@ -51,9 +51,10 @@ Layer 2 — Domain (depends on Layers 0-1)
 
 Layer 3 — Application (depends on everything below)
 ├── brainbank.ts     ← The main orchestrator, sole root-level file
+├── constants.ts     ← PLUGIN / HNSW typed constants
 ├── bootstrap/       ← System wiring: initializer, registry
-├── api/             ← Use cases: search-api, index-api
-└── cli/             ← CLI commands and factory (dynamic plugin loading)
+├── core/            ← Use cases: search-api, index-api
+└── cli/             ← CLI commands and factory/ (dynamic plugin loading)
 ```
 
 ```
@@ -79,7 +80,7 @@ packages/                ← All plugin implementations live here (NOT in src/)
 - `src/search/context-builder.ts` — Builds formatted context blocks from search results.
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `src/bootstrap/initializer.ts` — Two-phase system initialization (Initializer class).
-- `src/api/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
+- `src/core/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `src/cli/factory.ts` — CLI factory. Uses dynamic `import()` for `@brainbank/*` plugins.
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 

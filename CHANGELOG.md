@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **`PLUGIN` / `HNSW` constants** (`src/constants.ts`) — single source of truth for plugin type names and HNSW index keys. Exported from `brainbank` barrel
+- **`HnswPlugin` / `CoEditPlugin` interfaces** — typed capability interfaces for plugins that expose HNSW indexes or co-edit suggestions, with `isHnswPlugin()` / `isCoEditPlugin()` type guards
+
+### Changed
+- **Removed `as any` casts** — `initializer.ts` and `brainbank.ts` now use typed `isHnswPlugin` / `isCoEditPlugin` type guards instead of `as any` for plugin access
+- **Split `context-builder.ts`** (375 → 50 lines) — formatting logic extracted to `src/search/context/` with 4 focused modules: `code-formatter.ts`, `graph-formatter.ts`, `result-formatters.ts`, `import-graph.ts`
+- **Split `factory.ts`** (376 → 46 lines) — config loading, plugin discovery, provider setup, and builtin registration extracted to `src/cli/factory/` with 4 focused modules
+
 ## [0.8.0] — 2026-03-30
 
 ### Added

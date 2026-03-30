@@ -24,7 +24,8 @@ import { reembedAll } from '@/services/reembed.ts';
 import { createWatcher, type WatchOptions, type Watcher } from '@/services/watch.ts';
 import type { ReembedResult, ReembedOptions } from '@/services/reembed.ts';
 import type { Plugin } from '@/plugins/base.ts';
-import { isSearchable } from '@/plugins/base.ts';
+import { isSearchable, isHnswPlugin } from '@/plugins/base.ts';
+import { PLUGIN, HNSW } from '@/constants.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult,
@@ -86,12 +87,12 @@ export class BrainBank extends EventEmitter {
 
     /** Typed access to the docs plugin. Returns undefined if not loaded. */
     get docs(): Plugin | undefined {
-        return this._registry.firstByType('docs');
+        return this._registry.firstByType(PLUGIN.DOCS);
     }
 
     /** Typed access to the git plugin. Returns undefined if not loaded. */
     get git(): Plugin | undefined {
-        return this._registry.firstByType('git');
+        return this._registry.firstByType(PLUGIN.GIT);
     }
 
     // ── Initialization ───────────────────────────────
@@ -149,7 +150,7 @@ export class BrainBank extends EventEmitter {
             registry:   this._registry,
             config:     this._config,
             getDocsPlugin: () => {
-                const d = this._registry.get('docs');
+                const d = this._registry.get(PLUGIN.DOCS);
                 return d && isSearchable(d) ? d : undefined;
             },
             collection: (n)    => this.collection(n),
@@ -291,14 +292,14 @@ export class BrainBank extends EventEmitter {
         this._requireInit('stats');
         const result: IndexStats = {};
 
-        if (this.has('code')) {
-            result.code = this._registry.firstByType('code')!.stats!() as IndexStats['code'];
+        if (this.has(PLUGIN.CODE)) {
+            result.code = this._registry.firstByType(PLUGIN.CODE)!.stats!() as IndexStats['code'];
         }
-        if (this.has('git')) {
-            result.git = this._registry.firstByType('git')!.stats!() as IndexStats['git'];
+        if (this.has(PLUGIN.GIT)) {
+            result.git = this._registry.firstByType(PLUGIN.GIT)!.stats!() as IndexStats['git'];
         }
-        if (this.has('docs')) {
-            result.documents = this._registry.firstByType('docs')!.stats!() as IndexStats['documents'];
+        if (this.has(PLUGIN.DOCS)) {
+            result.documents = this._registry.firstByType(PLUGIN.DOCS)!.stats!() as IndexStats['documents'];
         }
 
         return result;
@@ -333,15 +334,15 @@ export class BrainBank extends EventEmitter {
 
         const hnswMap = new Map<string, { hnsw: HNSWIndex; vecs: Map<number, Float32Array> }>();
 
-        if (this._kvHnsw) hnswMap.set('kv', { hnsw: this._kvHnsw, vecs: this._kvVecs });
+        if (this._kvHnsw) hnswMap.set(HNSW.KV, { hnsw: this._kvHnsw, vecs: this._kvVecs });
 
         for (const [type, shared] of this._sharedHnsw) {
             hnswMap.set(type, { hnsw: shared.hnsw, vecs: shared.vecCache });
         }
 
-        for (const type of ['memory', 'docs'] as const) {
-            const mod = this._registry.firstByType(type) as any;
-            if (mod?.hnsw) hnswMap.set(type, { hnsw: mod.hnsw, vecs: mod.vecCache });
+        for (const type of [PLUGIN.MEMORY, PLUGIN.DOCS] as const) {
+            const mod = this._registry.firstByType(type);
+            if (mod && isHnswPlugin(mod)) hnswMap.set(type, { hnsw: mod.hnsw, vecs: mod.vecCache });
         }
 
         const result = await reembedAll(this._db, this._embedding, hnswMap, options);

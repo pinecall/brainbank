@@ -21,8 +21,12 @@
 export { BrainBank } from './brainbank.ts';
 
 // Plugin types
-export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin } from './plugins/base.ts';
-export { isIndexable, isSearchable, isWatchable, isDocsPlugin } from './plugins/base.ts';
+export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, HnswPlugin, CoEditPlugin } from './plugins/base.ts';
+export { isIndexable, isSearchable, isWatchable, isDocsPlugin, isHnswPlugin, isCoEditPlugin } from './plugins/base.ts';
+
+// Constants
+export { PLUGIN, HNSW } from './constants.ts';
+export type { PluginType, HnswKey } from './constants.ts';
 
 // Collections
 export { Collection } from './domain/collection.ts';

@@ -23,6 +23,8 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 npm i -g brainbank @brainbank/code @brainbank/git @brainbank/docs
 ```
 
+> If you get `ERESOLVE` errors, use `npm i --legacy-peer-deps` — tree-sitter grammars have overlapping peer dep ranges.
+
 ### CLI — zero code
 
 ```bash

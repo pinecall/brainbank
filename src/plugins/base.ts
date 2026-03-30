@@ -98,3 +98,28 @@ export function isDocsPlugin(i: Plugin): boolean {
         && typeof (i as any).listCollections === 'function';
 }
 
+// ── Structural Capability Interfaces ──────────────
+
+/** Plugin that exposes a shared HNSW index and vector cache (e.g. memory). */
+export interface HnswPlugin extends Plugin {
+    hnsw: HNSWIndex;
+    vecCache: Map<number, Float32Array>;
+}
+
+/** Plugin that provides co-edit suggestions (e.g. git). */
+export interface CoEditPlugin extends Plugin {
+    coEdits: {
+        suggest(filePath: string, limit: number): { file: string; count: number }[];
+    };
+}
+
+/** Check if a plugin exposes a shared HNSW index. */
+export function isHnswPlugin(p: Plugin): p is HnswPlugin {
+    return 'hnsw' in p && 'vecCache' in p;
+}
+
+/** Check if a plugin provides co-edit suggestions. */
+export function isCoEditPlugin(p: Plugin): p is CoEditPlugin {
+    return 'coEdits' in p && typeof (p as CoEditPlugin).coEdits?.suggest === 'function';
+}
+
