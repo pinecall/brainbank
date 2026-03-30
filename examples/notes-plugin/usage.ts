@@ -5,7 +5,7 @@
  * brain.use(), initialize, index, and search.
  *
  * Run:
- *   npx tsx examples/custom-plugin/usage.ts
+ *   npx tsx examples/notes-plugin/usage.ts
  */
 
 import * as path from 'node:path';
@@ -51,4 +51,17 @@ for (const h of noteHits) {
 const allNotes = notesPlugin.listNotes();
 console.log(`\n📂 listNotes():`, allNotes);
 
-brain.close();
+// Watch for changes — auto re-indexes .txt files
+const watcher = brain.watch({
+    onIndex: (file, indexer) => console.log(`\n👁 [${indexer}] re-indexed: ${file}`),
+    onError: (err) => console.error('Watch error:', err.message),
+});
+console.log(`\n👁 Watching for .txt changes... (Ctrl+C to stop)`);
+
+// In a real app you'd keep the process alive.
+// For this demo, stop after 10 seconds:
+setTimeout(() => {
+    watcher.close();
+    brain.close();
+    console.log('\n✅ Done.');
+}, 10_000);
