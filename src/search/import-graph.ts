@@ -6,6 +6,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import type { CodeChunkRow } from '@/db/rows.ts';
 
 /** Traverse import graph 1-2 hops from seed files, return new file paths. */
 export function expandViaImportGraph(db: Database, seedFiles: Set<string>): Set<string> {
@@ -127,7 +128,7 @@ export function fetchBestChunks(db: Database, filePaths: string[]): Array<{
                 `SELECT file_path, content, name, chunk_type, start_line, end_line, language
                  FROM code_chunks WHERE file_path = ?
                  ORDER BY (end_line - start_line) DESC LIMIT 1`
-            ).get(fp) as any;
+            ).get(fp) as CodeChunkRow | undefined;
             if (row) {
                 results.push({
                     filePath: row.file_path, content: row.content, name: row.name ?? '',

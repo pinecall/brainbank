@@ -76,6 +76,39 @@ export interface CollectionRow {
     context: string | null;
 }
 
+// ── Memory Patterns ─────────────────────────────────
+
+export interface MemoryPatternRow {
+    id: number;
+    task_type: string;
+    task: string;
+    approach: string;
+    outcome: string;
+    success_rate: number;
+    critique: string;
+}
+
+// ── Embedding Metadata ──────────────────────────────
+
+export interface EmbeddingMetaRow {
+    value: string;
+}
+
+// ── Import Graph ────────────────────────────────────
+
+export interface ImportRow {
+    imports_path?: string;
+    file_path?: string;
+    name?: string;
+}
+
+// ── Vector Tables ───────────────────────────────────
+
+export interface VectorRow {
+    id: number;
+    embedding: Buffer;
+}
+
 // ── Scalar count result ─────────────────────────────
 
 export interface CountRow {

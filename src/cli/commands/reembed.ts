@@ -18,11 +18,12 @@ export async function cmdReembed(): Promise<void> {
     });
 
     console.log('\n');
-    if (result.code > 0)   console.log(`  ${c.green('✓')} Code:    ${result.code} vectors`);
-    if (result.git > 0)    console.log(`  ${c.green('✓')} Git:     ${result.git} vectors`);
-    if (result.docs > 0)   console.log(`  ${c.green('✓')} Docs:    ${result.docs} vectors`);
-    if (result.kv > 0)     console.log(`  ${c.green('✓')} KV:      ${result.kv} vectors`);
-    if (result.memory > 0) console.log(`  ${c.green('✓')} Memory:  ${result.memory} vectors`);
+    for (const [name, count] of Object.entries(result.counts)) {
+        if (count > 0) {
+            const label = name.charAt(0).toUpperCase() + name.slice(1);
+            console.log(`  ${c.green('✓')} ${label.padEnd(8)} ${count} vectors`);
+        }
+    }
     console.log(`\n  ${c.bold('Total')}: ${result.total} vectors regenerated\n`);
 
     brain.close();

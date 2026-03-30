@@ -6,20 +6,25 @@
  * Delegates formatting to focused modules in context/.
  */
 
-import type { ContextOptions } from '@/types.ts';
+import type { ContextOptions, SearchResult } from '@/types.ts';
 import type { SearchStrategy, CodeGraphProvider } from './types.ts';
 import type { CoEditProvider } from './context/result-formatters.ts';
 import { formatCodeResults } from './context/code-formatter.ts';
 import { formatCodeGraph } from './context/graph-formatter.ts';
 import { formatGitResults, formatCoEdits, formatPatternResults } from './context/result-formatters.ts';
+import { formatDocuments } from './context/document-formatter.ts';
 
 export type { CoEditProvider };
+
+/** Optional callback to search documents. */
+export type DocsSearchFn = (query: string, options?: { k?: number }) => Promise<SearchResult[]>;
 
 export class ContextBuilder {
     constructor(
         private _search: SearchStrategy,
         private _coEdits?: CoEditProvider,
         private _codeGraph?: CodeGraphProvider,
+        private _docsSearch?: DocsSearchFn,
     ) {}
 
     /** Build a full context block for a task. Returns markdown for system prompt. */
@@ -43,6 +48,13 @@ export class ContextBuilder {
         formatGitResults(results, gitResults, parts);
         formatCoEdits(affectedFiles, parts, this._coEdits);
         formatPatternResults(results, patternResults, parts);
+
+        // Document collections (if docs plugin is available)
+        if (this._docsSearch) {
+            const docs = await this._docsSearch(task, { k: codeResults });
+            const docSection = formatDocuments(docs);
+            if (docSection) parts.push(docSection);
+        }
 
         return parts.join('\n');
     }

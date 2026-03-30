@@ -6,6 +6,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import type { GitCommitRow } from '@/db/rows.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { SearchResult } from '@/types.ts';
 
@@ -30,7 +31,7 @@ export class GitVectorSearch {
         const placeholders = ids.map(() => '?').join(',');
         const rows = db.prepare(
             `SELECT * FROM git_commits WHERE id IN (${placeholders}) AND is_merge = 0`
-        ).all(...ids) as any[];
+        ).all(...ids) as GitCommitRow[];
 
         const results: SearchResult[] = [];
         for (const r of rows) {
@@ -42,7 +43,7 @@ export class GitVectorSearch {
                         hash: r.hash, shortHash: r.short_hash,
                         author: r.author, date: r.date,
                         files: JSON.parse(r.files_json ?? '[]'),
-                        additions: r.additions, deletions: r.deletions, diff: r.diff,
+                        additions: r.additions, deletions: r.deletions, diff: r.diff ?? undefined,
                     },
                 });
             }

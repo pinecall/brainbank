@@ -15,7 +15,7 @@ export async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvide
 }
 
 /** Configure reranker and global embedding provider on brainOpts. */
-export async function setupProviders(brainOpts: Record<string, any>, config: ProjectConfig | null): Promise<void> {
+export async function setupProviders(brainOpts: Record<string, unknown>, config: ProjectConfig | null): Promise<void> {
     const rerankerFlag = getFlag('reranker') ?? config?.reranker;
     if (rerankerFlag === 'qwen3') {
         const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');

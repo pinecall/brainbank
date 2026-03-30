@@ -14,72 +14,23 @@ import type { Database } from '@/db/database.ts';
 import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, ProgressCallback } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { CountRow, VectorRow } from '@/db/rows.ts';
+import { saveAllHnsw } from '@/providers/vector/hnsw-loader.ts';
+import { setEmbeddingMeta } from '@/db/embedding-meta.ts';
+import { isReembeddable } from '@/plugin.ts';
+import type { ReembedTable } from '@/plugin.ts';
+import type { Plugin } from '@/plugin.ts';
 
-// ── Table Definitions ───────────────────────────────
+// ── Core Tables (not plugin-owned) ──────────────────
 
-interface ReembedTable {
-    /** Human-readable name (for progress) */
-    name: string;
-    /** Table with text content */
-    textTable: string;
-    /** Table with vector BLOBs */
-    vectorTable: string;
-    /** PK column in text table */
-    idColumn: string;
-    /** FK column in vector table */
-    fkColumn: string;
-    /** Build the embedding text from a row (same logic as each indexer) */
-    textBuilder: (row: any) => string;
-}
-
-const TABLES: ReembedTable[] = [
-    {
-        name: 'code',
-        textTable: 'code_chunks',
-        vectorTable: 'code_vectors',
-        idColumn: 'id',
-        fkColumn: 'chunk_id',
-        textBuilder: (r) => [
-            `File: ${r.file_path}`,
-            r.name ? `${r.chunk_type}: ${r.name}` : r.chunk_type,
-            r.content,
-        ].join('\n'),
-    },
-    {
-        name: 'git',
-        textTable: 'git_commits',
-        vectorTable: 'git_vectors',
-        idColumn: 'id',
-        fkColumn: 'commit_id',
-        // Must match git-engine.ts:119-125 exactly
-        textBuilder: (r) => [
-            `Commit: ${r.message}`,
-            `Author: ${r.author}`,
-            `Date: ${r.date}`,
-            r.files_json && r.files_json !== '[]'
-                ? `Files: ${JSON.parse(r.files_json).join(', ')}`
-                : '',
-            r.diff ? `Changes:\n${r.diff.slice(0, 2000)}` : '',
-        ].filter(Boolean).join('\n'),
-    },
+const CORE_TABLES: ReembedTable[] = [
     {
         name: 'memory',
         textTable: 'memory_patterns',
         vectorTable: 'memory_vectors',
         idColumn: 'id',
         fkColumn: 'pattern_id',
-        // Must match memory/pattern-store.ts:49 exactly
         textBuilder: (r) => `${r.task_type} ${r.task} ${r.approach}`,
-    },
-
-    {
-        name: 'docs',
-        textTable: 'doc_chunks',
-        vectorTable: 'doc_vectors',
-        idColumn: 'id',
-        fkColumn: 'chunk_id',
-        // Must match docs-engine.ts:160 exactly
-        textBuilder: (r) => `title: ${r.title ?? ''} | text: ${r.content}`,
     },
     {
         name: 'kv',
@@ -87,19 +38,30 @@ const TABLES: ReembedTable[] = [
         vectorTable: 'kv_vectors',
         idColumn: 'id',
         fkColumn: 'data_id',
-        textBuilder: (r) => r.content,
+        textBuilder: (r) => String(r.content),
     },
 ];
+
+/** Collect reembed tables from plugins + core. Deduplicates by vectorTable for multi-repo. */
+function collectTables(plugins: Plugin[]): ReembedTable[] {
+    const byVectorTable = new Map<string, ReembedTable>();
+    for (const p of plugins) {
+        if (isReembeddable(p)) {
+            const config = p.reembedConfig();
+            byVectorTable.set(config.vectorTable, config);
+        }
+    }
+    for (const t of CORE_TABLES) {
+        byVectorTable.set(t.vectorTable, t);
+    }
+    return [...byVectorTable.values()];
+}
 
 // ── Result ──────────────────────────────────────────
 
 export interface ReembedResult {
-    code: number;
-    git: number;
-    memory: number;
-
-    docs: number;
-    kv: number;
+    /** Per-table vector counts. Keys are table names (e.g. 'code', 'git', 'docs', 'kv'). */
+    counts: Record<string, number>;
     total: number;
 }
 
@@ -120,15 +82,30 @@ export async function reembedAll(
     db: Database,
     embedding: EmbeddingProvider,
     hnswMap: Map<string, { hnsw: HNSWIndex; vecs: Map<number, Float32Array> }>,
+    plugins: Plugin[],
     options: ReembedOptions = {},
+    persist?: {
+        dbPath: string;
+        kvHnsw: HNSWIndex;
+        sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>;
+    },
 ): Promise<ReembedResult> {
     const { batchSize = 50, onProgress } = options;
-    const result: Record<string, number> = {};
+    const tables = collectTables(plugins);
+    const counts: Record<string, number> = {};
     let total = 0;
 
-    for (const table of TABLES) {
+    for (const table of tables) {
+        // Skip tables that don't exist (plugin not installed)
+        try {
+            const exists = (db.prepare(
+                `SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name=?`
+            ).get(table.textTable) as CountRow).c;
+            if (!exists) continue;
+        } catch { continue; }
+
         const count = await reembedTable(db, embedding, table, batchSize, onProgress);
-        result[table.name] = count;
+        counts[table.name] = count;
         total += count;
 
         // Rebuild HNSW if available
@@ -151,13 +128,14 @@ export async function reembedAll(
         upsert.run(k, v);
     }
 
-    return {
-        code: result.code ?? 0,
-        git: result.git ?? 0,
-        memory: result.memory ?? 0,
+    // Persist provider metadata + HNSW indexes to disk
+    if (persist) {
+        setEmbeddingMeta(db, embedding);
+        saveAllHnsw(persist.dbPath, persist.kvHnsw, persist.sharedHnsw, new Map());
+    }
 
-        docs: result.docs ?? 0,
-        kv: result.kv ?? 0,
+    return {
+        counts,
         total,
     };
 }
@@ -178,7 +156,7 @@ async function reembedTable(
 ): Promise<number> {
     const totalCount = (db.prepare(
         `SELECT COUNT(*) as c FROM ${table.textTable}`
-    ).get() as any).c;
+    ).get() as CountRow).c;
 
     if (totalCount === 0) return 0;
 
@@ -196,8 +174,8 @@ async function reembedTable(
         for (let offset = 0; offset < totalCount; offset += batchSize) {
             const batch = db.prepare(
                 `SELECT * FROM ${table.textTable} LIMIT ? OFFSET ?`
-            ).all(batchSize, offset) as any[];
-            const texts = batch.map((r: any) => table.textBuilder(r));
+            ).all(batchSize, offset) as Record<string, unknown>[];
+            const texts = batch.map(r => table.textBuilder(r));
             const vectors = await embedding.embedBatch(texts);
 
             db.transaction(() => {
@@ -236,7 +214,7 @@ async function rebuildHnsw(
 
     const rows = db.prepare(
         `SELECT ${table.fkColumn} as id, embedding FROM ${table.vectorTable}`
-    ).all() as any[];
+    ).all() as VectorRow[];
 
     for (const row of rows) {
         const buf = Buffer.from(row.embedding);

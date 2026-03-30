@@ -9,7 +9,7 @@
 import type { Database } from '@/db/database.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { EmbeddingProvider, Reranker } from '@/types.ts';
-import { Collection } from '@/services/collection.ts';
+import { Collection } from './collection.ts';
 
 export class KVService {
     private _collections = new Map<string, Collection>();
@@ -32,7 +32,7 @@ export class KVService {
 
     /** List all collection names that have data. */
     listNames(): string[] {
-        return (this._db.prepare('SELECT DISTINCT collection FROM kv_data ORDER BY collection').all() as any[])
+        return (this._db.prepare('SELECT DISTINCT collection FROM kv_data ORDER BY collection').all() as { collection: string }[])
             .map(r => r.collection);
     }
 

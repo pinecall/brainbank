@@ -18,7 +18,7 @@ export async function cmdDocs(): Promise<void> {
         process.stdout.write(`\r  ${c.cyan(col)} [${cur}/${total}] ${file}                    `);
     };
 
-    const docsPlugin = brain.docs as any;
+    const docsPlugin = brain.docs;
     if (!docsPlugin) { console.log(c.red('  Docs plugin not loaded. Install @brainbank/docs.')); process.exit(1); }
 
     const results = await docsPlugin.indexDocs(opts);
@@ -48,7 +48,7 @@ export async function cmdDocSearch(): Promise<void> {
         console.log(c.red('Docs plugin not loaded. Install @brainbank/docs.'));
         process.exit(1);
     }
-    const results = await (brain.docs as any).search(query, { collection: collection ?? undefined, k });
+    const results = await brain.docs!.search(query, { collection: collection ?? undefined, k });
 
     if (results.length === 0) {
         console.log(c.yellow('  No results found.'));
@@ -59,7 +59,7 @@ export async function cmdDocSearch(): Promise<void> {
     for (const r of results) {
         const score = Math.round(r.score * 100);
         const ctx = r.context ? ` — ${c.dim(r.context)}` : '';
-        console.log(`${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} [${(r.metadata as any).collection}]${ctx}`);
+        console.log(`${c.magenta(`[DOC ${score}%]`)} ${c.bold(r.filePath!)} [${r.type === 'document' ? r.metadata.collection ?? '' : ''}]${ctx}`);
         const preview = r.content.split('\n').slice(0, 4).join('\n');
         console.log(c.dim(preview));
         console.log('');

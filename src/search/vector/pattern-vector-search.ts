@@ -6,6 +6,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import type { MemoryPatternRow } from '@/db/rows.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { SearchResult } from '@/types.ts';
 import { searchMMR } from './mmr.ts';
@@ -37,7 +38,7 @@ export class PatternVectorSearch {
         const placeholders = ids.map(() => '?').join(',');
         const rows = db.prepare(
             `SELECT * FROM memory_patterns WHERE id IN (${placeholders}) AND success_rate >= 0.5`
-        ).all(...ids) as any[];
+        ).all(...ids) as MemoryPatternRow[];
 
         const results: SearchResult[] = [];
         for (const r of rows) {

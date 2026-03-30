@@ -35,7 +35,7 @@ export async function cmdKv(): Promise<void> {
         const collName = pos[2];
         const query = pos.slice(3).join(' ');
         const k = parseInt(getFlag('k') || '5', 10);
-        const mode = (getFlag('mode') as any) || 'hybrid';
+        const mode = (getFlag('mode') || 'hybrid') as 'hybrid' | 'vector' | 'keyword';
 
         if (!collName || !query) {
             console.log(c.red('Usage: brainbank kv search <collection> <query> [--k 5] [--mode hybrid|keyword|vector]'));

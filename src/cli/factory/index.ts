@@ -7,6 +7,7 @@
  */
 
 import { BrainBank } from '@/brainbank.ts';
+import type { BrainBankConfig } from '@/types.ts';
 import { getFlag } from '../utils.ts';
 import { loadConfig, getConfig, resetConfigCache } from './config-loader.ts';
 import { discoverFolderPlugins, resetPluginCache } from './plugin-loader.ts';
@@ -28,7 +29,7 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     const config = await loadConfig();
     const folderPlugins = await discoverFolderPlugins();
 
-    const brainOpts: Record<string, any> = { repoPath: rp, ...(config?.brainbank ?? {}) };
+    const brainOpts: Partial<BrainBankConfig> & Record<string, unknown> = { repoPath: rp, ...(config?.brainbank ?? {}) };
     if (config?.maxFileSize) brainOpts.maxFileSize = config.maxFileSize;
     await setupProviders(brainOpts, config);
 

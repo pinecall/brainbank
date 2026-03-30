@@ -24,7 +24,7 @@ export async function cmdContext(): Promise<void> {
 
         const brain = await createBrain();
         await brain.initialize();
-        const docsPlugin = brain.docs as any;
+        const docsPlugin = brain.docs;
         if (!docsPlugin) { console.log(c.red('Docs plugin not loaded.')); process.exit(1); }
         docsPlugin.addContext(collection, path, desc);
         console.log(c.green(`✓ Context added: ${collection}:${path} → "${desc}"`));
@@ -36,7 +36,7 @@ export async function cmdContext(): Promise<void> {
     if (sub === 'list') {
         const brain = await createBrain();
         await brain.initialize();
-        const docsPlugin = brain.docs as any;
+        const docsPlugin = brain.docs;
         if (!docsPlugin) { console.log(c.yellow('  Docs plugin not loaded.')); brain.close(); return; }
         const contexts = docsPlugin.listContexts();
         if (contexts.length === 0) {

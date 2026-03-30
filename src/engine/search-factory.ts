@@ -1,17 +1,17 @@
 /**
- * BrainBank — Search Layer Builder
+ * BrainBank — Search Factory
  *
- * Constructs the search stack (vector + keyword + context builder)
- * from initialized plugins. Extracted from Initializer._buildSearchLayer()
- * so Initializer doesn't know about VectorSearch internals.
+ * Constructs a fully-wired SearchAPI from initialized plugins.
+ * Builds vector strategies, keyword search, and context builder,
+ * then returns a ready-to-use SearchAPI instance.
  */
 
 import type { Database } from '@/db/database.ts';
-import type { EmbeddingProvider } from '@/types.ts';
+import type { EmbeddingProvider, ResolvedConfig } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { SearchStrategy } from '@/search/types.ts';
-import type { PluginRegistry } from './registry.ts';
-import { isHnswPlugin, isCoEditPlugin } from '@/plugin.ts';
+import type { PluginRegistry } from '@/services/plugin-registry.ts';
+import type { KVService } from '@/services/kv-service.ts';
+import { isHnswPlugin, isCoEditPlugin, isSearchable } from '@/plugin.ts';
 import { PLUGIN } from '@/constants.ts';
 import { CodeVectorSearch } from '@/search/vector/code-vector-search.ts';
 import { GitVectorSearch } from '@/search/vector/git-vector-search.ts';
@@ -20,28 +20,23 @@ import { CompositeVectorSearch } from '@/search/vector/composite-vector-search.t
 import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
 import { SqlCodeGraphProvider } from '@/search/context/sql-code-graph.ts';
-import type { ResolvedConfig } from '@/types.ts';
+import { SearchAPI } from './search-api.ts';
 
-export interface SearchLayer {
-    search?: SearchStrategy;
-    bm25?: KeywordSearch;
-    contextBuilder?: ContextBuilder;
-}
-
-/** Build the search layer from registry state. */
-export function buildSearchLayer(
+/** Build a fully-wired SearchAPI from registry state. Returns undefined if no search strategies available. */
+export function createSearchAPI(
     db: Database,
     embedding: EmbeddingProvider,
     config: ResolvedConfig,
     registry: PluginRegistry,
+    kvService: KVService,
     sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
-): SearchLayer {
+): SearchAPI | undefined {
     const codeMod = sharedHnsw.get(PLUGIN.CODE);
     const gitMod  = sharedHnsw.get(PLUGIN.GIT);
     const memPlugin = registry.firstByType(PLUGIN.MEMORY);
     const memMod    = memPlugin && isHnswPlugin(memPlugin) ? memPlugin : undefined;
 
-    if (!codeMod && !gitMod && !memMod) return {};
+    if (!codeMod && !gitMod && !memMod) return undefined;
 
     const code = codeMod
         ? new CodeVectorSearch({ db, hnsw: codeMod.hnsw, vecs: codeMod.vecCache })
@@ -55,15 +50,25 @@ export function buildSearchLayer(
 
     const search = new CompositeVectorSearch({
         code, git, patterns, embedding,
-        reranker: config.reranker,
     });
 
     const bm25 = new KeywordSearch(db);
 
+    // Context builder
     const gitPlugin = registry.firstByType(PLUGIN.GIT);
     const coEdits   = gitPlugin && isCoEditPlugin(gitPlugin) ? gitPlugin.coEdits : undefined;
     const codeGraph = new SqlCodeGraphProvider(db);
-    const contextBuilder = new ContextBuilder(search, coEdits, codeGraph);
 
-    return { search, bm25, contextBuilder };
+    const docsSearch = async (query: string, options?: { k?: number }) => {
+        const d = registry.firstByType(PLUGIN.DOCS);
+        if (!d || !isSearchable(d)) return [];
+        return d.search(query, options);
+    };
+
+    const contextBuilder = new ContextBuilder(search, coEdits, codeGraph, docsSearch);
+
+    return new SearchAPI({
+        search, bm25, registry, config,
+        kvService, contextBuilder,
+    });
 }

@@ -6,6 +6,7 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import type { CodeChunkRow } from '@/db/rows.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { SearchResult } from '@/types.ts';
 import { searchMMR } from './mmr.ts';
@@ -37,7 +38,7 @@ export class CodeVectorSearch {
         const placeholders = ids.map(() => '?').join(',');
         const rows = db.prepare(
             `SELECT * FROM code_chunks WHERE id IN (${placeholders})`
-        ).all(...ids) as any[];
+        ).all(...ids) as CodeChunkRow[];
 
         const results: SearchResult[] = [];
         for (const r of rows) {
@@ -46,7 +47,8 @@ export class CodeVectorSearch {
                 results.push({
                     type: 'code', score, filePath: r.file_path, content: r.content,
                     metadata: {
-                        chunkType: r.chunk_type, name: r.name,
+                        id: r.id,
+                        chunkType: r.chunk_type, name: r.name ?? undefined,
                         startLine: r.start_line, endLine: r.end_line, language: r.language,
                     },
                 });

@@ -7,10 +7,10 @@
  */
 
 import type { Database } from '@/db/database.ts';
+import type { CodeChunkRow, GitCommitRow, MemoryPatternRow } from '@/db/rows.ts';
 import type { SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
-import { FTSMaintenance } from '@/db/fts-maintenance.ts';
 
 /** Check if an error is an FTS5 query syntax error (expected, safe to ignore). */
 function isFTSError(e: unknown): boolean {
@@ -52,7 +52,7 @@ export class KeywordSearch implements SearchStrategy {
                 WHERE fts_code MATCH ?
                 ORDER BY score ASC
                 LIMIT ?
-            `).all(ftsQuery, k) as any[];
+            `).all(ftsQuery, k) as (CodeChunkRow & { score: number })[];
 
             for (const r of rows) {
                 seenIds.add(r.id);
@@ -73,7 +73,7 @@ export class KeywordSearch implements SearchStrategy {
                     FROM code_chunks
                     WHERE file_path LIKE ? AND chunk_type = 'file'
                     LIMIT 3
-                `).all(`%${word}%`) as any[];
+                `).all(`%${word}%`) as CodeChunkRow[];
 
                 for (const r of pathRows) {
                     if (seenIds.has(r.id)) continue;
@@ -96,7 +96,7 @@ export class KeywordSearch implements SearchStrategy {
                 WHERE fts_commits MATCH ? AND c.is_merge = 0
                 ORDER BY score ASC
                 LIMIT ?
-            `).all(ftsQuery, k) as any[];
+            `).all(ftsQuery, k) as (GitCommitRow & { score: number })[];
 
             for (const r of rows) {
                 results.push({
@@ -111,7 +111,7 @@ export class KeywordSearch implements SearchStrategy {
                         files: JSON.parse(r.files_json ?? '[]'),
                         additions: r.additions,
                         deletions: r.deletions,
-                        diff: r.diff,
+                        diff: r.diff ?? undefined,
                         searchType: 'bm25',
                     },
                 });
@@ -131,7 +131,7 @@ export class KeywordSearch implements SearchStrategy {
                 WHERE fts_patterns MATCH ? AND p.success_rate >= 0.5
                 ORDER BY score ASC
                 LIMIT ?
-            `).all(ftsQuery, k) as any[];
+            `).all(ftsQuery, k) as (MemoryPatternRow & { score: number })[];
 
             for (const r of rows) {
                 results.push({
@@ -152,15 +152,16 @@ export class KeywordSearch implements SearchStrategy {
     }
 
     /** Map a code_chunks row to a CodeResult. */
-    private _toCodeResult(r: any, score: number, searchType: string): SearchResult {
+    private _toCodeResult(r: CodeChunkRow, score: number, searchType: string): SearchResult {
         return {
             type: 'code',
             score,
             filePath: r.file_path,
             content: r.content,
             metadata: {
+                id: r.id,
                 chunkType: r.chunk_type,
-                name: r.name,
+                name: r.name ?? undefined,
                 startLine: r.start_line,
                 endLine: r.end_line,
                 language: r.language,
@@ -169,8 +170,12 @@ export class KeywordSearch implements SearchStrategy {
         };
     }
 
-    /** Rebuild the FTS index from scratch. */
+    /** Rebuild all FTS5 indices from their content tables. */
     rebuild(): void {
-        new FTSMaintenance(this._db).rebuild();
+        try {
+            this._db.prepare("INSERT INTO fts_code(fts_code) VALUES('rebuild')").run();
+            this._db.prepare("INSERT INTO fts_commits(fts_commits) VALUES('rebuild')").run();
+            this._db.prepare("INSERT INTO fts_patterns(fts_patterns) VALUES('rebuild')").run();
+        } catch { /* non-fatal */ }
     }
 }

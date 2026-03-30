@@ -102,7 +102,7 @@ export async function registerConfigCollections(brain: BrainBank, config: Projec
     const collections = config?.docs?.collections;
     if (!collections?.length) return;
 
-    const docsPlugin = brain.docs as any;
+    const docsPlugin = brain.docs;
     if (!docsPlugin?.addCollection) return;
 
     for (const coll of collections) {

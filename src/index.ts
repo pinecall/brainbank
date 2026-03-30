@@ -21,8 +21,9 @@
 export { BrainBank } from './brainbank.ts';
 
 // Plugin types
-export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, HnswPlugin, CoEditPlugin } from './plugin.ts';
-export { isIndexable, isSearchable, isWatchable, isDocsPlugin, isHnswPlugin, isCoEditPlugin } from './plugin.ts';
+export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, HnswPlugin, CoEditPlugin, ReembeddablePlugin, ReembedTable } from './plugin.ts';
+export { isIndexable, isSearchable, isWatchable, isDocsPlugin, isHnswPlugin, isCoEditPlugin, isReembeddable } from './plugin.ts';
+export type { DocsPlugin } from './plugin.ts';
 
 // Constants
 export { PLUGIN, HNSW } from './constants.ts';
@@ -64,7 +65,7 @@ export { PerplexityEmbedding } from './providers/embeddings/perplexity-embedding
 export type { PerplexityEmbeddingOptions } from './providers/embeddings/perplexity-embedding.ts';
 export { PerplexityContextEmbedding } from './providers/embeddings/perplexity-context-embedding.ts';
 export type { PerplexityContextEmbeddingOptions } from './providers/embeddings/perplexity-context-embedding.ts';
-export type { ReembedResult, ReembedOptions } from './services/reembed.ts';
+export type { ReembedResult, ReembedOptions } from './engine/reembed.ts';
 export type { WatchOptions, Watcher } from './services/watch.ts';
 
 // Reranker
@@ -95,7 +96,6 @@ export { KVService } from './services/kv-service.ts';
 
 // Search internals
 export { ContextBuilder } from './search/context-builder.ts';
-export { VectorSearch } from './search/vector/vector-search.ts';
 export { CompositeVectorSearch } from './search/vector/composite-vector-search.ts';
 export { CodeVectorSearch } from './search/vector/code-vector-search.ts';
 export { GitVectorSearch } from './search/vector/git-vector-search.ts';

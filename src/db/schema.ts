@@ -311,7 +311,7 @@ export function createSchema(db: Database.Database): void {
  */
 export function getSchemaVersion(db: Database.Database): number {
     try {
-        const row = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as any;
+        const row = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number } | undefined;
         return row?.v ?? 0;
     } catch {
         return 0;

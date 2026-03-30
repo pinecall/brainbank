@@ -10,7 +10,7 @@
  *   const brain = new BrainBank().use(docs());
  */
 
-import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult } from 'brainbank';
+import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult, ReembedTable } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 import { DocsIndexer } from './docs-indexer.js';
 import { DocumentSearch } from './document-search.js';
@@ -110,6 +110,18 @@ class DocsPlugin implements Plugin {
         mode?: 'hybrid' | 'vector' | 'keyword';
     }): Promise<SearchResult[]> {
         return this._search.search(query, options);
+    }
+
+    /** Table descriptor for re-embedding doc vectors from DB rows. */
+    reembedConfig(): ReembedTable {
+        return {
+            name: 'docs',
+            textTable: 'doc_chunks',
+            vectorTable: 'doc_vectors',
+            idColumn: 'id',
+            fkColumn: 'chunk_id',
+            textBuilder: (r) => `title: ${r.title ?? ''} | text: ${r.content}`,
+        };
     }
 
     /** Add context description for a document path. */

@@ -5,6 +5,38 @@
  */
 
 
+import type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } from './services/collection.ts';
+
+// Re-export collection types so consumers don't need to import from services/
+export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions };
+
+// ── Collection Interface ────────────────────────────
+
+/** Public contract for a KV collection. Plugins depend on this interface, not the concrete class. */
+export interface ICollection {
+    /** Collection name. */
+    readonly name: string;
+    /** Add an item. Returns its ID. */
+    add(content: string, options?: CollectionAddOptions | Record<string, any>): Promise<number>;
+    /** Update an item's content (re-embeds). Returns the new ID. */
+    update(id: number, content: string, options?: CollectionAddOptions): Promise<number>;
+    /** Add multiple items. Returns their IDs. */
+    addMany(items: { content: string; metadata?: Record<string, any>; tags?: string[]; ttl?: string }[]): Promise<number[]>;
+    /** Search this collection. */
+    search(query: string, options?: CollectionSearchOptions): Promise<CollectionItem[]>;
+    /** List items (newest first). */
+    list(options?: { limit?: number; offset?: number; tags?: string[] }): CollectionItem[];
+    /** Count items in this collection. */
+    count(): number;
+    /** Keep only the N most recent items. */
+    trim(options: { keep: number }): Promise<{ removed: number }>;
+    /** Remove items older than a duration string. */
+    prune(options: { olderThan: string }): Promise<{ removed: number }>;
+    /** Remove a specific item by ID. */
+    remove(id: number): void;
+    /** Clear all items in this collection. */
+    clear(): void;
+}
 
 // ── Configuration ───────────────────────────────────
 
@@ -174,12 +206,15 @@ export type SearchResultType = 'code' | 'commit' | 'pattern' | 'document' | 'col
 // Typed metadata per result type
 
 export interface CodeResultMetadata {
+    /** Database chunk ID (used by call graph annotations). */
+    id?: number;
     chunkType: string;
     name?: string;
     startLine: number;
     endLine: number;
     language: string;
     searchType?: string;
+    rrfScore?: number;
 }
 
 export interface CommitResultMetadata {
@@ -192,6 +227,7 @@ export interface CommitResultMetadata {
     deletions?: number;
     diff?: string;
     searchType?: string;
+    rrfScore?: number;
 }
 
 export interface PatternResultMetadata {
@@ -201,6 +237,7 @@ export interface PatternResultMetadata {
     successRate: number;
     critique?: string;
     searchType?: string;
+    rrfScore?: number;
 }
 
 export interface DocumentResultMetadata {
@@ -211,6 +248,7 @@ export interface DocumentResultMetadata {
     searchType?: string;
     /** Internal chunk ID used by hybrid search to map fused results. */
     chunkId?: number;
+    rrfScore?: number;
 }
 
 // Discriminated union
@@ -251,13 +289,20 @@ export interface DocumentResult {
     metadata: DocumentResultMetadata;
 }
 
+export interface CollectionResultMetadata {
+    id?: number;
+    collection?: string;
+    rrfScore?: number;
+    [key: string]: unknown;
+}
+
 export interface CollectionResult {
     type: 'collection';
     score: number;
     filePath?: string;
     content: string;
     context?: string;
-    metadata: Record<string, any>;
+    metadata: CollectionResultMetadata;
 }
 
 export type SearchResult = CodeResult | CommitResult | PatternResult | DocumentResult | CollectionResult;

@@ -66,8 +66,8 @@ export function reciprocalRankFusion(
         metadata: {
             ...entry.result.metadata,
             rrfScore: entry.rrfScore,
-        } as any,
-    }));
+        },
+    }) as SearchResult);
 }
 
 /**
@@ -82,8 +82,54 @@ function resultKey(r: SearchResult): string {
         case 'pattern':
             return `pattern:${r.metadata.taskType}:${r.content?.slice(0, 60)}`;
         case 'document':
-            return `document:${r.filePath ?? ''}:${(r.metadata as any).collection ?? ''}:${(r.metadata as any).seq ?? ''}:${r.content?.slice(0, 80)}`;
+            return `document:${r.filePath ?? ''}:${r.metadata.collection ?? ''}:${r.metadata.seq ?? ''}:${r.content?.slice(0, 80)}`;
         case 'collection':
-            return `collection:${(r.metadata as any).id ?? r.content?.slice(0, 80)}`;
+            return `collection:${r.metadata.id ?? r.content?.slice(0, 80)}`;
     }
+}
+
+/**
+ * Generic RRF that works on any type — no SearchResult required.
+ *
+ * @param lists - Ranked lists from different search systems.
+ * @param keyFn - Returns a stable unique string per item.
+ * @param scoreFn - Extracts the original score from an item.
+ * @param k - Smoothing constant. Default: 60.
+ * @param maxResults - Maximum results to return.
+ */
+export function fuseRankedLists<T>(
+    lists: T[][],
+    keyFn: (item: T) => string,
+    scoreFn: (item: T) => number,
+    k: number = 60,
+    maxResults: number = 15,
+): { item: T; score: number }[] {
+    const fused = new Map<string, { item: T; rrfScore: number; bestScore: number }>();
+
+    for (const list of lists) {
+        for (let rank = 0; rank < list.length; rank++) {
+            const item = list[rank];
+            const key = keyFn(item);
+            const contribution = 1.0 / (k + rank + 1);
+            const score = scoreFn(item);
+
+            const existing = fused.get(key);
+            if (existing) {
+                existing.rrfScore += contribution;
+                if (score > existing.bestScore) {
+                    existing.item = item;
+                    existing.bestScore = score;
+                }
+            } else {
+                fused.set(key, { item, rrfScore: contribution, bestScore: score });
+            }
+        }
+    }
+
+    const sorted = [...fused.values()]
+        .sort((a, b) => b.rrfScore - a.rrfScore)
+        .slice(0, maxResults);
+
+    const maxRRF = sorted[0]?.rrfScore ?? 1;
+    return sorted.map(e => ({ item: e.item, score: e.rrfScore / maxRRF }));
 }

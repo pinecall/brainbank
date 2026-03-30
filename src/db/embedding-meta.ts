@@ -7,8 +7,9 @@
  */
 
 import type { Database } from './database.ts';
+import type { EmbeddingMetaRow } from './rows.ts';
 import type { EmbeddingProvider } from '@/types.ts';
-import { providerKey } from '@/providers/embeddings/resolve.ts';
+import { providerKey } from '@/lib/provider-key.ts';
 
 /** Stored embedding metadata shape. */
 export interface EmbeddingMeta {
@@ -23,13 +24,13 @@ export function getEmbeddingMeta(db: Database): EmbeddingMeta | null {
     try {
         const provider = db.prepare(
             "SELECT value FROM embedding_meta WHERE key = 'provider'"
-        ).get() as any;
+        ).get() as EmbeddingMetaRow | undefined;
         const dims = db.prepare(
             "SELECT value FROM embedding_meta WHERE key = 'dims'"
-        ).get() as any;
+        ).get() as EmbeddingMetaRow | undefined;
         const key = db.prepare(
             "SELECT value FROM embedding_meta WHERE key = 'provider_key'"
-        ).get() as any;
+        ).get() as EmbeddingMetaRow | undefined;
 
         if (!provider || !dims) return null;
         return {

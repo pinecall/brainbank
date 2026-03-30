@@ -7,8 +7,8 @@
 
 import type { EmbeddingProvider } from '@/types.ts';
 
-/** Known embedding provider keys. */
-export type EmbeddingKey = 'local' | 'openai' | 'perplexity' | 'perplexity-context';
+/** Re-export providerKey from lib/ (canonical location). */
+export { providerKey, type EmbeddingKey } from '@/lib/provider-key.ts';
 
 /** Resolve an EmbeddingProvider from a key string. Lazy-loads the provider module. */
 export async function resolveEmbedding(key: string): Promise<EmbeddingProvider> {
@@ -31,13 +31,4 @@ export async function resolveEmbedding(key: string): Promise<EmbeddingProvider> 
             return new LocalEmbedding();
         }
     }
-}
-
-/** Infer a stable key from an existing provider instance. */
-export function providerKey(p: EmbeddingProvider): EmbeddingKey {
-    const name = p.constructor?.name ?? '';
-    if (name === 'OpenAIEmbedding') return 'openai';
-    if (name === 'PerplexityEmbedding') return 'perplexity';
-    if (name === 'PerplexityContextEmbedding') return 'perplexity-context';
-    return 'local';
 }

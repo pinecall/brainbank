@@ -14,7 +14,7 @@ import type { KvDataRow, CountRow } from '@/db/rows.ts';
 import { vecToBuffer } from '@/lib/math.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import { reciprocalRankFusion } from '@/lib/rrf.ts';
+import { fuseRankedLists } from '@/lib/rrf.ts';
 import { rerank } from '@/lib/rerank.ts';
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 
@@ -164,29 +164,22 @@ export class Collection {
         if (mode === 'keyword') return this._filterByTags(this._searchBM25(query, k, minScore), tags);
         if (mode === 'vector') return this._filterByTags(await this._searchVector(query, k, minScore), tags);
 
-        // Hybrid: vector + BM25 → RRF
+        // Hybrid: vector + BM25 → generic RRF (no SearchResult conversion)
         const [vectorHits, bm25Hits] = await Promise.all([
             this._searchVector(query, k, 0),
             Promise.resolve(this._searchBM25(query, k, 0)),
         ]);
 
-        const fused = reciprocalRankFusion([
-            vectorHits.map(h => ({ type: 'collection' as const, score: h.score ?? 0, content: h.content, metadata: { id: h.id } })),
-            bm25Hits.map(h => ({ type: 'collection' as const, score: h.score ?? 0, content: h.content, metadata: { id: h.id } })),
-        ]);
+        const fused = fuseRankedLists(
+            [vectorHits, bm25Hits],
+            h => String(h.id),
+            h => h.score ?? 0,
+        );
 
-        const allById = new Map<number, CollectionItem>();
-        for (const h of [...vectorHits, ...bm25Hits]) allById.set(h.id, h);
-
-        const results: CollectionItem[] = [];
-        for (const r of fused) {
-            const meta = r.metadata as Record<string, unknown> | undefined;
-            const item = allById.get(meta?.id as number);
-            if (!item) continue;
-            const scored = { ...item, score: r.score };
-            if (scored.score >= minScore) results.push(scored);
-            if (results.length >= k) break;
-        }
+        const results: CollectionItem[] = fused
+            .map(({ item, score }) => ({ ...item, score }))
+            .filter(r => r.score >= minScore)
+            .slice(0, k);
 
         // Apply re-ranking if available
         if (this._reranker && results.length > 1) {
@@ -197,7 +190,9 @@ export class Collection {
                 metadata: { id: r.id },
             }));
             const reranked = await rerank(query, asSearchResults, this._reranker);
-            const rerankedById = new Map(reranked.map(r => [(r.metadata as any)?.id as number, r.score]));
+            const rerankedById = new Map(
+                reranked.map(r => [r.type === 'collection' ? r.metadata.id : undefined, r.score]),
+            );
             const blended = results.map(r => ({ ...r, score: rerankedById.get(r.id) ?? r.score ?? 0 }));
             return this._filterByTags(
                 blended.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
@@ -206,6 +201,17 @@ export class Collection {
         }
 
         return this._filterByTags(results, tags);
+    }
+
+    /** Search and return results as SearchResult[] for use in hybrid search pipelines. */
+    async searchAsResults(query: string, k: number): Promise<SearchResult[]> {
+        const hits = await this.search(query, { k });
+        return hits.map(h => ({
+            type: 'collection' as const,
+            score: h.score ?? 0,
+            content: h.content,
+            metadata: { id: h.id, collection: this._name, ...h.metadata },
+        }));
     }
 
     /** List items (newest first). */

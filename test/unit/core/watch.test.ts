@@ -10,7 +10,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createWatcher } from '../../../src/services/watch.ts';
+import { Watcher } from '../../../src/services/watch.ts';
 import type { Plugin, WatchablePlugin } from '../../../src/plugin.ts';
 
 export const name = 'Watch Mode';
@@ -54,7 +54,7 @@ export const tests = {
         const indexers = new Map<string, Plugin>([['csv', csvPlugin]]);
         let reindexCalled = false;
 
-        const watcher = createWatcher(
+        const watcher = new Watcher(
             async () => { reindexCalled = true; },
             indexers,
             dir,
@@ -80,7 +80,7 @@ export const tests = {
         const dir = tmpWatchDir('code');
         let reindexCount = 0;
 
-        const watcher = createWatcher(
+        const watcher = new Watcher(
             async () => { reindexCount++; },
             new Map(),
             dir,
@@ -103,7 +103,7 @@ export const tests = {
         const dir = tmpWatchDir('ignored');
         let reindexCount = 0;
 
-        const watcher = createWatcher(
+        const watcher = new Watcher(
             async () => { reindexCount++; },
             new Map(),
             dir,
@@ -130,7 +130,7 @@ export const tests = {
         const dir = tmpWatchDir('debounce');
         let reindexCount = 0;
 
-        const watcher = createWatcher(
+        const watcher = new Watcher(
             async () => { reindexCount++; },
             new Map(),
             dir,
@@ -156,7 +156,7 @@ export const tests = {
         const dir = tmpWatchDir('close');
         let reindexCount = 0;
 
-        const watcher = createWatcher(
+        const watcher = new Watcher(
             async () => { reindexCount++; },
             new Map(),
             dir,
@@ -179,14 +179,14 @@ export const tests = {
         const dir = tmpWatchDir('callback');
         const events: { file: string; indexer: string }[] = [];
 
-        const watcher = createWatcher(
+        const watcher = new Watcher(
             async () => {},
             new Map(),
             dir,
             {
                 paths: [dir],
                 debounceMs: 300,
-                onIndex: (file, indexer) => events.push({ file, indexer }),
+                onIndex: (file: string, indexer: string) => events.push({ file, indexer }),
             },
         );
 
@@ -218,7 +218,7 @@ export const tests = {
 
         const indexers = new Map<string, Plugin>([['json-data', customPlugin]]);
 
-        const watcher = createWatcher(
+        const watcher = new Watcher(
             async () => {},
             indexers,
             dir,

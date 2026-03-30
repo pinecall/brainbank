@@ -14,7 +14,7 @@
  *     .use(git({ repoPath: './backend',  name: 'git:backend' }));
  */
 
-import type { Plugin, PluginContext, EmbeddingProvider, IndexResult, ProgressCallback, CoEditSuggestion } from 'brainbank';
+import type { Plugin, PluginContext, EmbeddingProvider, IndexResult, ProgressCallback, CoEditSuggestion, ReembedTable } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 import { GitIndexer } from './git-indexer.js';
 import { CoEditAnalyzer } from './co-edit-analyzer.js';
@@ -90,6 +90,26 @@ class GitPlugin implements Plugin {
             WHERE cf.file_path LIKE ? AND c.is_merge = 0
             ORDER BY c.timestamp DESC LIMIT ?
         `).all(`%${filePath}%`, limit) as any[];
+    }
+
+    /** Table descriptor for re-embedding git vectors from DB rows. */
+    reembedConfig(): ReembedTable {
+        return {
+            name: 'git',
+            textTable: 'git_commits',
+            vectorTable: 'git_vectors',
+            idColumn: 'id',
+            fkColumn: 'commit_id',
+            textBuilder: (r) => [
+                `Commit: ${r.message}`,
+                `Author: ${r.author}`,
+                `Date: ${r.date}`,
+                r.files_json && r.files_json !== '[]'
+                    ? `Files: ${JSON.parse(String(r.files_json)).join(', ')}`
+                    : '',
+                r.diff ? `Changes:\n${String(r.diff).slice(0, 2000)}` : '',
+            ].filter(Boolean).join('\n'),
+        };
     }
 
     stats(): Record<string, number> {

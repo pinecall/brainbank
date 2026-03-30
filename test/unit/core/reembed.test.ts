@@ -34,7 +34,7 @@ export const tests = {
         await brain2.initialize();
 
         const result = await brain2.reembed();
-        assert(result.kv >= 2, `should reembed >= 2 kv items, got ${result.kv}`);
+        assert((result.counts.kv ?? 0) >= 2, `should reembed >= 2 kv items, got ${result.counts.kv}`);
         assert(result.total >= 2, `total should be >= 2, got ${result.total}`);
 
         brain2.close();
@@ -70,10 +70,10 @@ export const tests = {
 
         const result = await brain.reembed();
         assert.equal(result.total, 0);
-        assert.equal(result.code, 0);
-        assert.equal(result.git, 0);
-        assert.equal(result.docs, 0);
-        assert.equal(result.kv, 0);
+        assert.equal(result.counts.code ?? 0, 0);
+        assert.equal(result.counts.git ?? 0, 0);
+        assert.equal(result.counts.docs ?? 0, 0);
+        assert.equal(result.counts.kv ?? 0, 0);
 
         brain.close();
     },
@@ -95,17 +95,13 @@ export const tests = {
         brain.close();
     },
 
-    async 'reembed throws if not initialized'(assert: any) {
-        const brain = new BrainBank({ dbPath: tmpDb('reembed-noinit'), embeddingProvider: mockEmbedding() });
+    async 'reembed auto-initializes if needed'(assert: any) {
+        const brain = new BrainBank({ dbPath: tmpDb('reembed-autoinit'), embeddingProvider: mockEmbedding() });
 
-        let threw = false;
-        try {
-            await brain.reembed();
-        } catch (e: any) {
-            threw = true;
-            assert.includes(e.message, 'Not initialized');
-        }
-        assert(threw, 'should throw if not initialized');
+        // Should not throw — auto-initializes
+        const result = await brain.reembed();
+        assert.equal(result.total, 0, 'empty DB should produce 0 reembedded items');
+        brain.close();
     },
 
     async 'reembed produces clean HNSW without duplicates'(assert: any) {
@@ -133,7 +129,7 @@ export const tests = {
         const result = await brain2.reembed();
 
         // HNSW should have exactly 3 items, not 6 (duplicates from stale index)
-        assert.equal(result.kv, 3, 'should reembed exactly 3 kv items');
+        assert.equal(result.counts.kv, 3, 'should reembed exactly 3 kv items');
 
         // Search should still work
         const col2 = brain2.collection('test');
@@ -194,7 +190,7 @@ export const tests = {
         await brain2.initialize({ force: true });
 
         const result = await brain2.reembed();
-        assert(result.kv >= 1, `should reembed >= 1 kv items, got ${result.kv}`);
+        assert((result.counts.kv ?? 0) >= 1, `should reembed >= 1 kv items, got ${result.counts.kv}`);
 
         // Search with new dims should work
         const col2 = brain2.collection('data');

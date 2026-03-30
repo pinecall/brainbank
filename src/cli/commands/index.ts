@@ -72,7 +72,7 @@ export async function cmdIndex(): Promise<void> {
         const absDocsPath = path.resolve(docsPath);
         const collName = path.basename(absDocsPath);
         try {
-            await (brain.docs as any)?.addCollection({
+            await brain.docs?.addCollection({
                 name: collName,
                 path: absDocsPath,
                 pattern: '**/*.md',

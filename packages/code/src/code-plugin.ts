@@ -14,7 +14,7 @@
  *     .use(code({ repoPath: './backend',  name: 'code:backend' }));
  */
 
-import type { Plugin, PluginContext, EmbeddingProvider, IndexResult, ProgressCallback } from 'brainbank';
+import type { Plugin, PluginContext, EmbeddingProvider, IndexResult, ProgressCallback, ReembedTable } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 import { CodeWalker } from './code-walker.js';
 
@@ -73,6 +73,22 @@ class CodePlugin implements Plugin {
         onProgress?: ProgressCallback;
     } = {}): Promise<IndexResult> {
         return this.indexer.index(options);
+    }
+
+    /** Table descriptor for re-embedding code vectors from DB rows. */
+    reembedConfig(): ReembedTable {
+        return {
+            name: 'code',
+            textTable: 'code_chunks',
+            vectorTable: 'code_vectors',
+            idColumn: 'id',
+            fkColumn: 'chunk_id',
+            textBuilder: (r) => [
+                `File: ${r.file_path}`,
+                r.name ? `${r.chunk_type}: ${r.name}` : String(r.chunk_type),
+                String(r.content),
+            ].join('\n'),
+        };
     }
 
     stats(): Record<string, number> {

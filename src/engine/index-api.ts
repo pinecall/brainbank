@@ -5,7 +5,7 @@
  * BrainBank delegates here after auto-initialization.
  */
 
-import type { PluginRegistry } from '@/bootstrap/registry.ts';
+import type { PluginRegistry } from '@/services/plugin-registry.ts';
 import type { IndexResult, StageProgressCallback, ProgressCallback } from '@/types.ts';
 import { isIndexable, isDocsPlugin } from '@/plugin.ts';
 
@@ -68,7 +68,7 @@ export class IndexAPI {
             const docsPlugin = this._d.registry.get('docs');
             if (isDocsPlugin(docsPlugin)) {
                 options.onProgress?.('docs', 'Starting...');
-                result.docs = await (docsPlugin as any).indexDocs({
+                result.docs = await docsPlugin.indexDocs({
                     onProgress: (coll: string, file: string, cur: number, total: number) =>
                         options.onProgress?.('docs', `[${coll}] ${cur}/${total}: ${file}`),
                 });

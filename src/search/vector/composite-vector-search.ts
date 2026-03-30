@@ -6,19 +6,17 @@
  * Embeds the query once, delegates to per-domain strategies, merges + reranks.
  */
 
-import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
+import type { EmbeddingProvider, SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import type { CodeVectorSearch } from './code-vector-search.ts';
 import type { GitVectorSearch } from './git-vector-search.ts';
 import type { PatternVectorSearch } from './pattern-vector-search.ts';
-import { rerank } from '@/lib/rerank.ts';
 
 export interface CompositeVectorConfig {
     code?: CodeVectorSearch;
     git?: GitVectorSearch;
     patterns?: PatternVectorSearch;
     embedding: EmbeddingProvider;
-    reranker?: Reranker;
 }
 
 export class CompositeVectorSearch implements SearchStrategy {
@@ -45,10 +43,6 @@ export class CompositeVectorSearch implements SearchStrategy {
         }
 
         results.sort((a, b) => b.score - a.score);
-
-        if (this._c.reranker && results.length > 1) {
-            return rerank(query, results, this._c.reranker);
-        }
         return results;
     }
 }

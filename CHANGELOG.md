@@ -6,7 +6,57 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **`fuseRankedLists<T>()`** — generic RRF function in `lib/rrf.ts` that works on any type. Enables `Collection` to fuse `CollectionItem[]` directly without converting to/from `SearchResult`
+- **`Collection.searchAsResults()`** — returns `SearchResult[]` for use in hybrid search pipelines, encapsulating the CollectionItem→SearchResult mapping
+- **`ReembeddablePlugin`** — new capability interface in `plugin.ts`. Plugins that own vector tables implement `reembedConfig()` to provide table descriptors for re-embedding. Eliminates text builder duplication between core and plugins
+- **`ReembedTable` type** — moved from private in `reembed.ts` to public in `plugin.ts`, exported from `index.ts` for plugin authors
+- **Table existence check** — `reembedAll()` now checks `sqlite_master` before processing each table, skipping tables for uninstalled plugins
+
+### Removed
+- **Dead code** — deleted `VectorSearch` (157 lines, superseded by `CompositeVectorSearch`) and `FTSMaintenance` (22 lines, inlined into `KeywordSearch.rebuild()`)
+- **`ResultCollector`** — 72-line wrapper class eliminated; methods inlined as private on `SearchAPI`
+- **`getDocsPlugin` callback** — removed from `SearchAPIDeps`; docs resolved via `registry.firstByType(PLUGIN.DOCS)` directly
+
+### Changed
+- **`Initializer` → free functions** — class with no state replaced by `earlyInit()` / `lateInit()` exports. `_buildSearchLayer()` wrapper inlined (delegates directly to `buildSearchLayer()`)
+- **`PluginRegistry` → `services/`** — moved from `bootstrap/registry.ts` to `services/plugin-registry.ts`. Fixes `engine/ → bootstrap/` layer violation (registry has live state, not startup-only)
+- **`ContextBuilder` encapsulated** — now internal to `SearchAPI` via `SearchAPIDeps.contextBuilder`. `BrainBank._contextBuilder` field and `search/context-builder` import eliminated. `getContext()` delegates to `SearchAPI.getContext()` — single entry point
+- **`collection` callback → `kvService` direct** — `SearchAPIDeps.collection(n)` callback replaced with `kvService: KVService`. Eliminates 4-hop chain (`SearchAPI → lambda → brainbank.collection → kvService`)
+- **`search-layer-builder` → `engine/search-factory`** — `buildSearchLayer()` moved from `bootstrap/` to `engine/search-factory.ts` as `createSearchAPI()`. Returns fully-built `SearchAPI` — no intermediate `SearchLayer` struct
+- **`lateInit` simplified** — params reduced from `(config, early, registry, sharedHnsw, kvVecs, getCollection)` to `(config, early, registry, sharedHnsw, kvService)`. Returns `SearchAPI | undefined` directly. `LateInit` type alias eliminated
+- **`reembed` auto-init** — `searchBM25()` and `reembed()` now use `await this.initialize()` instead of `_requireInit()`. Consistent with all other search/context methods
+- **`reembedAll` consolidation** — `setEmbeddingMeta()` + `saveAllHnsw()` calls moved from `brainbank.ts` into `reembedAll()` via `persist` param. Removes `setEmbeddingMeta` and `saveAllHnsw` imports from facade
+- **`providerKey()` → `lib/`** — moved from `providers/embeddings/resolve.ts` to `lib/provider-key.ts` to fix `db/ → providers/` layer violation
+- **`ICollection` interface** — defined in `types.ts`. `PluginContext.collection()` now returns `ICollection` instead of concrete `Collection`, decoupling `plugin.ts` from `services/`
+- **HNSW helpers extracted** — `hnswPath`, `countRows`, `saveAllHnsw`, `loadVectors`, `loadVecCache` moved from `bootstrap/initializer.ts` to `providers/vector/hnsw-loader.ts`
+- **`Watcher` class** — converted `createWatcher()` factory function to a `Watcher` class with `close()` + `active` API. Consistent with all other service classes
+- **`reembed.ts` → `engine/`** — moved from `services/` to `engine/` where stateless orchestration functions belong
+- **Reranking single-responsibility** — removed reranker from `CompositeVectorSearch`; reranking now only happens in `SearchAPI.hybridSearch()`. Eliminates double-reranking bug
+- **`_rerankResults` inlined** — 3-line indirection eliminated; logic inlined directly in `hybridSearch()`
+- **`id` in `CodeResultMetadata`** — added `id` field to type and both search implementations (`CodeVectorSearch`, `KeywordSearch`). Enables call graph annotations in `code-formatter.ts` which were silently failing
+- **`SearchLayer.bm25`** — changed from concrete `KeywordSearch` to `SearchStrategy` interface for consistency
+- **`BrainBank.collection()` → `ICollection`** — return type changed from concrete `Collection` to `ICollection` for consistency with `PluginContext.collection()`. Same change applied to `SearchAPIDeps.collection()` and `lateInit` parameter
+- **`DocsPlugin` interface** — defined in `plugin.ts` with `addCollection()`, `listCollections()`, `indexDocs()`, `removeCollection()`, `addContext()`, `listContexts()`. `listCollections()` now returns `DocumentCollection[]` (was `string[]`). `PathContext` type added. `isDocsPlugin()` is now a proper type predicate (`i is DocsPlugin`), eliminating `as any` casts in CLI and `index-api.ts`
+- **`docs` accessor typed** — `BrainBank.docs` now returns `DocsPlugin | undefined` (was `Plugin | undefined`) with `isDocsPlugin` guard. All CLI `as any` casts removed
+- **`CollectionResultMetadata`** — new typed interface replaces `Record<string, any>` on `CollectionResult.metadata`. Has `id`, `collection`, `rrfScore`, plus `[key: string]: unknown` for user metadata
+- **`rrfScore` on all metadata interfaces** — added to `CodeResultMetadata`, `CommitResultMetadata`, `PatternResultMetadata`, `DocumentResultMetadata`, `CollectionResultMetadata`. Eliminates `as any` cast in `rrf.ts`
+- **SQLite row types** — added `MemoryPatternRow`, `EmbeddingMetaRow`, `ImportRow`, `VectorRow`, `CountRow` to `rows.ts`. Applied to 10 files replacing `as any[]` casts: `keyword-search.ts`, `code-vector-search.ts`, `git-vector-search.ts`, `pattern-vector-search.ts`, `embedding-meta.ts`, `schema.ts`, `hnsw-loader.ts`, `reembed.ts`, `kv-service.ts`, `import-graph.ts`
+- **null→undefined coercions** — SQLite returns `null` for absent values; metadata types use `undefined`. Added `?? undefined` coercions at row→metadata boundary in 4 search files
+- **Collection hybrid search** — replaced `reciprocalRankFusion` roundtrip (CollectionItem→SearchResult→CollectionItem) with `fuseRankedLists<CollectionItem>` direct fusion. Removes 2 type casts and the `allById` lookup map
+- **`SearchAPI._collectKvCollections`** — delegates to `Collection.searchAsResults()` instead of inline CollectionItem→SearchResult mapping
+- **CLI factory typed** — `brainOpts` changed from `Record<string, any>` to `Partial<BrainBankConfig> & Record<string, unknown>`. `setupProviders` param also typed as `Record<string, unknown>`
+- **`reembed.ts` plugin-driven** — removed 3 hardcoded `TABLES` entries (code, git, docs). `reembedAll()` now collects table descriptors from registered `ReembeddablePlugin`s via `collectTables()`. Core-owned tables (`memory`, `kv`) stay as `CORE_TABLES`. Deduplicates by `vectorTable` for multi-repo
+- **`ReembedResult`** — changed from hardcoded fields (`code`, `git`, `docs`, `kv`, `memory`) to `{ counts: Record<string, number>; total: number }`. Adapts automatically to any plugin set
+- **CLI `reembed` command** — replaced 5 hardcoded output lines with dynamic iteration over `result.counts`
+- **HNSW dims synced from provider** — `earlyInit()` now derives HNSW dims from `embedding.dims` instead of `config.embeddingDims` (which defaults to 384). Prevents silent dimension mismatch when using providers with different dims (e.g. OpenAI 1536)
+
 ### Fixed
+- **Reembed provider_key not updated** — `brain.reembed()` did not call `setEmbeddingMeta()`. After switching providers and reembedding, next startup detected a provider mismatch and threw. Now updates `provider_key` in DB
+- **Reembed HNSW not persisted** — `brain.reembed()` rebuilt HNSW in memory but never called `saveAllHnsw()`. On restart, stale `.index` files were loaded, causing silently incorrect search results. Now saves to disk after reembedding
+- **Double-reranking bug** — `CompositeVectorSearch.search()` reranked results, then `SearchAPI.hybridSearch()` reranked again after RRF fusion. Results now only reranked once, at the `SearchAPI` level
+- **Call graph annotations** — `getCallAnnotation()` in `code-formatter.ts` always returned null because code metadata never included the chunk `id`. Fixed by adding `id: r.id` to both `CodeVectorSearch` and `KeywordSearch`
+- **`registry.get()` → `firstByType()`** — `SearchAPI._collectDocs()` and `search-layer-builder.ts` docs callback used `registry.get()` which throws when docs plugin isn't loaded. Replaced with `firstByType()` which returns `undefined`
 - **Private HNSW persistence** — `createHnsw()` now registers indexes for disk persistence via `saveAllHnsw()`. DocsPlugin and patterns plugin HNSW indexes are saved to disk, enabling fast `tryLoad()` on subsequent startups instead of rebuilding from SQLite
 
 ### Added
