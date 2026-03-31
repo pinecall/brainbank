@@ -9,11 +9,12 @@ Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node.
 
 ## Dev Environment
 
-- Install: `npm install` (native deps: better-sqlite3, hnswlib-node — requires C++ toolchain)
-- Install plugins: `npm install` in `packages/code/`, `packages/git/`, `packages/docs/` respectively
+- Install: `npm install --legacy-peer-deps` (npm workspaces auto-link all `@brainbank/*` packages; `postinstall` script links local core for plugin resolution)
+- Build: `npm run build` (builds core + all workspace packages)
+- Build core only: `npm run build:core` (tsup — generates `dist/`)
 - Dev CLI: `npm run dev` (runs `tsx src/cli/index.ts`)
-- Build: `npm run build:core` (tsup — generates `dist/`)
 - No `.env` file needed for development. Optional: `OPENAI_API_KEY` for OpenAI embeddings.
+- Full setup guide: `docs/local-development.md` or run `/setup-local` workflow
 
 ## Commands
 

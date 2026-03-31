@@ -11,8 +11,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - `brain.code` typed accessor (matches existing `brain.docs` and `brain.git`)
-- `docs/local-development.md` — full local dev setup guide with troubleshooting
+- `docs/local-development.md` — local dev setup guide
 - `.agents/workflows/setup-local.md` — automated workflow for fresh machine setup
+- **npm workspaces** — `packages/*` are now workspace members; `npm install --legacy-peer-deps` + `npm run build` is the entire setup. `postinstall` script auto-links local `brainbank` core for plugin resolution
 
 ### Fixed
 - **BUG-01: docs-only setup crash** — `createSearchAPI()` now always returns a `SearchAPI` instance. Docs-only setups no longer crash on `brain.search()`

@@ -71,6 +71,7 @@ infrastructure (DB, schema, HNSW, embeddings, search, CLI). Plugin packages
 └───────────────────────────┬──────────────────────────────────────────┘
                             │  brain.index() / brain.search()
                             │  brain.getContext() / brain.collection()
+                            │  brain.code / brain.git / brain.docs
                             ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                   BrainBank  (Facade + EventEmitter)                 │

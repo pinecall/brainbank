@@ -22,6 +22,7 @@
         "assets/"
     ],
     "scripts": {
+        "postinstall": "rm -rf node_modules/brainbank && ln -s .. node_modules/brainbank",
         "build": "tsup && npm run build --workspaces --if-present",
         "build:core": "tsup",
         "prepublishOnly": "npm run build:core",
@@ -30,6 +31,9 @@
         "test:verbose": "node --import tsx test/run.ts --verbose",
         "dev": "tsx src/cli/index.ts"
     },
+    "workspaces": [
+        "packages/*"
+    ],
     "engines": {
         "node": ">=18"
     },

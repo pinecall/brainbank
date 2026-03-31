@@ -167,3 +167,5 @@ Returns markdown with relevant code, import graphs, git history, and co-edit pat
 | Build your own plugin | [Custom Plugins](custom-plugins.md) |
 | Configure embeddings | [Embeddings & Reranker](embeddings.md) |
 | MCP integration | [MCP Server](mcp.md) |
+| Local development setup | [Local Development](local-development.md) |
+
