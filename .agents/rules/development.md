@@ -22,12 +22,6 @@ trigger: always_on
 - Always update README.md, docs/architecture.md, and CHANGELOG.md when making changes that affect them
 - All code, comments, docs, and tests must be written in **English**
 
-## Permissions — Safe to Auto-Run
-- Read files, list directories
-- `npx tsc --noEmit`
-- `npm test -- --filter <name>`
-- Create new files in existing directories
-
 ## Permissions — NEVER Without Approval
 - `git commit` / `git push`
 - `npm publish`

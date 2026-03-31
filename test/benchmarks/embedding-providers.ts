@@ -105,7 +105,7 @@ async function benchProvider(config: ProviderConfig): Promise<BenchResult> {
 
     for (const query of QUERIES) {
         const start = Date.now();
-        const results: SearchResult[] = await brain.hybridSearch(query, { codeK: 5 });
+        const results: SearchResult[] = await brain.hybridSearch(query, { sources: { code: 5 } });
         const timeMs = Date.now() - start;
 
         const top3 = results.slice(0, 3).map(r => {

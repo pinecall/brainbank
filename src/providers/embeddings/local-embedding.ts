@@ -8,10 +8,20 @@
 
 import type { EmbeddingProvider } from '@/types.ts';
 
+/** Minimal interface for @xenova/transformers pipeline results. */
+interface XenovaPipelineOutput {
+    data: Float32Array;
+}
+
+/** Callable pipeline returned by @xenova/transformers. */
+interface XenovaPipeline {
+    (texts: string | string[], options: { pooling: string; normalize: boolean }): Promise<XenovaPipelineOutput>;
+}
+
 export class LocalEmbedding implements EmbeddingProvider {
     readonly dims: number = 384;
 
-    private _pipeline: any = null;
+    private _pipeline: XenovaPipeline | null = null;
     private _modelName: string;
     private _cacheDir: string;
 
@@ -20,19 +30,20 @@ export class LocalEmbedding implements EmbeddingProvider {
         this._cacheDir = options.cacheDir ?? '.model-cache';
     }
 
-    private _pipelinePromise: Promise<any> | null = null;
+    private _pipelinePromise: Promise<XenovaPipeline> | null = null;
 
     /**
      * Lazy-load the transformer pipeline.
      * Singleton — created once and reused.
      * Promise-deduped to prevent concurrent downloads.
      */
-    private async _getPipeline(): Promise<any> {
+    private async _getPipeline(): Promise<XenovaPipeline> {
         if (this._pipeline) return this._pipeline;
         if (this._pipelinePromise) return this._pipelinePromise;
 
         this._pipelinePromise = (async () => {
-            const { pipeline, env } = await import('@xenova/transformers' as any);
+            const mod = await import(/* webpackIgnore: true */ '@xenova/transformers' as string);
+            const { pipeline, env } = mod;
             env.cacheDir = this._cacheDir;
             env.allowLocalModels = true;
 
@@ -40,7 +51,7 @@ export class LocalEmbedding implements EmbeddingProvider {
                 quantized: true,
             });
 
-            return this._pipeline;
+            return this._pipeline!;
         })();
 
         try {

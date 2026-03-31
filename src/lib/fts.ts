@@ -47,3 +47,11 @@ export function normalizeBM25(rawScore: number): number {
     const abs = Math.abs(rawScore);
     return 1.0 / (1.0 + Math.exp(-0.3 * (abs - 5)));
 }
+
+/**
+ * Escape SQL LIKE wildcard characters (`%`, `_`, `\`).
+ * Use with `LIKE ? ESCAPE '\'` in queries.
+ */
+export function escapeLike(s: string): string {
+    return s.replace(/[%_\\]/g, '\\$&');
+}

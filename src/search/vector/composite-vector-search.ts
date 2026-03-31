@@ -24,10 +24,11 @@ export class CompositeVectorSearch implements SearchStrategy {
 
     /** Search across all registered domains. */
     async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
-        const {
-            codeK = 6, gitK = 5, patternK = 4,
-            minScore = 0.25, useMMR = true, mmrLambda = 0.7,
-        } = options;
+        const src = options.sources ?? {};
+        const codeK = src.code ?? 6;
+        const gitK = src.git ?? 5;
+        const patternK = src.memory ?? 4;
+        const { minScore = 0.25, useMMR = true, mmrLambda = 0.7 } = options;
 
         const queryVec = await this._c.embedding.embed(query);
         const results: SearchResult[] = [];

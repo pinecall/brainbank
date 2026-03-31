@@ -5,6 +5,7 @@
  */
 
 import type { SearchResult, CoEditSuggestion } from '@/types.ts';
+import { isDocumentResult } from '@/types.ts';
 
 /** Duck-typed interface for co-edit suggestions (provided by @brainbank/git). */
 export interface CoEditProvider {
@@ -75,4 +76,22 @@ export function formatPatternResults(results: SearchResult[], limit: number, par
         if (m.critique) parts.push(`Lesson: ${m.critique}`);
         parts.push('');
     }
+}
+
+// ── Documents ───────────────────────────────────────
+
+/** Format document search results into a markdown section. Returns empty string if no results. */
+export function formatDocuments(docs: SearchResult[]): string {
+    if (docs.length === 0) return '';
+
+    const body = docs.map(r => {
+        if (!isDocumentResult(r)) return r.content;
+        const m = r.metadata;
+        const h = r.context
+            ? `**[${m.collection}]** ${m.title} — _${r.context}_`
+            : `**[${m.collection}]** ${m.title}`;
+        return `${h}\n\n${r.content}`;
+    }).join('\n\n---\n\n');
+
+    return `## Relevant Documents\n\n${body}`;
 }

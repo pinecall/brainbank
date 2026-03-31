@@ -84,7 +84,7 @@ export async function lateInit(
     registry: PluginRegistry,
     sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
     kvService: KVService,
-): Promise<SearchAPI | undefined> {
+): Promise<SearchAPI> {
     const { db, embedding, kvHnsw, skipVectorLoad } = earlyResult;
 
     if (!skipVectorLoad) {

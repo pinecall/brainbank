@@ -8,24 +8,18 @@
  * so BrainBank can unconditionally delegate to it.
  */
 
-import type { SearchStrategy } from '@/search/types.ts';
+import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import type { ContextBuilder } from '@/search/context-builder.ts';
 import type { ResolvedConfig, SearchResult, ContextOptions } from '@/types.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 import type { KVService } from '@/services/kv-service.ts';
+import type { SearchAPIDeps } from './types.ts';
 import { isSearchable } from '@/plugin.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { rerank } from '@/lib/rerank.ts';
 import { PLUGIN } from '@/constants.ts';
 
-export interface SearchAPIDeps {
-    search?:          SearchStrategy;
-    bm25?:            SearchStrategy;
-    registry:         PluginRegistry;
-    config:           ResolvedConfig;
-    kvService:        KVService;
-    contextBuilder?:  ContextBuilder;
-}
+
 
 export class SearchAPI {
     constructor(private _d: SearchAPIDeps) {}
@@ -40,10 +34,8 @@ export class SearchAPI {
 
     // ── Vector ──────────────────────────────────────
 
-    async search(query: string, options?: {
-        codeK?: number; gitK?: number; patternK?: number;
-        minScore?: number; useMMR?: boolean;
-    }): Promise<SearchResult[]> {
+    /** Semantic search across all loaded modules. Scope via sources: { code: 10, git: 0 }. */
+    async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         const lists: SearchResult[][] = [];
 
         if (this._d.search) {
@@ -59,49 +51,26 @@ export class SearchAPI {
         return reciprocalRankFusion(lists);
     }
 
-    /**
-     * Convenience shortcut for code-only vector search.
-     * Scopes the multi-index search to code only.
-     */
-    async searchCode(query: string, k = 8): Promise<SearchResult[]> {
-        if (!this._d.registry.firstByType('code'))
-            throw new Error("BrainBank: Plugin 'code' is not loaded. Install @brainbank/code and add .use(code()).");
-        if (!this._d.search)
-            throw new Error('BrainBank: VectorSearch not available. Ensure code plugin is loaded.');
-        return this._d.search.search(query, { codeK: k, gitK: 0, patternK: 0 });
-    }
-
-    /**
-     * Convenience shortcut for commit-only vector search.
-     * Scopes the multi-index search to git only.
-     */
-    async searchCommits(query: string, k = 8): Promise<SearchResult[]> {
-        if (!this._d.registry.firstByType('git'))
-            throw new Error("BrainBank: Plugin 'git' is not loaded. Install @brainbank/git and add .use(git()).");
-        if (!this._d.search)
-            throw new Error('BrainBank: VectorSearch not available. Ensure git plugin is loaded.');
-        return this._d.search.search(query, { codeK: 0, gitK: k, patternK: 0 });
-    }
-
     // ── Hybrid ──────────────────────────────────────
 
-    async hybridSearch(query: string, options?: {
-        codeK?: number; gitK?: number; patternK?: number;
-        minScore?: number; useMMR?: boolean;
-        collections?: Record<string, number>;
-    }): Promise<SearchResult[]> {
-        const cols  = options?.collections ?? {};
-        const codeK = cols.code ?? options?.codeK ?? 20;
-        const gitK  = cols.git  ?? options?.gitK  ?? 8;
-        const docsK = cols.docs ?? 8;
+    /** Hybrid search: vector + BM25 → RRF. Scope via sources: { code: 10, git: 5, docs: 3, myNotes: 5 }. */
+    async hybridSearch(query: string, options?: SearchOptions): Promise<SearchResult[]> {
+        const src = options?.sources ?? {};
+        const codeK = src.code ?? 20;
+        const gitK = src.git ?? 8;
+        const docsK = src.docs ?? 8;
 
         const lists: SearchResult[][] = [];
 
-        // Core search strategies
+        // Core search strategies (code, git, memory via CompositeVectorSearch + KeywordSearch)
         if (this._d.search) {
+            const searchOpts: SearchOptions = {
+                ...options,
+                sources: { ...src, code: codeK, git: gitK },
+            };
             const [vec, kw] = await Promise.all([
-                this._d.search.search(query, { ...options, codeK, gitK }),
-                Promise.resolve(this._d.bm25?.search(query, { codeK, gitK }) ?? []),
+                this._d.search.search(query, searchOpts),
+                Promise.resolve(this._d.bm25?.search(query, searchOpts) ?? []),
             ]);
             lists.push(vec, kw);
         }
@@ -112,7 +81,7 @@ export class SearchAPI {
             if (docs.length > 0) lists.push(docs);
         }
         lists.push(...await this._collectCustomPlugins(query, options));
-        lists.push(...await this._collectKvCollections(query, cols));
+        lists.push(...await this._collectKvCollections(query, src));
 
         if (lists.length === 0) return [];
         const fused = reciprocalRankFusion(lists);
@@ -124,7 +93,8 @@ export class SearchAPI {
 
     // ── Keyword ─────────────────────────────────────
 
-    async searchBM25(query: string, options?: { codeK?: number; gitK?: number; patternK?: number }): Promise<SearchResult[]> {
+    /** BM25 keyword search only. */
+    async searchBM25(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         return this._d.bm25?.search(query, options) ?? [];
     }
 
@@ -143,7 +113,7 @@ export class SearchAPI {
 
     /** Search all custom SearchablePlugins (non-builtin). */
     private async _collectCustomPlugins(
-        query: string, options?: Record<string, unknown>,
+        query: string, options?: SearchOptions,
     ): Promise<SearchResult[][]> {
         const builtinTypes = new Set(['code', 'git', 'docs']);
         const lists: SearchResult[][] = [];
@@ -151,7 +121,7 @@ export class SearchAPI {
             const baseType = mod.name.split(':')[0];
             if (builtinTypes.has(baseType)) continue;
             if (!isSearchable(mod)) continue;
-            const hits = await mod.search(query, options);
+            const hits = await mod.search(query, options ? { ...options } : undefined);
             if (hits.length > 0) lists.push(hits);
         }
         return lists;
@@ -159,11 +129,11 @@ export class SearchAPI {
 
     /** Search named KV collections (skips reserved names). */
     private async _collectKvCollections(
-        query: string, cols: Record<string, number>,
+        query: string, sources: Record<string, number>,
     ): Promise<SearchResult[][]> {
-        const reserved = new Set(['code', 'git', 'docs']);
+        const reserved = new Set(['code', 'git', 'docs', 'memory']);
         const lists: SearchResult[][] = [];
-        for (const [name, k] of Object.entries(cols)) {
+        for (const [name, k] of Object.entries(sources)) {
             if (reserved.has(name)) continue;
             const hits = await this._d.kvService.collection(name).searchAsResults(query, k);
             if (hits.length > 0) lists.push(hits);

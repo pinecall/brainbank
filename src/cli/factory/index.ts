@@ -11,7 +11,7 @@ import type { BrainBankConfig } from '@/types.ts';
 import { getFlag } from '../utils.ts';
 import { loadConfig, getConfig, resetConfigCache } from './config-loader.ts';
 import { discoverFolderPlugins, resetPluginCache } from './plugin-loader.ts';
-import { setupProviders } from './provider-setup.ts';
+import { setupProviders } from './plugin-loader.ts';
 import { registerBuiltins, registerConfigCollections } from './builtin-registration.ts';
 
 export type { ProjectConfig } from './config-loader.ts';

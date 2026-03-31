@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import type { BrainBank } from '@/brainbank.ts';
 import type { ProjectConfig } from './config-loader.ts';
 import { loadCodePlugin, loadGitPlugin, loadDocsPlugin } from './plugin-loader.ts';
-import { resolveEmbeddingKey } from './provider-setup.ts';
+import { resolveEmbeddingKey } from './plugin-loader.ts';
 import { c, getFlag } from '../utils.ts';
 
 /** Detect subdirectories that have their own .git repo. */
@@ -112,6 +112,9 @@ export async function registerConfigCollections(brain: BrainBank, config: Projec
                 name: coll.name, path: absPath,
                 pattern: coll.pattern ?? '**/*.md', ignore: coll.ignore, context: coll.context,
             });
-        } catch { /* Collection already registered — skip */ }
+        } catch (e: unknown) {
+            if (!(e instanceof Error && e.message.includes('already'))) throw e;
+            // Collection already registered — skip
+        }
     }
 }

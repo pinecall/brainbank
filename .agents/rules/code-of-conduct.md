@@ -2,101 +2,43 @@
 trigger: always_on
 ---
 
-# BrainBank — Architecture Rules & Code of Conduct
+# BrainBank — Code of Conduct
 
-## 1. Class vs Function — The Golden Rule
+## 1. Class vs Free Function
 
-```
-Has state between calls → CLASS
-No state between calls  → FREE FUNCTION
-```
+**Has persistent instance state → CLASS. No state → FREE FUNCTION. No state + just passes things through → DELETE IT.**
 
-**Class** = has instance fields that persist (db, hnsw, maps, timers)  
-**Function** = receives everything it needs via parameters, returns result, done
-
-### ❌ Anti-patterns
 ```typescript
-// BAD — class instantiated, used once, discarded (Initializer was this)
-const x = new Foo(config);
-const result = await x.doWork();
-// x never used again
+// ✅ Class — real state persists
+class KVService { private _collections = new Map() }
 
-// BAD — class with one method wrapping 3 lines (FTSMaintenance was this)
-class FTSMaintenance {
-    rebuild() { /* 3 SQL lines */ }
-}
+// ✅ Free function — receives everything, returns result, done
+export async function reembedAll(db, embedding, hnswMap, opts): Promise<ReembedResult> {}
 
-// BAD — class that only passes deps through (ResultCollector was this)
-class ResultCollector {
-    constructor(private _d: Deps) {}
-    collect() { return this._d.registry.get(...) }
-}
-```
-
-### ✅ Correct
-```typescript
-// GOOD — stateful service
-class KVService {
-    private _collections = new Map() // ← real state
-    collection(name: string) { ... }
-}
-
-// GOOD — stateless orchestration
-export async function reembedAll(db, embedding, hnswMap, opts) { ... }
+// ❌ Class instantiated once and discarded
+const x = new Foo(config); const result = await x.run(); // x never used again
 ```
 
 ---
 
 ## 2. Folder Contracts
 
-Each folder has ONE pattern. No mixing.
+| Folder | Pattern | Imports from |
+|---|---|---|
+| `lib/` | Pure functions only, zero state | `types.ts` only |
+| `db/` | `Database` class + free functions | `lib/`, `types.ts` |
+| `providers/` | Stateful provider classes + util functions | `lib/`, `db/` |
+| `services/` | **Classes with real instance state only** | `lib/`, `db/`, `providers/` |
+| `engine/` | Orchestrator classes + stateless free functions | all lower layers |
+| `bootstrap/` | Init free functions, no disposable classes | all lower layers |
+| `search/` | `SearchStrategy` classes + pure formatters | `lib/`, `db/`, `providers/` |
+| `cli/` | One free function per command | all layers |
 
-### `lib/` — Pure functions only
-- Zero state, zero side effects
-- No imports from other src/ folders (except `types.ts`)
-- Input → Output, deterministic
-- Examples: `rrf.ts`, `math.ts`, `fts.ts`, `languages.ts`
-
-### `db/` — Database layer
-- One class with state: `Database`
-- Everything else: free functions (`schema.ts`, `embedding-meta.ts`)
-- Row type definitions only in `rows.ts`
-- **MUST NOT** import from `providers/` or `services/` or `engine/`
-
-### `providers/` — External integrations
-- Classes for stateful providers (embedding models, vector index)
-- Free functions for utilities (`resolve.ts`, `hnsw-loader.ts`)
-- May import from `lib/` and `db/` only
-
-### `services/` — Stateful services only
-- **ALL files must be classes with real instance state**
-- `Collection`, `KVService`, `Watcher` — all have fields that persist
-- If it has no state → it does not belong here → move to `engine/`
-
-### `engine/` — Orchestration layer
-- Classes that hold injected deps: `SearchAPI`, `IndexAPI`
-- Free functions for stateless orchestration: `reembed.ts`
-- No business logic — delegates to `search/`, `providers/`, `services/`
-
-### `bootstrap/` — Startup sequence
-- Free functions for init steps: `earlyInit()`, `lateInit()`
-- One class with real state: `PluginRegistry`
-- One builder function: `buildSearchLayer()`
-- **No classes that are instantiated and immediately discarded**
-
-### `search/` — Search strategies
-- Classes that implement `SearchStrategy` interface
-- Pure functions for formatting in `search/context/`
-- `ContextBuilder` class owns ALL context assembly
-
-### `cli/` — Command line interface
-- `commands/` — one free function per command
-- `factory/` — free functions for brain construction
-- `utils.ts` — pure helper functions
+**If a file in `services/` has no private instance fields, it doesn't belong there.**
 
 ---
 
-## 3. Import Direction — Strict Layering
+## 3. Import Direction
 
 ```
 brainbank.ts
@@ -108,131 +50,153 @@ search/  providers/  db/
 lib/  types.ts  constants.ts  plugin.ts
 ```
 
-### Rules
-- **Lower layers NEVER import from higher layers**
-- `db/` cannot import from `providers/`, `services/`, `engine/`
-- `lib/` cannot import from anywhere in `src/` except `types.ts`
-- `plugin.ts` cannot import concrete classes from `services/`
+Lower layers never import from higher layers.
 
-### Import path rules
 ```typescript
-// SAME directory → relative path ALWAYS
-import { foo } from './foo'          // ✅
-import { foo } from '@/services/foo' // ❌ same dir = use ./
+// Same directory → relative path always
+import { foo } from './foo'           // ✅
+import { foo } from '@/services/foo'  // ❌ (when already in services/)
 
-// Going UP or ACROSS → @/ alias OK
-import { Database } from '@/db/database'  // ✅ from search/ going up
+// Different directory → @/ alias always
+import { Database } from '@/db/database'  // ✅
 ```
 
 ---
 
-## 4. Indirection Rules — Zero Tolerance
+## 4. Zero `any` in Production Code
 
-A layer/class/method is an indirection if it:
-1. Has no logic of its own
-2. Only passes arguments through to something else
-3. Could be removed with a direct call
-
-### Patterns to eliminate
 ```typescript
-// BAD — wrapper method calling same-signature function
-private _buildSearchLayer(...args) {
-    return buildSearchLayer(...args) // ← DELETE the wrapper
+// ❌ Never
+private _index: any = null
+export function printResults(results: any[]): void {}
+
+// ✅ Create a minimal interface instead
+interface HnswLibIndex {
+    addPoint(vector: number[], id: number): void
+    searchKnn(query: number[], k: number): { neighbors: number[]; distances: number[] }
 }
 
-// BAD — callback that just does a registry lookup
-getDocsPlugin: () => registry.get(PLUGIN.DOCS) // ← registry already available
+// ✅ Use the existing type
+export function printResults(results: SearchResult[]): void {}
+```
 
-// BAD — pass-through class
-class ResultCollector {
-    constructor(private _d: SearchAPIDeps) {} // same deps as parent
-    collectDocs() { return this._d.docsPlugin.search(...) } // no added value
+---
+
+## 5. Error Handling — No Silent Swallows
+
+```typescript
+// ❌ Silent swallow — the problem disappears without a trace
+} catch { return false }
+
+// ✅ Expected errors: document why swallow is correct + re-throw everything else
+} catch (e) {
+    if (!isFTSError(e)) throw e  // re-throw unexpected
+    // FTS5 parse error — invalid query, empty result is correct
+}
+
+// ✅ Infrastructure level: propagate to caller
+} catch (err) {
+    return { ok: false, error: err instanceof Error ? err : new Error(String(err)) }
+}
+
+// ✅ CLI level: always log for the user
+} catch (err) {
+    console.error(c.red(`Error: ${err instanceof Error ? err.message : String(err)}`))
+    process.exit(1)
 }
 ```
 
 ---
 
-## 5. Interface vs Concrete Type in Contracts
-
-Core interfaces (`plugin.ts`, `types.ts`) must NEVER depend on concrete implementations.
+## 6. Public Contracts — Interfaces, Not Concrete Classes
 
 ```typescript
-// BAD — plugin.ts imports concrete class
-import { Collection } from './services/collection' // ❌
+// ❌ plugin.ts importing concrete class
+import { Collection } from './services/collection'
 
-// GOOD — plugin.ts depends on interface
-import type { ICollection } from './types'          // ✅
+// ✅ plugin.ts depends on interface
+import type { ICollection } from './types'
 
-// services/collection.ts implements the interface
-class Collection implements ICollection { ... }     // ✅
+// ✅ KVService returns interface, not implementation
+collection(name: string): ICollection  // not Collection
 ```
 
 ---
 
-## 6. Single Responsibility per File
+## 7. Naming
 
-Each file owns ONE concern:
+**Files:** `kebab-case` for free functions, reflects content (`hnsw-loader.ts`, `result-formatters.ts`).
 
-| File | Owns | Does NOT own |
-|---|---|---|
-| `ContextBuilder` | context assembly | search execution |
-| `SearchAPI` | search orchestration | context formatting |
-| `Collection` | item storage + retrieval | reranking logic strategy |
-| `IndexAPI` | indexing orchestration | plugin lifecycle |
-| `KVService` | collection registry | search logic |
+**Classes:**
+```
+SomethingService  → stateful, lives in services/
+SomethingAPI      → orchestrator with injected deps, lives in engine/
+SomethingSearch   → implements SearchStrategy, lives in search/
+SomethingProvider → external integration, lives in providers/
+SomethingIndex    → vector index, lives in providers/vector/
+SomethingBuilder  → assembles output
+SomethingRegistry → manages a collection of things
+```
+
+**Functions:**
+```
+buildSomething()   → creates and returns, no side effects
+loadSomething()    → reads from storage
+saveSomething()    → writes to storage
+createSomething()  → factory, may have side effects
+formatSomething()  → pure string transformation
+resolveSomething() → looks up / resolves a value
+```
+
+**Private fields:** always `_` prefix (`_db`, `_collections`, `_initialized`).
 
 ---
 
-## 7. Naming Conventions
+## 8. Parameters — Max 4, then Object
 
-```
-SomethingService  → class, stateful, lives in services/
-SomethingAPI      → class, orchestrator with deps, lives in engine/
-SomethingSearch   → class, implements SearchStrategy, lives in search/vector/ or search/keyword/
-SomethingProvider → class, external integration, lives in providers/
-SomethingIndex    → class, vector index, lives in providers/vector/
-SomethingBuilder  → class, assembles output, lives in search/
-SomethingRegistry → class, manages a collection of things, lives in bootstrap/
+```typescript
+// ❌ 7 parameters
+function buildPluginContext(config, db, embedding, sharedHnsw, skipVectorLoad, kvService, privateHnsw)
 
-buildSomething()  → free function, creates and returns, no side effects
-loadSomething()   → free function, reads from storage
-saveSomething()   → free function, writes to storage
-resolveSomething()→ free function, resolves/looks up a value
-formatSomething() → pure function, string transformation
+// ✅ Typed object
+interface PluginContextDeps { config; db; embedding; sharedHnsw; skipVectorLoad; kvService; privateHnsw }
+function buildPluginContext(deps: PluginContextDeps): PluginContext
 ```
 
 ---
 
-## 8. Verification Checklist (run after every change)
+## 9. Plugin Capabilities — Composition over Inheritance
+
+```typescript
+// ✅ Each capability is a separate interface with a type guard
+interface IndexablePlugin extends Plugin {
+    index(options?: IndexOptions): Promise<IndexResult>
+}
+export function isIndexable(p: Plugin): p is IndexablePlugin {
+    return typeof (p as IndexablePlugin).index === 'function'
+}
+
+// ✅ Always narrow before calling
+for (const mod of registry.all) {
+    if (!isIndexable(mod)) continue
+    await mod.index(options)
+}
+```
+
+---
+
+## 10. Pre-commit Checks
 
 ```bash
-npx tsc --noEmit                              # zero type errors
-npm test                                       # all unit tests pass
-node scripts/lint-imports.mjs                 # zero same-dir @/ violations
-grep -r "new.*Initializer\|new.*FTSMaintenance\|new.*ResultCollector" src/  # must be empty
+npx tsc --noEmit                        # zero type errors
+
+# zero same-dir @/ imports
+grep -rn "from '@/services/" src/services/
+grep -rn "from '@/providers/" src/providers/
+
+# zero any in production code
+grep -rn ": any\|as any\|any\[\]" src/ --include="*.ts"
+
+# zero empty catches — review each result manually
+grep -rn "} catch {$" src/
 ```
-
----
-
-## 9. Decision Log
-
-| Decision | Rationale |
-|---|---|
-| `reembed.ts` stays as free functions | No state between calls — class would be Initializer anti-pattern |
-| `Collection` imports `rrf.ts` + `rerank.ts` | `lib/` is Layer 0 — direction is correct. Collection is storage+retrieval by design |
-| `VectorSearch` deleted | 100% replaced by `CompositeVectorSearch` — dead code |
-| `getContext` lives only in `ContextBuilder` | SearchAPI is search-only; context assembly is ContextBuilder's contract |
-| `Watcher` is a class | Has real instance state: timers, pending set, watchers array |
-| `ICollection` interface in `types.ts` | Core contracts cannot depend on service implementations |
-
----
-
-## 10. The One-Line Test
-
-Before adding any file, ask:
-
-> *"Does this file have state that needs to persist between calls?"*
-
-- **Yes** → Class in the appropriate stateful folder (`services/`, `engine/`, `providers/`)
-- **No** → Free function(s) in the appropriate stateless folder (`lib/`, `engine/`, `bootstrap/`)
-- **No AND it just passes things through** → Delete it, inline the logic

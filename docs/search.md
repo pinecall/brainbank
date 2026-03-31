@@ -14,37 +14,40 @@ BrainBank provides three search modes at the top level, and per-collection searc
 // Hybrid search (recommended default)
 const results = await brain.hybridSearch('authentication middleware');
 
-// Source filtering — control how many results per source
-const codeOnly = await brain.hybridSearch('auth', { codeK: 10, gitK: 0 });
-const gitOnly  = await brain.hybridSearch('auth', { codeK: 0, gitK: 10 });
-const balanced = await brain.hybridSearch('auth', { codeK: 3, gitK: 3 });
+// Source filtering via `sources` — control how many results per source, set to 0 to skip
+const codeOnly = await brain.hybridSearch('auth', { sources: { code: 10, git: 0 } });
+const gitOnly  = await brain.hybridSearch('auth', { sources: { code: 0, git: 10 } });
+const balanced = await brain.hybridSearch('auth', { sources: { code: 3, git: 3 } });
 
-// Include KV collections in hybrid search
+// Include docs and KV collections in hybrid search
 const results = await brain.hybridSearch('auth middleware', {
-  codeK: 20,
-  gitK: 8,
-  collections: { errors: 5, patterns: 3 },
+  sources: { code: 20, git: 8, docs: 5, errors: 3 },
 });
 ```
 
 ---
 
-## Scoped Search
+## Source Filtering
 
-Convenience methods for searching specific sources:
+Every search method accepts a `sources` option — a map of source name to max result count:
 
 ```typescript
-const codeHits = await brain.searchCode('parse JSON config', 8);
-const commitHits = await brain.searchCommits('fix auth bug', 5);
-const docHits = await brain.docs!.search('getting started', { collection: 'wiki' });
+interface SearchOptions {
+  sources?: Record<string, number>; // { code: n, git: n, docs: n, <collection>: n }
+  minScore?: number;                // default: 0.25
+  useMMR?: boolean;                 // default: true — diversify results
+  mmrLambda?: number;               // default: 0.7 — 0=pure diversity, 1=pure relevance
+}
 ```
 
-These are shortcuts for source-filtered search:
+Built-in source keys: `"code"`, `"git"`, `"docs"`, `"memory"`. Any other key searches a KV collection with that name.
 
 ```typescript
-// These are equivalent:
-await brain.searchCode('auth', 8);
-await brain.search('auth', { codeK: 8, gitK: 0 });
+// Vector search filtered to code only
+await brain.search('auth', { sources: { code: 8, git: 0 } });
+
+// BM25 keyword search filtered to git only
+await brain.searchBM25('fix auth bug', { sources: { code: 0, git: 8 } });
 ```
 
 ---
@@ -72,27 +75,28 @@ brain.hybridSearch('auth')
   │     ├── KeywordSearch ─── FTS5 BM25 ────── code + git text
   │     └── RRF fusion ────── merges all result lists
   │
-  └── Plugin search (per-plugin, via SearchablePlugin)
-        └── DocsPlugin.search() ── own HNSW ── doc vectors
+  ├── Plugin search (per-plugin, via SearchablePlugin)
+  │     └── DocsPlugin.search() ── own HNSW ── doc vectors
+  │
+  └── KV Collections ── per-collection HNSW+FTS5 ── custom data
+                        (included when named in `sources`)
 ```
 
 **Centralized search** (`SearchAPI`) manages a shared multi-index HNSW that holds both code and git vectors.
 
 **Plugin-owned search** runs independently. The docs plugin has its own HNSW index and BM25 search, because document collections can use different embedding dimensions (via per-plugin `embeddingProvider`).
 
-**`hybridSearch()`** combines both — it queries the shared indices AND plugin searches, then fuses everything with [Reciprocal Rank Fusion (RRF)](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf).
+**`hybridSearch()`** combines all of them — it queries the shared indices, plugin searches, and any named KV collections, then fuses everything with [Reciprocal Rank Fusion (RRF)](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf).
 
 ### Method Reference
 
 | Method | Engine | What it searches |
 |--------|--------|-----------------|
-| `search(q)` | VectorSearch | Code + git vectors (shared HNSW) |
-| `searchCode(q)` | VectorSearch (filtered) | Code vectors only |
-| `searchCommits(q)` | VectorSearch (filtered) | Git vectors only |
-| `searchBM25(q)` | KeywordSearch | Code + git text (FTS5) |
+| `search(q, options?)` | VectorSearch | Code + git vectors (shared HNSW) |
+| `searchBM25(q, options?)` | KeywordSearch | Code + git text (FTS5) |
 | `brain.docs!.search(q)` | DocsPlugin | Document vectors (own HNSW + BM25) |
-| `hybridSearch(q)` | All engines | **All sources** → RRF fusion |
-| `getContext(task)` | All engines | All sources → formatted markdown |
+| `hybridSearch(q, options?)` | All engines | **All sources** → RRF fusion |
+| `getContext(task, options?)` | All engines | All sources → formatted markdown |
 
 ---
 
@@ -102,11 +106,22 @@ Get formatted markdown ready for system prompt injection:
 
 ```typescript
 const context = await brain.getContext('add rate limiting to the API', {
-  codeResults: 6,
-  gitResults: 5,
+  sources: { code: 6, git: 5 },
   affectedFiles: ['src/api/routes.ts'],
   useMMR: true,
 });
+```
+
+### ContextOptions
+
+```typescript
+interface ContextOptions {
+  sources?: Record<string, number>; // { code: n, git: n, memory: n }
+  affectedFiles?: string[];         // improves co-edit suggestions
+  minScore?: number;                // default: 0.25
+  useMMR?: boolean;                 // default: true
+  mmrLambda?: number;               // default: 0.7
+}
 ```
 
 Returns structured markdown with:

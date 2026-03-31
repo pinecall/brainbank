@@ -12,7 +12,7 @@ export async function cmdDocs(): Promise<void> {
 
     console.log(c.bold('\n━━━ BrainBank Docs Index ━━━\n'));
 
-    const opts: { collections?: string[]; onProgress?: any } = {};
+    const opts: { collections?: string[]; onProgress?: (collection: string, file: string, current: number, total: number) => void } = {};
     if (collection) opts.collections = [collection];
     opts.onProgress = (col: string, file: string, cur: number, total: number) => {
         process.stdout.write(`\r  ${c.cyan(col)} [${cur}/${total}] ${file}                    `);

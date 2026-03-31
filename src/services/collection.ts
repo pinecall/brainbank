@@ -210,7 +210,7 @@ export class Collection {
             type: 'collection' as const,
             score: h.score ?? 0,
             content: h.content,
-            metadata: { id: h.id, collection: this._name, ...h.metadata },
+            metadata: { ...h.metadata, id: h.id, collection: this._name },
         }));
     }
 

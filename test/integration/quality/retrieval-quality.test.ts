@@ -394,7 +394,7 @@ tests['golden queries: recall@5 and MRR'] = async (assert: any) => {
     metrics = [];
 
     for (const golden of GOLDEN) {
-        const results = await brain.hybridSearch(golden.query, { codeK: 10 });
+        const results = await brain.hybridSearch(golden.query, { sources: { code: 10 } });
         const codeResults = results.filter(r => r.type === 'code');
 
         const recall5 = computeRecallAtK(codeResults, golden.expectedFiles, 5);

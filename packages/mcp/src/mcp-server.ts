@@ -228,13 +228,16 @@ server.registerTool(
     async ({ query, mode, codeK, gitK, minScore, collections, repo }) => {
         const brainbank = await getBrainBank(repo);
 
+        // Merge codeK/gitK shorthands into sources for backward compat
+        const sources: Record<string, number> = { ...collections, code: codeK, git: gitK };
+
         let results;
         if (mode === 'keyword') {
-            results = await brainbank.searchBM25(query, { codeK, gitK });
+            results = await brainbank.searchBM25(query, { sources });
         } else if (mode === 'vector') {
-            results = await brainbank.search(query, { codeK, gitK, minScore });
+            results = await brainbank.search(query, { sources, minScore });
         } else {
-            results = await brainbank.hybridSearch(query, { codeK, gitK, collections });
+            results = await brainbank.hybridSearch(query, { sources });
         }
 
         if (results.length === 0) {
@@ -265,8 +268,7 @@ server.registerTool(
         const brainbank = await getBrainBank(repo);
         const context = await brainbank.getContext(task, {
             affectedFiles,
-            codeResults,
-            gitResults,
+            sources: { code: codeResults, git: gitResults },
         });
 
         return { content: [{ type: 'text', text: context }] };

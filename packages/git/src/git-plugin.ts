@@ -83,13 +83,14 @@ class GitPlugin implements Plugin {
 
     /** Get git history for a specific file. */
     fileHistory(filePath: string, limit: number = 20): any[] {
+        const escaped = filePath.replace(/[%_\\]/g, '\\$&');
         return this.db.prepare(`
             SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions
             FROM git_commits c
             INNER JOIN commit_files cf ON c.id = cf.commit_id
-            WHERE cf.file_path LIKE ? AND c.is_merge = 0
+            WHERE cf.file_path LIKE ? ESCAPE '\\' AND c.is_merge = 0
             ORDER BY c.timestamp DESC LIMIT ?
-        `).all(`%${filePath}%`, limit) as any[];
+        `).all(`%${escaped}%`, limit) as any[];
     }
 
     /** Table descriptor for re-embedding git vectors from DB rows. */

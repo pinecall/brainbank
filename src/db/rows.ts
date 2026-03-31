@@ -63,7 +63,7 @@ export interface DocChunkRow {
     title: string | null;
     seq: number;
     content: string;
-    hash: string;
+    content_hash: string;
 }
 
 // ── Collections ─────────────────────────────────────

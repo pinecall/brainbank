@@ -22,13 +22,13 @@ export function countRows(db: Database, table: string): number {
     return row?.c ?? 0;
 }
 
-/** Save all HNSW indexes to disk for fast startup next time. */
+/** Save all HNSW indexes to disk for fast startup next time. Returns false on failure. */
 export function saveAllHnsw(
     dbPath: string,
     kvHnsw: HNSWIndex,
     sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
     privateHnsw: Map<string, HNSWIndex>,
-): void {
+): boolean {
     try {
         kvHnsw.save(hnswPath(dbPath, 'kv'));
         for (const [name, { hnsw }] of sharedHnsw) {
@@ -37,8 +37,10 @@ export function saveAllHnsw(
         for (const [name, hnsw] of privateHnsw) {
             hnsw.save(hnswPath(dbPath, name));
         }
+        return true;
     } catch {
-        // Non-fatal: next startup will just rebuild from SQLite
+        // Non-fatal: next startup rebuilds from SQLite (slower).
+        return false;
     }
 }
 

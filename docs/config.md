@@ -116,8 +116,9 @@ No config file? The CLI uses all built-in plugins with local embeddings — **ze
 | `BRAINBANK_DEBUG` | Show full stack traces in CLI errors |
 | `OPENAI_API_KEY` | Required when using `--embedding openai` |
 | `PERPLEXITY_API_KEY` | Required when using `--embedding perplexity` or `perplexity-context` |
+| `BRAINBANK_EMBEDDING` | Fallback embedding key (`local`, `openai`, `perplexity`, `perplexity-context`) |
 
-> **Note:** `BRAINBANK_EMBEDDING` env var has been removed. Use `brainbank index --embedding <provider>` on first index — the provider is stored in the DB and auto-resolved on subsequent runs.
+> **Recommended:** Set `"embedding"` in `.brainbank/config.json` instead of relying on env vars — the interactive `brainbank index` prompt saves it for you automatically.
 
 ---
 

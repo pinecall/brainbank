@@ -134,9 +134,23 @@ export class CodeWalker {
         // Extract symbols from AST (if tree-sitter was used)
         const symbols = this._extractSymbolsSafe(content, rel, language);
 
-        // Transaction: delete old + insert new atomically
+        // Collect HNSW mutations to apply AFTER the DB transaction commits.
+        // If the transaction rolls back, HNSW stays consistent with the DB.
+        const hnswToRemove: number[] = [];
+        const hnswToAdd: { id: number; vec: Float32Array }[] = [];
+
+        // Collect old chunk IDs for HNSW cleanup (before the transaction deletes them)
+        const oldChunks = this._deps.db.prepare(
+            'SELECT id FROM code_chunks WHERE file_path = ?'
+        ).all(rel) as any[];
+        for (const { id } of oldChunks) {
+            hnswToRemove.push(id);
+        }
+
+        // Transaction: delete old + insert new atomically (DB only — no HNSW)
         this._deps.db.transaction(() => {
-            this._removeOldChunks(rel);
+            // Remove old DB rows
+            this._deps.db.prepare('DELETE FROM code_chunks WHERE file_path = ?').run(rel);
             this._removeOldGraph(rel);
 
             const chunkIds: number[] = [];
@@ -154,8 +168,7 @@ export class CodeWalker {
                     'INSERT INTO code_vectors (chunk_id, embedding) VALUES (?, ?)'
                 ).run(id, vecToBuffer(vecs[ci]));
 
-                this._deps.hnsw.add(vecs[ci], id);
-                this._deps.vectorCache.set(id, vecs[ci]);
+                hnswToAdd.push({ id, vec: vecs[ci] });
             }
 
             // Store import graph
@@ -191,6 +204,16 @@ export class CodeWalker {
                 'INSERT OR REPLACE INTO indexed_files (file_path, file_hash) VALUES (?, ?)'
             ).run(rel, hash);
         });
+
+        // HNSW mutations AFTER successful commit — keeps HNSW consistent with DB
+        for (const id of hnswToRemove) {
+            this._deps.hnsw.remove(id);
+            this._deps.vectorCache.delete(id);
+        }
+        for (const { id, vec } of hnswToAdd) {
+            this._deps.hnsw.add(vec, id);
+            this._deps.vectorCache.set(id, vec);
+        }
 
         return chunks.length;
     }

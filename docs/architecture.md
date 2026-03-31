@@ -114,6 +114,7 @@ brainbank/
 │   │                                     Builds PluginContext, calls plugin.initialize()
 │   │
 │   ├── engine/
+│   │   ├── types.ts                   ← IndexAPIDeps + SearchAPIDeps interfaces
 │   │   ├── index-api.ts               ← IndexAPI: orchestrates indexing across plugins
 │   │   ├── search-api.ts              ← SearchAPI: collect → fuse (RRF) → rerank
 │   │   ├── search-factory.ts          ← createSearchAPI(): wires CompositeVectorSearch
@@ -144,10 +145,8 @@ brainbank/
 │   │   ├── context-builder.ts         ← ContextBuilder: assembles markdown for LLM
 │   │   ├── import-graph.ts            ← 2-hop import traversal + sibling clustering
 │   │   ├── context/
-│   │   │   ├── code-formatter.ts      ← Format code results + call graph annotations
-│   │   │   ├── graph-formatter.ts     ← Format import graph expansion
-│   │   │   ├── document-formatter.ts  ← Format document search results
-│   │   │   ├── result-formatters.ts   ← Format git commits, co-edits, patterns
+│   │   │   ├── formatters.ts          ← Format code results + call graph + import graph
+│   │   │   ├── result-formatters.ts   ← Format git, co-edits, patterns, documents
 │   │   │   └── sql-code-graph.ts      ← SqlCodeGraphProvider (CodeGraphProvider impl)
 │   │   ├── keyword/
 │   │   │   └── keyword-search.ts      ← FTS5 BM25 across code_chunks, git_commits, memory_patterns
@@ -171,7 +170,7 @@ brainbank/
 │       │   ├── index.ts               ← createBrain() orchestrator
 │       │   ├── config-loader.ts       ← .brainbank/config.json loader + cache
 │       │   ├── plugin-loader.ts       ← Dynamic @brainbank/* loading + folder discovery
-│       │   ├── provider-setup.ts      ← Embedding + reranker resolution from flags/config
+│       │   │                            + embedding/reranker resolution from flags/config
 │       │   └── builtin-registration.ts ← Multi-repo detection + plugin registration
 │       └── commands/
 │           ├── index.ts               ← brainbank index (interactive scan → prompt → index)
@@ -282,11 +281,9 @@ no business logic itself.
 │  .index(opts)              delegates to IndexAPI                       │
 │  .indexCode(opts)          code-only shortcut                          │
 │  .indexGit(opts)           git-only shortcut                           │
-│  .search(query, opts)      vector search (auto-init)                   │
-│  .hybridSearch(query, opts)  vector + BM25 → RRF (auto-init)          │
+│  .search(query, opts)      vector search (scope via sources: {code:10, git:0}) │
+│  .hybridSearch(query, opts)  vector + BM25 → RRF, scope via sources            │
 │  .searchBM25(query, opts)  keyword-only search                         │
-│  .searchCode(query, k)     code-only semantic search                   │
-│  .searchCommits(query, k)  git-only semantic search                    │
 │  .getContext(task, opts)   formatted markdown for LLM system prompt    │
 │  .rebuildFTS()             rebuild FTS5 indices                        │
 │  .reembed(opts)            re-generate all vectors (provider switch)   │
@@ -324,7 +321,7 @@ no business logic itself.
 ```
 Methods that call await this.initialize() (auto-init, transparent):
   index, indexCode, indexGit
-  search, hybridSearch, searchCode, searchCommits, getContext
+  search, hybridSearch, getContext
   collection (only the first call if not yet initialized)
 
 Methods that call _requireInit() (throw if not initialized):
@@ -345,7 +342,11 @@ Concurrent init guard:
                                                        _initPromise = promise
                                                        earlyInit → lateInit
                                                        _initialized = true
-                                                       _initPromise = null
+                                                       .then(() => _initPromise = null)
+                                                       .catch(() => _initPromise = null)
+  NOTE: _initPromise is nulled via explicit .then/.catch, NOT via finally.
+  A finally block would null the promise BEFORE the catch handler completes,
+  allowing a concurrent caller to start a new init while cleanup is in progress.
 ```
 
 ---
@@ -526,15 +527,20 @@ registry.has('docs')        → false (not registered)
 Plugin  (base — every plugin must implement)
 │  readonly name: string
 │  initialize(ctx: PluginContext): Promise<void>
-│  stats?():  Record<string, any>
+│  stats?():  Record<string, number | string>
 │  close?():  void
 
+IndexOptions  (typed, replaces `any`)
+│  forceReindex?: boolean
+│  depth?: number
+│  onProgress?: ProgressCallback
+
 IndexablePlugin extends Plugin
-│  index(options?: any): Promise<IndexResult>
+│  index(options?: IndexOptions): Promise<IndexResult>
 │  ← IndexResult: { indexed: number, skipped: number, chunks?: number }
 
 SearchablePlugin extends Plugin
-│  search(query: string, options?: any): Promise<SearchResult[]>
+│  search(query: string, options?: Record<string, unknown>): Promise<SearchResult[]>
 
 WatchablePlugin extends Plugin
 │  onFileChange(filePath, event: 'create'|'update'|'delete'): Promise<boolean>
@@ -1466,9 +1472,7 @@ interface SearchStrategy {
 }
 
 interface SearchOptions {
-    codeK?:     number   // default 6
-    gitK?:      number   // default 5
-    patternK?:  number   // default 4
+    sources?: Record<string, number> // e.g. { code: 6, git: 5, memory: 4 }
     minScore?:  number   // default 0.25
     useMMR?:    boolean  // default true
     mmrLambda?: number   // default 0.7
@@ -1541,7 +1545,7 @@ matchResult(result, { code: r=>..., commit: r=>..., _: r=>... }):
 ```
 KeywordSearch(db)  implements SearchStrategy
 
-.search(query, { codeK=8, gitK=5, patternK=4 })
+.search(query, { sources: { code: 8, git: 5, memory: 4 } })
          │
          ├── sanitizeFTS(query):  [src/lib/fts.ts]
          │     1. strip FTS5 special chars: {}[]()^~*:
@@ -1569,11 +1573,11 @@ KeywordSearch(db)  implements SearchStrategy
          │       LIKE '%word%' on file_path WHERE chunk_type = 'file'
          │       score = 0.6 (bm25-path label)
          │
-         ├── _searchGit(ftsQuery, gitK, results):
+         ├── _searchGit(ftsQuery, sources.git, results):
          │     bm25(fts_commits, 5.0, 2.0, 1.0)  message×5, author×2, diff×1
          │     filter: is_merge = 0
          │
-         └── _searchPatterns(ftsQuery, patternK, results):
+         └── _searchPatterns(ftsQuery, sources.memory, results):
                bm25(fts_patterns, 3.0, 5.0, 5.0, 1.0)
                filter: success_rate >= 0.5
 
@@ -1588,15 +1592,15 @@ KeywordSearch(db)  implements SearchStrategy
 ```
 SearchAPI.hybridSearch(query, options?)
          │
-         ├── cols  = options.collections ?? {}
-         ├── codeK = cols.code ?? options.codeK ?? 20
-         ├── gitK  = cols.git  ?? options.gitK  ?? 8
-         ├── docsK = cols.docs ?? 8
+         ├── sources = options?.sources ?? {}
+         ├── codeK = sources.code ?? 20
+         ├── gitK  = sources.git  ?? 8
+         ├── docsK = sources.docs ?? 8
          │
          ├── if VectorSearch available (search field set):
          │     parallel:
-         │     ├── vectorSearch.search(query, { ...options, codeK, gitK }) → vecResults
-         │     └── bm25?.search(query, { codeK, gitK }) ?? []              → kwResults
+         │     ├── vectorSearch.search(query, { ...options, sources: { code: codeK, git: gitK } }) → vecResults
+         │     └── bm25?.search(query, { sources: { code: codeK, git: gitK } }) ?? []  → kwResults
          │     lists.push(vecResults, kwResults)
          │
          ├── if registry.has('docs'):
@@ -1608,8 +1612,8 @@ SearchAPI.hybridSearch(query, options?)
          │       hits = await mod.search(query, options)
          │       if hits.length > 0: lists.push(hits)
          │
-         ├── _collectKvCollections(query, cols):
-         │     for [name, k] in cols where name NOT in {'code','git','docs'}:
+         ├── _collectKvCollections(query, sources):
+         │     for [name, k] in sources where name NOT in {'code','git','docs'}:
          │       hits = await kvService.collection(name).searchAsResults(query, k)
          │       if hits.length > 0: lists.push(hits)
          │
@@ -1710,16 +1714,18 @@ SqlCodeGraphProvider  [src/search/context/sql-code-graph.ts]:
 
 
 ContextBuilder.build(task, options?)
-  { codeResults=6, gitResults=5, patternResults=4,
-    affectedFiles=[], minScore=0.25, useMMR=true, mmrLambda=0.7 }
+   { sources: { code: 6, git: 5, memory: 4 },
+     affectedFiles=[], minScore=0.25, useMMR=true, mmrLambda=0.7 }
          │
+         ├── codeK = sources.code ?? 6, gitK = sources.git ?? 5
+         │   memoryK = sources.memory ?? 4
          ├── results = await search.search(task, {
-         │       codeK: codeResults, gitK: gitResults, patternK: patternResults,
+         │       sources: { code: codeK, git: gitK, memory: memoryK },
          │       minScore, useMMR, mmrLambda })
          │
          ├── parts = [`# Context for: "${task}"\n`]
          │
-         ├── codeHits = results.filter(type==='code').slice(0, codeResults)
+         ├── codeHits = results.filter(type==='code').slice(0, codeK)
          │   formatCodeResults(codeHits, parts, codeGraph?):
          │     group by filePath
          │     for each chunk:
@@ -1745,7 +1751,7 @@ ContextBuilder.build(task, options?)
          │       ORDER BY (end_line - start_line) DESC LIMIT 1   ← largest chunk
          │     "## Related Code (Import Graph)\n..."
          │
-         ├── formatGitResults(results, gitResults, parts):
+         ├── formatGitResults(results, gitK, parts):
          │     filter type='commit', slice to limit
          │     "## Related Git History\n"
          │     "**[abc1234]** fix auth bypass *(Jane, 2024-01-15, 92%)*"
@@ -1758,14 +1764,14 @@ ContextBuilder.build(task, options?)
          │     "## Co-Edit Patterns\n"
          │     "- **src/api.ts** → also tends to change: src/routes.ts (18x)"
          │
-         ├── formatPatternResults(results, patternResults, parts):
+         ├── formatPatternResults(results, memoryK, parts):
          │     filter type='pattern', slice to limit
          │     "## Learned Patterns\n"
          │     "**api** — 87% success, 91% match"
          │     "Approach: ...", "Lesson: ..."
          │
          └── if docsSearch:
-               docs = await docsSearch(task, { k: codeResults })
+               docs = await docsSearch(task, { k: codeK })
                formatDocuments(docs):
                  "## Relevant Documents\n\n"
                  "**[collection]** title — _context_\n\n{content}"
@@ -2346,15 +2352,6 @@ search(query, options?):
   if lists.length === 1 → lists[0]
   → reciprocalRankFusion(lists)
 
-searchCode(query, k=8):
-  if !registry.firstByType('code') → throw "Plugin 'code' is not loaded"
-  if !search → throw 'VectorSearch not available'
-  → search.search(query, { codeK: k, gitK: 0, patternK: 0 })
-
-searchCommits(query, k=8):
-  if !registry.firstByType('git') → throw "Plugin 'git' is not loaded"
-  → search.search(query, { codeK: 0, gitK: k, patternK: 0 })
-
 hybridSearch(query, options?):
   [see §11.4 for full flow]
 
@@ -2376,9 +2373,9 @@ _collectCustomPlugins(query, options?):
     if hits.length > 0: lists.push(hits)
   → SearchResult[][]
 
-_collectKvCollections(query, cols: Record<string, number>):
+_collectKvCollections(query, sources: Record<string, number>):
   reserved = { 'code', 'git', 'docs' }
-  for [name, k] in cols NOT in reserved:
+  for [name, k] in sources NOT in reserved:
     hits = await kvService.collection(name).searchAsResults(query, k)
     if hits.length > 0: lists.push(hits)
   → SearchResult[][]
@@ -2532,10 +2529,10 @@ registerConfigCollections(brain, config):
 ```
 parseSourceFlags():
   any --<name> <number> flag is treated as a source filter:
-    --code 10    → codeK = 10 + collections.code = 10
-    --git 0      → gitK = 0 (skip git)
-    --docs 5     → collections.docs = 5
-    --notes 10   → KV collection 'notes', k=10
+    --code 10    → sources.code = 10
+    --git 0      → sources.git = 0 (skip git)
+    --docs 5     → sources.docs = 5
+    --notes 10   → sources.notes = 10 (KV collection)
 
 NON_SOURCE_FLAGS (value flags, not source filters):
   repo, depth, collection, pattern, context, name, keep,
@@ -2893,7 +2890,7 @@ brain.index({ modules: ['code', 'git'] })
 ### 17.3 Hybrid Search Flow
 
 ```
-brain.hybridSearch("authentication middleware", { codeK: 10, gitK: 5 })
+brain.hybridSearch("authentication middleware", { sources: { code: 10, git: 5 } })
          │
     ┌────┴──────────────────────────────────────────────────┐
     │                  parallel                              │
@@ -2984,7 +2981,7 @@ brain.getContext("add rate limiting to the authentication API")
          │
     ContextBuilder.build(task):
          │
-         ├── CompositeVectorSearch.search(task, { codeK:6, gitK:5, patternK:4 })
+         ├── CompositeVectorSearch.search(task, { sources: { code: 6, git: 5, memory: 4 } })
          │     embedding.embed(task) → queryVec
          │     CodeVectorSearch  + searchMMR → code_chunks rows
          │     GitVectorSearch              → git_commits rows (no merge)

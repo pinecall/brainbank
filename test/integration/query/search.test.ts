@@ -72,7 +72,7 @@ tests['brain.search(): returns code + commit + pattern'] = async () => {
     const patternResults = await mem.search('auth bug');
     assert.ok(patternResults.length > 0, `patterns found: ${patternResults.length}`);
 
-    const all = await brain.search('auth', { minScore: 0, useMMR: false, codeK: 10, gitK: 10, patternK: 10 });
+    const all = await brain.search('auth', { minScore: 0, useMMR: false, sources: { code: 10, git: 10, memory: 10 } });
     assert.ok(all.length > 0, `unified search returned ${all.length} results`);
 };
 
@@ -92,7 +92,7 @@ tests['brain.search(): commit results have hash + author'] = async () => {
 
     let commits: any[] = [];
     for (const q of ['feat auth database', 'API endpoint handler', 'commit']) {
-        const results = await brain.search(q, { minScore: 0, gitK: 10 });
+        const results = await brain.search(q, { minScore: 0, sources: { git: 10 } });
         commits = results.filter(r => r.type === 'commit');
         if (commits.length > 0) break;
     }

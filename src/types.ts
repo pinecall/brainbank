@@ -17,11 +17,11 @@ export interface ICollection {
     /** Collection name. */
     readonly name: string;
     /** Add an item. Returns its ID. */
-    add(content: string, options?: CollectionAddOptions | Record<string, any>): Promise<number>;
+    add(content: string, options?: CollectionAddOptions | Record<string, unknown>): Promise<number>;
     /** Update an item's content (re-embeds). Returns the new ID. */
     update(id: number, content: string, options?: CollectionAddOptions): Promise<number>;
     /** Add multiple items. Returns their IDs. */
-    addMany(items: { content: string; metadata?: Record<string, any>; tags?: string[]; ttl?: string }[]): Promise<number[]>;
+    addMany(items: { content: string; metadata?: Record<string, unknown>; tags?: string[]; ttl?: string }[]): Promise<number[]>;
     /** Search this collection. */
     search(query: string, options?: CollectionSearchOptions): Promise<CollectionItem[]>;
     /** List items (newest first). */
@@ -361,12 +361,8 @@ export function matchResult<T>(
 // ── Context Builder ─────────────────────────────────
 
 export interface ContextOptions {
-    /** Max code chunks to include. Default: 6 */
-    codeResults?: number;
-    /** Max git commits to include. Default: 5 */
-    gitResults?: number;
-    /** Max memory patterns to include. Default: 4 */
-    patternResults?: number;
+    /** Per-source result limits. Built-in: 'code', 'git', 'memory'. Default: { code: 6, git: 5, memory: 4 } */
+    sources?: Record<string, number>;
     /** Files the agent is about to modify (improves co-edit suggestions) */
     affectedFiles?: string[];
     /** Minimum similarity score threshold. Default: 0.25 */
@@ -435,6 +431,8 @@ export interface IndexStats {
         chunks: number;
         hnswSize: number;
     };
+    /** Plugin-provided stats. Key is the plugin name. */
+    [pluginName: string]: Record<string, number | string> | undefined;
 }
 
 // ── Index Progress ──────────────────────────────────

@@ -10,12 +10,15 @@ import * as fs from 'node:fs';
 import type { Plugin } from '@/plugin.ts';
 import { c, getFlag } from '../utils.ts';
 
+/** Plugin factory — accepts config, returns Plugin. */
+type PluginFactory = (opts: Record<string, unknown>) => Plugin;
+
 const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
 const NOT_LOADED = Symbol('not-loaded');
 let _folderPluginsCache: Plugin[] | typeof NOT_LOADED = NOT_LOADED;
 
 /** Try to load @brainbank/code. Returns factory or null if not installed. */
-export async function loadCodePlugin(): Promise<((opts: any) => Plugin) | null> {
+export async function loadCodePlugin(): Promise<PluginFactory | null> {
     try {
         const mod = await import('@brainbank/code');
         return mod.code;
@@ -23,7 +26,7 @@ export async function loadCodePlugin(): Promise<((opts: any) => Plugin) | null> 
 }
 
 /** Try to load @brainbank/git. Returns factory or null if not installed. */
-export async function loadGitPlugin(): Promise<((opts: any) => Plugin) | null> {
+export async function loadGitPlugin(): Promise<PluginFactory | null> {
     try {
         const mod = await import('@brainbank/git');
         return mod.git;
@@ -31,7 +34,7 @@ export async function loadGitPlugin(): Promise<((opts: any) => Plugin) | null> {
 }
 
 /** Try to load @brainbank/docs. Returns factory or null if not installed. */
-export async function loadDocsPlugin(): Promise<((opts: any) => Plugin) | null> {
+export async function loadDocsPlugin(): Promise<PluginFactory | null> {
     try {
         const mod = await import('@brainbank/docs');
         return mod.docs;
@@ -67,8 +70,9 @@ export async function discoverFolderPlugins(): Promise<Plugin[]> {
             } else {
                 console.error(c.yellow(`⚠ ${file}: must export a default Plugin with a 'name' property, skipping`));
             }
-        } catch (err: any) {
-            console.error(c.red(`Error loading plugin ${file}: ${err.message}`));
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(c.red(`Error loading plugin ${file}: ${message}`));
         }
     }
 
@@ -79,4 +83,31 @@ export async function discoverFolderPlugins(): Promise<Plugin[]> {
 /** Reset folder plugins cache. Useful for tests. */
 export function resetPluginCache(): void {
     _folderPluginsCache = NOT_LOADED;
+}
+
+// ── Provider Setup (merged from provider-setup.ts) ──
+
+import type { EmbeddingProvider } from '@/types.ts';
+import type { ProjectConfig } from './config-loader.ts';
+
+/** Resolve an embedding key string to an EmbeddingProvider instance. */
+export async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvider> {
+    const { resolveEmbedding } = await import('@/providers/embeddings/resolve.ts');
+    return resolveEmbedding(key);
+}
+
+/** Configure reranker and global embedding provider on brainOpts. */
+export async function setupProviders(brainOpts: Record<string, unknown>, config: ProjectConfig | null): Promise<void> {
+    const rerankerFlag = getFlag('reranker') ?? (config?.reranker as string | undefined);
+    if (rerankerFlag === 'qwen3') {
+        const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');
+        brainOpts.reranker = new Qwen3Reranker();
+    }
+
+    const embFlag = getFlag('embedding') ?? (config?.embedding as string | undefined) ?? process.env.BRAINBANK_EMBEDDING;
+    if (embFlag) {
+        const provider = await resolveEmbeddingKey(embFlag);
+        brainOpts.embeddingProvider = provider;
+        brainOpts.embeddingDims = provider.dims;
+    }
 }

@@ -129,17 +129,18 @@ export class DocsIndexer {
         return files;
     }
 
-    /** Check if a file matches any ignore patterns. */
+    /** Check if a file matches any ignore patterns (glob syntax). */
     private _isIgnoredFile(relPath: string, ignore?: string[]): boolean {
         if (!ignore) return false;
         return ignore.some(ig => {
+            // Escape regex-special chars, then convert glob syntax
             const regex = ig
-                .replace(/\*\*/g, '{{GLOBSTAR}}')
-                .replace(/\*/g, '{{STAR}}')
-                .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-                .replace(/\{\{GLOBSTAR\}\}/g, '.*')
-                .replace(/\{\{STAR\}\}/g, '[^/]*');
-            return new RegExp(regex).test(relPath);
+                .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex specials (not * ?)
+                .replace(/\*\*/g, '\x00')              // placeholder for **
+                .replace(/\*/g, '[^/]*')               // * = anything except /
+                .replace(/\?/g, '.')                    // ? = any single char
+                .replace(/\x00/g, '.*');                // ** = anything including /
+            return new RegExp(`^${regex}$`).test(relPath);
         });
     }
 
@@ -178,33 +179,33 @@ export class DocsIndexer {
         const title = this._extractTitle(content, relPath);
         const chunks = this._smartChunk(content);
 
+        // Embed FIRST — if this throws, no orphaned rows are left in DB
+        const texts = chunks.map(c => `title: ${title} | text: ${c.text}`);
+        const embeddings = await this._embedding.embedBatch(texts);
+
         const insertChunk = this._db.prepare(`
             INSERT INTO doc_chunks (collection, file_path, title, content, seq, pos, content_hash)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
 
+        const insertVec = this._db.prepare(
+            'INSERT OR REPLACE INTO doc_vectors (chunk_id, embedding) VALUES (?, ?)'
+        );
+
+        // Single transaction: chunks + vectors atomically (no partial state)
         const chunkIds: number[] = [];
         this._db.transaction(() => {
             for (let seq = 0; seq < chunks.length; seq++) {
                 const result = insertChunk.run(
                     collection, relPath, title, chunks[seq].text, seq, chunks[seq].pos, hash,
                 );
-                chunkIds.push(Number(result.lastInsertRowid));
+                const id = Number(result.lastInsertRowid);
+                chunkIds.push(id);
+                insertVec.run(id, Buffer.from(embeddings[seq].buffer));
             }
         });
 
-        const texts = chunks.map(c => `title: ${title} | text: ${c.text}`);
-        const embeddings = await this._embedding.embedBatch(texts);
-
-        const insertVec = this._db.prepare(
-            'INSERT OR REPLACE INTO doc_vectors (chunk_id, embedding) VALUES (?, ?)'
-        );
-        this._db.transaction(() => {
-            for (let j = 0; j < chunkIds.length; j++) {
-                insertVec.run(chunkIds[j], Buffer.from(embeddings[j].buffer));
-            }
-        });
-
+        // HNSW mutations AFTER successful commit
         for (let j = 0; j < chunkIds.length; j++) {
             this._hnsw.add(embeddings[j], chunkIds[j]);
             this._vecCache.set(chunkIds[j], embeddings[j]);

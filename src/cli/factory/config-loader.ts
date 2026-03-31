@@ -8,7 +8,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { Plugin } from '@/plugin.ts';
-import type { DocumentCollection } from '@/types.ts';
+import type { BrainBankConfig, DocumentCollection } from '@/types.ts';
 import { c, getFlag } from '../utils.ts';
 
 /** Per-plugin config section (shared shape). */
@@ -43,8 +43,8 @@ export interface ProjectConfig {
     reranker?: string;
     maxFileSize?: number;
     indexers?: Plugin[];
-    brainbank?: Record<string, any>;
-    [pluginName: string]: any;
+    brainbank?: Partial<BrainBankConfig>;
+    [pluginName: string]: unknown;
 }
 
 const CONFIG_NAMES = ['config.json', 'config.ts', 'config.js', 'config.mjs'];
@@ -71,8 +71,9 @@ export async function loadConfig(): Promise<ProjectConfig | null> {
                 _configCache = (mod.default ?? mod) as ProjectConfig;
             }
             return _configCache;
-        } catch (err: any) {
-            console.error(c.red(`Error loading .brainbank/${name}: ${err.message}`));
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(c.red(`Error loading .brainbank/${name}: ${message}`));
             process.exit(1);
         }
     }

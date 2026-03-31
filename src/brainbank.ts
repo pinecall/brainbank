@@ -27,6 +27,7 @@ import type { Plugin } from './plugin.ts';
 import { isHnswPlugin, isDocsPlugin } from './plugin.ts';
 import type { DocsPlugin } from './plugin.ts';
 import { PLUGIN, HNSW } from './constants.ts';
+import type { SearchOptions } from './search/types.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult, ICollection,
@@ -105,19 +106,24 @@ export class BrainBank extends EventEmitter {
         if (this._initPromise) return this._initPromise;
 
         this._initPromise = this._runInitialize(options)
+            .then(() => { this._initPromise = null; })
             .catch(err => {
                 // Reset shared state so a retry starts clean
-                for (const { hnsw } of this._sharedHnsw.values()) try { hnsw.reinit(); } catch { }
+                for (const { hnsw } of this._sharedHnsw.values()) {
+                    try { hnsw.reinit(); } catch (e) { this.emit('warn', `HNSW reinit failed during cleanup: ${e}`); }
+                }
                 this._kvService?.clear();
-                if (this._kvService) try { this._kvService.hnsw.reinit(); } catch { }
-                try { this._db?.close(); } catch { }
+                if (this._kvService) {
+                    try { this._kvService.hnsw.reinit(); } catch (e) { this.emit('warn', `KV HNSW reinit failed during cleanup: ${e}`); }
+                }
+                try { this._db?.close(); } catch { /* DB already closed — safe to ignore */ }
                 this._db = undefined!;
                 this._kvService = undefined;
                 this._searchAPI = undefined;
                 this._indexAPI = undefined;
+                this._initPromise = null;
                 throw err;
-            })
-            .finally(() => { this._initPromise = null; });
+            });
 
         return this._initPromise;
     }
@@ -140,7 +146,7 @@ export class BrainBank extends EventEmitter {
         this._searchAPI = await lateInit(
             this._config, early, this._registry,
             this._sharedHnsw, this._kvService,
-        ) ?? undefined;
+        );
 
         this._indexAPI = new IndexAPI({
             registry: this._registry,
@@ -215,50 +221,32 @@ export class BrainBank extends EventEmitter {
         return this._searchAPI?.getContext(task, options) ?? '';
     }
 
-    /** Semantic search across all loaded modules. */
-    async search(query: string, options?: {
-        codeK?: number; gitK?: number; patternK?: number;
-        minScore?: number; useMMR?: boolean;
-    }): Promise<SearchResult[]> {
+    /** Semantic search across all loaded modules. Scope via sources: { code: 10, git: 0 }. */
+    async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         await this.initialize();
-        return this._searchAPI!.search(query, options);
-    }
-
-    /** Semantic search over code only. Convenience for search({ codeK, gitK: 0 }). */
-    async searchCode(query: string, k = 8): Promise<SearchResult[]> {
-        await this.initialize();
-        return this._searchAPI!.searchCode(query, k);
-    }
-
-    /** Semantic search over commits only. Convenience for search({ gitK, codeK: 0 }). */
-    async searchCommits(query: string, k = 8): Promise<SearchResult[]> {
-        await this.initialize();
-        return this._searchAPI!.searchCommits(query, k);
+        return this._searchAPI?.search(query, options) ?? [];
     }
 
     /**
      * Hybrid search: vector + BM25 fused with Reciprocal Rank Fusion.
      * Best quality — catches both exact keyword matches and conceptual similarities.
+     * Scope via sources: { code: 10, git: 5, docs: 3, myNotes: 5 }.
      */
-    async hybridSearch(query: string, options?: {
-        codeK?: number; gitK?: number; patternK?: number;
-        minScore?: number; useMMR?: boolean;
-        collections?: Record<string, number>;
-    }): Promise<SearchResult[]> {
+    async hybridSearch(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         await this.initialize();
-        return this._searchAPI!.hybridSearch(query, options);
+        return this._searchAPI?.hybridSearch(query, options) ?? [];
     }
 
     /** BM25 keyword search only (no embeddings needed). */
-    async searchBM25(query: string, options?: { codeK?: number; gitK?: number; patternK?: number }): Promise<SearchResult[]> {
+    async searchBM25(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         await this.initialize();
-        return this._searchAPI!.searchBM25(query, options);
+        return this._searchAPI?.searchBM25(query, options) ?? [];
     }
 
     /** Rebuild FTS5 indices. */
     rebuildFTS(): void {
         this._requireInit('rebuildFTS');
-        this._searchAPI!.rebuildFTS();
+        this._searchAPI?.rebuildFTS();
     }
 
 
@@ -341,6 +329,9 @@ export class BrainBank extends EventEmitter {
     close(): void {
         this._watcher?.close();
         for (const indexer of this._registry.all) indexer.close?.();
+        // Release reranker (e.g. Qwen3Reranker holds a native llama.cpp model)
+        const reranker = this._config.reranker as { close?: () => void } | undefined;
+        reranker?.close?.();
         this._embedding?.close().catch(() => { });
         this._db?.close();
         this._initialized = false;

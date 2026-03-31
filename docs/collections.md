@@ -118,22 +118,31 @@ Collections are the **low-level storage primitive**. Plugins use them internally
 brain.hybridSearch('auth')                  ← searches EVERYTHING via RRF
   ├── SearchAPI (shared HNSW)               ← code + git vectors
   ├── DocsPlugin.search()                   ← doc collections (own HNSW)
-  └── collection('errors').search()         ← if passed in options
+  └── collection('errors').search()         ← if named in options.sources
 
 brain.collection('errors').search('auth')   ← searches ONLY that collection
 ```
 
 | Level | Method | What it searches |
 |-------|--------|-----------------|
-| **BrainBank** | `hybridSearch(q)` | All sources → RRF |
-| **BrainBank** | `search(q)` | Code + git vectors (shared HNSW) |
-| **BrainBank** | `searchBM25(q)` | Code + git text (FTS5) |
+| **BrainBank** | `hybridSearch(q, options?)` | All sources → RRF |
+| **BrainBank** | `search(q, options?)` | Code + git vectors (shared HNSW) |
+| **BrainBank** | `searchBM25(q, options?)` | Code + git text (FTS5) |
 | **Plugin** | `brain.docs!.search(q)` | Document collections only |
 | **Collection** | `collection.search(q)` | Single collection (own HNSW + FTS5) |
 
+To include a named KV collection in top-level hybrid search, pass its name in `sources`:
+
+```typescript
+// Include 'errors' and 'decisions' collections in hybrid search
+await brain.hybridSearch('auth problem', {
+  sources: { code: 10, git: 5, errors: 5, decisions: 3 },
+});
+```
+
 > **Plugins use collections internally.** When a plugin calls `ctx.collection('notes')` in its `initialize()`, it gets the same `Collection` primitive. This is how custom plugins get hybrid search for free.
 
-Collections work standalone or alongside plugins. From the CLI, use `--<collection> <n>` to include them in hybrid search results:
+From the CLI, use `--<collection> <n>` to include them in hybrid search results:
 
 ```bash
 brainbank hsearch "auth" --errors 5 --decisions 3

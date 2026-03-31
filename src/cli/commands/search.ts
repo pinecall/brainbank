@@ -69,24 +69,8 @@ function printFilterInfo(sources: Record<string, number>): void {
 }
 
 /** Build search options from sources map. */
-function buildSearchOptions(sources: Record<string, number>): {
-    codeK?: number; gitK?: number; collections?: Record<string, number>;
-} {
-    const opts: { codeK?: number; gitK?: number; collections?: Record<string, number> } = {};
-
-    if ('code' in sources) opts.codeK = sources.code;
-    if ('git' in sources) opts.gitK = sources.git;
-
-    // Everything goes into collections for hybridSearch compatibility
-    const collections: Record<string, number> = {};
-    let hasCols = false;
-    for (const [k, v] of Object.entries(sources)) {
-        collections[k] = v;
-        hasCols = true;
-    }
-    if (hasCols) opts.collections = collections;
-
-    return opts;
+function buildSearchOptions(sources: Record<string, number>): { sources: Record<string, number> } {
+    return Object.keys(sources).length > 0 ? { sources } : { sources: {} };
 }
 
 export async function cmdSearch(): Promise<void> {
@@ -140,7 +124,7 @@ export async function cmdKeywordSearch(): Promise<void> {
     console.log('');
 
     const opts = buildSearchOptions(sources);
-    const results = await brain.searchBM25(query, { codeK: opts.codeK, gitK: opts.gitK });
+    const results = await brain.searchBM25(query, opts);
     printResults(results);
     brain.close();
 }

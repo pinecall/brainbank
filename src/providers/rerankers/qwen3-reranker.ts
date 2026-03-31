@@ -16,6 +16,20 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 
+/** Minimal interface for node-llama-cpp model methods used by the reranker. */
+interface LlamaModel {
+    tokenize(text: string): number[];
+    detokenize(tokens: number[]): string;
+    createRankingContext(opts: { contextSize: number; flashAttention?: boolean }): Promise<LlamaRankingContext>;
+    dispose?(): Promise<void>;
+}
+
+/** Minimal interface for node-llama-cpp ranking context. */
+interface LlamaRankingContext {
+    rankAll(query: string, documents: string[]): Promise<number[]>;
+    dispose(): Promise<void>;
+}
+
 // Default model — Qwen3-Reranker-0.6B quantized to Q8_0 (~640MB)
 const DEFAULT_MODEL_URI = 'hf:ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF/qwen3-reranker-0.6b-q8_0.gguf';
 
@@ -39,8 +53,8 @@ export class Qwen3Reranker implements Reranker {
     private readonly _cacheDir: string;
     private readonly _contextSize: number;
 
-    private _model: any = null;
-    private _context: any = null;
+    private _model: LlamaModel | null = null;
+    private _context: LlamaRankingContext | null = null;
     private _loadPromise: Promise<void> | null = null;
 
     constructor(options: Qwen3RerankerOptions = {}) {
@@ -81,15 +95,14 @@ export class Qwen3Reranker implements Reranker {
                 // Load model
                 this._model = await llama.loadModel({ modelPath });
 
-                // Create ranking context with flash attention for lower VRAM
                 try {
-                    this._context = await this._model.createRankingContext({
+                    this._context = await this._model!.createRankingContext({
                         contextSize: this._contextSize,
                         flashAttention: true,
                     });
                 } catch {
                     // Flash attention might not be supported — retry without it
-                    this._context = await this._model.createRankingContext({
+                    this._context = await this._model!.createRankingContext({
                         contextSize: this._contextSize,
                     });
                 }
@@ -131,7 +144,7 @@ export class Qwen3Reranker implements Reranker {
         });
 
         // Rank all unique documents at once
-        const scores: number[] = await this._context.rankAll(query, truncated);
+        const scores: number[] = await this._context!.rankAll(query, truncated);
 
         // Map scores back
         for (let i = 0; i < uniqueTexts.length; i++) {

@@ -14,7 +14,7 @@
  */
 
 import type { Database } from './db/database.ts';
-import type { EmbeddingProvider, SearchResult } from './types.ts';
+import type { EmbeddingProvider, SearchResult, IndexResult, ProgressCallback } from './types.ts';
 import type { HNSWIndex } from './providers/vector/hnsw-index.ts';
 import type { ResolvedConfig, DocumentCollection, ICollection } from './types.ts';
 
@@ -56,7 +56,7 @@ export interface Plugin {
     /** Initialize the plugin (create HNSW, load vectors, etc.). */
     initialize(ctx: PluginContext): Promise<void>;
     /** Return stats for this plugin. */
-    stats?(): Record<string, any>;
+    stats?(): Record<string, number | string>;
     /** Clean up resources. */
     close?(): void;
 }
@@ -65,14 +65,21 @@ export interface Plugin {
 // Implemented by plugins that support specific capabilities.
 // Use type guards below to check at runtime.
 
+/** Options accepted by IndexablePlugin.index(). */
+export interface IndexOptions {
+    forceReindex?: boolean;
+    depth?: number;
+    onProgress?: ProgressCallback;
+}
+
 /** Plugins that can scan and index content (code, git). */
 export interface IndexablePlugin extends Plugin {
-    index(options?: any): Promise<any>;
+    index(options?: IndexOptions): Promise<IndexResult>;
 }
 
 /** Plugins that can search indexed content (docs). */
 export interface SearchablePlugin extends Plugin {
-    search(query: string, options?: any): Promise<SearchResult[]>;
+    search(query: string, options?: Record<string, unknown>): Promise<SearchResult[]>;
 }
 
 /** Plugins that support file watch mode. */

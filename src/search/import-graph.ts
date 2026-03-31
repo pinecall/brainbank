@@ -7,6 +7,7 @@
 
 import type { Database } from '@/db/database.ts';
 import type { CodeChunkRow } from '@/db/rows.ts';
+import { escapeLike } from '@/lib/fts.ts';
 
 /** Traverse import graph 1-2 hops from seed files, return new file paths. */
 export function expandViaImportGraph(db: Database, seedFiles: Set<string>): Set<string> {
@@ -43,9 +44,10 @@ export function expandViaImportGraph(db: Database, seedFiles: Set<string>): Set<
 
                 const basename = file.split('/').pop()?.replace(/\.\w+$/, '') ?? '';
                 if (basename) {
+                    const escapedBasename = escapeLike(basename);
                     const importers = db.prepare(
-                        'SELECT DISTINCT file_path FROM code_imports WHERE imports_path = ? OR imports_path LIKE ?'
-                    ).all(basename, `%/${basename}`) as { file_path: string }[];
+                        `SELECT DISTINCT file_path FROM code_imports WHERE imports_path = ? OR imports_path LIKE ? ESCAPE '\\'`
+                    ).all(basename, `%/${escapedBasename}`) as { file_path: string }[];
                     for (const row of importers) {
                         if (!seedFiles.has(row.file_path) && !discovered.has(row.file_path)) {
                             discovered.add(row.file_path);
@@ -67,24 +69,27 @@ export function expandViaImportGraph(db: Database, seedFiles: Set<string>): Set<
 /** Resolve a basename import (e.g. 'message') to real file paths. */
 function resolveImportPath(db: Database, basename: string, fromDir: string): string[] {
     try {
+        const escapedDir = escapeLike(fromDir);
+        const escapedBase = escapeLike(basename);
+
         const sameDir = db.prepare(
             `SELECT DISTINCT file_path FROM code_chunks
-             WHERE file_path LIKE ? AND file_path LIKE ?
+             WHERE file_path LIKE ? ESCAPE '\\' AND file_path LIKE ? ESCAPE '\\'
              LIMIT 3`
-        ).all(`${fromDir}/%`, `%/${basename}.%`) as { file_path: string }[];
+        ).all(`${escapedDir}/%`, `%/${escapedBase}.%`) as { file_path: string }[];
         if (sameDir.length > 0) return sameDir.map(r => r.file_path);
 
         const subDir = db.prepare(
             `SELECT DISTINCT file_path FROM code_chunks
-             WHERE file_path LIKE ? AND file_path LIKE ?
+             WHERE file_path LIKE ? ESCAPE '\\' AND file_path LIKE ? ESCAPE '\\'
              LIMIT 3`
-        ).all(`${fromDir}/%`, `%${basename}%`) as { file_path: string }[];
+        ).all(`${escapedDir}/%`, `%${escapedBase}%`) as { file_path: string }[];
         if (subDir.length > 0) return subDir.map(r => r.file_path);
 
         const global = db.prepare(
             `SELECT DISTINCT file_path FROM code_chunks
-             WHERE file_path LIKE ? LIMIT 3`
-        ).all(`%/${basename}.%`) as { file_path: string }[];
+             WHERE file_path LIKE ? ESCAPE '\\' LIMIT 3`
+        ).all(`%/${escapedBase}.%`) as { file_path: string }[];
         return global.map(r => r.file_path);
     } catch { return []; }
 }
@@ -100,9 +105,10 @@ function clusterSiblings(db: Database, seedFiles: Set<string>, discovered: Set<s
     for (const [dir, count] of dirCounts) {
         if (count < 3 || !dir) continue;
         try {
+            const escapedDir = escapeLike(dir);
             const siblings = db.prepare(
-                'SELECT DISTINCT file_path FROM code_chunks WHERE file_path LIKE ? AND file_path NOT LIKE ?'
-            ).all(`${dir}/%`, `${dir}/%/%`) as { file_path: string }[];
+                `SELECT DISTINCT file_path FROM code_chunks WHERE file_path LIKE ? ESCAPE '\\' AND file_path NOT LIKE ? ESCAPE '\\'`
+            ).all(`${escapedDir}/%`, `${escapedDir}/%/%`) as { file_path: string }[];
             for (const row of siblings) {
                 if (!seedFiles.has(row.file_path)) discovered.add(row.file_path);
             }

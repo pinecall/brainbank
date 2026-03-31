@@ -98,11 +98,17 @@ export async function reembedAll(
     for (const table of tables) {
         // Skip tables that don't exist (plugin not installed)
         try {
-            const exists = (db.prepare(
+            const textExists = (db.prepare(
                 `SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name=?`
             ).get(table.textTable) as CountRow).c;
-            if (!exists) continue;
-        } catch { continue; }
+            const vecExists = (db.prepare(
+                `SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name=?`
+            ).get(table.vectorTable) as CountRow).c;
+            if (!textExists || !vecExists) continue;
+        } catch (e: unknown) {
+            if (e instanceof Error && e.message.includes('no such table')) continue;
+            throw e;
+        }
 
         const count = await reembedTable(db, embedding, table, batchSize, onProgress);
         counts[table.name] = count;
@@ -115,22 +121,9 @@ export async function reembedAll(
         }
     }
 
-    // Update embedding metadata
-    const meta = {
-        provider: embedding.constructor?.name ?? 'unknown',
-        dims: String(embedding.dims),
-        reembedded_at: new Date().toISOString(),
-    };
-    const upsert = db.prepare(
-        'INSERT OR REPLACE INTO embedding_meta (key, value) VALUES (?, ?)'
-    );
-    for (const [k, v] of Object.entries(meta)) {
-        upsert.run(k, v);
-    }
-
     // Persist provider metadata + HNSW indexes to disk
+    setEmbeddingMeta(db, embedding);
     if (persist) {
-        setEmbeddingMeta(db, embedding);
         saveAllHnsw(persist.dbPath, persist.kvHnsw, persist.sharedHnsw, new Map());
     }
 

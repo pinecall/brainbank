@@ -10,7 +10,7 @@ import type { Database } from '@/db/database.ts';
 import type { CodeChunkRow, GitCommitRow, MemoryPatternRow } from '@/db/rows.ts';
 import type { SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
-import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
+import { sanitizeFTS, normalizeBM25, escapeLike } from '@/lib/fts.ts';
 
 /** Check if an error is an FTS5 query syntax error (expected, safe to ignore). */
 function isFTSError(e: unknown): boolean {
@@ -25,7 +25,10 @@ export class KeywordSearch implements SearchStrategy {
      * Uses BM25 scoring — lower scores = better matches.
      */
     async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
-        const { codeK = 8, gitK = 5, patternK = 4 } = options;
+        const src = options.sources ?? {};
+        const codeK = src.code ?? 8;
+        const gitK = src.git ?? 5;
+        const patternK = src.memory ?? 4;
 
         const ftsQuery = sanitizeFTS(query);
         if (!ftsQuery) return [];
@@ -71,9 +74,9 @@ export class KeywordSearch implements SearchStrategy {
                 const pathRows = this._db.prepare(`
                     SELECT id, file_path, chunk_type, name, start_line, end_line, content, language
                     FROM code_chunks
-                    WHERE file_path LIKE ? AND chunk_type = 'file'
+                    WHERE file_path LIKE ? ESCAPE '\\' AND chunk_type = 'file'
                     LIMIT 3
-                `).all(`%${word}%`) as CodeChunkRow[];
+                `).all(`%${escapeLike(word)}%`) as CodeChunkRow[];
 
                 for (const r of pathRows) {
                     if (seenIds.has(r.id)) continue;

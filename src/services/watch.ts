@@ -119,6 +119,7 @@ export class Watcher {
             this._pending.clear();
 
             let needsReindex = false;
+            const codeFiles: string[] = [];
 
             for (const filePath of files) {
                 const absPath = path.resolve(this._repoPath, filePath);
@@ -138,6 +139,7 @@ export class Watcher {
 
                 if (isSupported(filePath)) {
                     needsReindex = true;
+                    codeFiles.push(filePath);
                     onIndex?.(filePath, 'code');
                 }
             }
@@ -146,6 +148,8 @@ export class Watcher {
                 try {
                     await this._reindexFn();
                 } catch (err) {
+                    // Re-queue code files so they retry on the next debounce
+                    for (const f of codeFiles) this._pending.add(f);
                     onError?.(err instanceof Error ? err : new Error(String(err)));
                 }
             }

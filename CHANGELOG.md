@@ -6,12 +6,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+- **BUG-01: docs-only setup crash** — `createSearchAPI()` now always returns a `SearchAPI` instance. Docs-only setups no longer crash on `brain.search()`
+- **BUG-02: ghost HNSW vectors** — `KVService.delete()` now removes vectors from HNSW + vecCache before deleting DB rows
+- **BUG-04: DocChunkRow type mismatch** — renamed `hash` → `content_hash` to match actual SQLite column name
+- **BUG-05: metadata spread clobber** — reversed spread order in `Collection.searchAsResults()` so system keys (`id`, `collection`) always win
+- **BUG-06: reranker resource leak** — `close()` now releases the reranker (e.g. Qwen3Reranker native model)
+- **BUG-07: watcher data loss** — failed code files are re-queued to `_pending` instead of being silently dropped
+- **BUG-08: reembed missing table check** — `reembedAll()` now checks both text and vector table existence before processing
+- **BUG-11: LIKE injection** — added `escapeLike()` to `lib/fts.ts`, applied in `keyword-search.ts` path queries with `ESCAPE '\\'`
+- **ANTI-14: saveAllHnsw silent failure** — returns `boolean` so callers can detect and log persistence failures
+- **ANTI-15: minScore not forwarded to docs** — `ContextBuilder` now passes `minScore` to `docsSearch` callback
+- **ANTI-21: import-graph unescaped LIKE** — all LIKE queries in `import-graph.ts` now use `escapeLike()` with `ESCAPE '\\'`
+- **ANTI-25: batch type safety** — `Database.batch<T>` bound changed from `any[]` to `unknown[]`
+- **ANTI-27: IndexStats extensibility** — added `[pluginName: string]` index signature for plugin-provided stats
+- **ANTI-30: duplicate metadata write** — removed inline `embedding_meta` upsert in `reembedAll`, uses canonical `setEmbeddingMeta()` only
+
+### Changed
+- **Search API: generic `sources` param** — replaced `codeK`/`gitK`/`patternK` in `SearchOptions` and `codeResults`/`gitResults`/`patternResults` in `ContextOptions` with unified `sources: Record<string, number>`. Any plugin or KV collection can now be scoped from the public API.
+- **docs/architecture.md** — updated all sections (facade API, SearchOptions, hybridSearch flow, ContextBuilder, SearchAPI, data flow diagrams, CLI flags) to reflect generic `sources` API; removed `searchCode`/`searchCommits` references
+- `ContextBuilder` accepts optional `SearchStrategy` for docs-only setups
+- `lateInit()` return type simplified from `SearchAPI | undefined` to `SearchAPI`
+- `brainbank.ts` uses safe `?.` access instead of `!` non-null assertions on `_searchAPI`
+- `DocsSearchFn` type now includes optional `minScore` param
+
+### Removed
+- `searchCode()` and `searchCommits()` convenience methods from `BrainBank` and `SearchAPI` (use `search(query, { sources: { code: 10, git: 0 } })` instead)
+- `collections` param from `hybridSearch()` (merged into `sources`)
+
 ### Added
 - **`fuseRankedLists<T>()`** — generic RRF function in `lib/rrf.ts` that works on any type. Enables `Collection` to fuse `CollectionItem[]` directly without converting to/from `SearchResult`
 - **`Collection.searchAsResults()`** — returns `SearchResult[]` for use in hybrid search pipelines, encapsulating the CollectionItem→SearchResult mapping
 - **`ReembeddablePlugin`** — new capability interface in `plugin.ts`. Plugins that own vector tables implement `reembedConfig()` to provide table descriptors for re-embedding. Eliminates text builder duplication between core and plugins
 - **`ReembedTable` type** — moved from private in `reembed.ts` to public in `plugin.ts`, exported from `index.ts` for plugin authors
 - **Table existence check** — `reembedAll()` now checks `sqlite_master` before processing each table, skipping tables for uninstalled plugins
+- **`IndexOptions` interface** — typed options for `IndexablePlugin.index()` replacing `any` (supports `forceReindex`, `depth`, `onProgress`)
+- **`engine/types.ts`** — centralized `IndexAPIDeps` and `SearchAPIDeps` interfaces for engine layer dependency injection
+
+### Changed
+- **Type safety: `any` eliminated** — 10 files updated to remove all `any` types:
+  - `plugin.ts`: `stats()` returns `Record<string, number | string>`, `index()` uses `IndexOptions`, `search()` uses `Record<string, unknown>`
+  - `index-api.ts`: `emit` data param is `unknown`, docs result properly typed, result object uses typed accumulators
+  - `types.ts`: `ICollection.add/addMany` metadata uses `Record<string, unknown>`
+  - `docs.ts`: `onProgress` has full callback signature
+  - `config-loader.ts`: `brainbank` field uses `Partial<BrainBankConfig>`, index signature uses `unknown`
+  - `plugin-loader.ts`: `PluginFactory` type replaces inline `(opts: any) => Plugin`
+  - `local-embedding.ts`: `XenovaPipeline` interface replaces `any` for pipeline
+  - `qwen3-reranker.ts`: `LlamaModel` and `LlamaRankingContext` interfaces replace `any`
+  - `code-formatter.ts` and `document-formatter.ts`: use `isCodeResult()`/`isDocumentResult()` type guards instead of `Record<string, any>` casts
+- **Catch blocks typed** — `catch (err: any)` replaced with `catch (err: unknown)` + `instanceof Error` guards in `config-loader.ts`, `plugin-loader.ts`
+- **Context formatters consolidated (4→2 files)** — `code-formatter.ts` + `graph-formatter.ts` merged into `formatters.ts`; `document-formatter.ts` merged into `result-formatters.ts`
+- **`provider-setup.ts` merged into `plugin-loader.ts`** — eliminates a 30-line single-purpose file
+- **`IndexAPIDeps`/`SearchAPIDeps` centralized** — moved from inline definitions to `engine/types.ts`
+
+### Fixed
+- **Race condition in `initialize()`** — concurrent calls could see `_initPromise = null` during cleanup, starting a new init while the first was still resetting state. Fixed by replacing `finally` with explicit `.then()`/`.catch()` nulling
+- **Silent failure in `serve.ts`** — missing `@brainbank/mcp` now shows clear error with install instructions instead of silently importing
+- **Empty catch blocks hardened** — 4 catch blocks now either emit warnings (HNSW reinit), add comments (DB close, HNSW save), or discriminate error types (`reembed.ts` only swallows `no such table`, `builtin-registration.ts` only swallows `already registered`)
 
 ### Removed
 - **Dead code** — deleted `VectorSearch` (157 lines, superseded by `CompositeVectorSearch`) and `FTSMaintenance` (22 lines, inlined into `KeywordSearch.rebuild()`)

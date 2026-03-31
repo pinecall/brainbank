@@ -12,6 +12,7 @@
 
 import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult, ReembedTable } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
+import * as path from 'node:path';
 import { DocsIndexer } from './docs-indexer.js';
 import { DocumentSearch } from './document-search.js';
 
@@ -45,12 +46,13 @@ class DocsPlugin implements Plugin {
 
     /** Register a document collection. */
     addCollection(collection: DocumentCollection): void {
+        const absPath = path.resolve(collection.path);
         this._db.prepare(`
             INSERT OR REPLACE INTO collections (name, path, pattern, ignore_json, context)
             VALUES (?, ?, ?, ?, ?)
         `).run(
             collection.name,
-            collection.path,
+            absPath,
             collection.pattern ?? '**/*.md',
             JSON.stringify(collection.ignore ?? []),
             collection.context ?? null,

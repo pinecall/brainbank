@@ -139,7 +139,7 @@ brainbank reembed
 | Replaces vectors | ✓ |
 | Rebuilds HNSW | ✓ |
 
-> BrainBank tracks provider metadata in `embedding_meta` table. It auto-detects mismatches and warns you.
+> BrainBank tracks provider metadata in the `embedding_meta` table. It auto-detects dimension mismatches and refuses to initialize — use `initialize({ force: true })` then `reembed()` to migrate.
 
 ---
 
@@ -147,7 +147,7 @@ brainbank reembed
 
 Each project has its own `.brainbank/` database. In multi-repo setups (same DB, different `code:frontend` / `code:backend` plugins), file paths are relative to each repo root — no collisions.
 
-> **Schema v5:** The code graph tables (`code_imports`, `code_symbols`, `code_refs`) are new in schema version 5. Existing databases auto-migrate on re-index with `--force`.
+> **Current schema version: v6.** The code graph tables (`code_imports`, `code_symbols`, `code_refs`) were introduced in v5. Existing databases are auto-migrated via `CREATE TABLE IF NOT EXISTS` on first run.
 
 ---
 
@@ -156,4 +156,3 @@ Each project has its own `.brainbank/` database. In multi-repo setups (same DB, 
 - [Getting Started](getting-started.md) — first indexing walkthrough
 - [Embeddings](embeddings.md) — provider details and re-embedding
 - [Multi-Repo](multi-repo.md) — indexing multiple repositories
-- [Architecture](architecture.md) — full schema and data flows

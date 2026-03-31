@@ -43,7 +43,7 @@ export class Database {
      * Run a prepared statement on multiple rows.
      * Wraps in a single transaction for performance.
      */
-    batch<T extends any[]>(sql: string, rows: T[]): void {
+    batch<T extends unknown[]>(sql: string, rows: T[]): void {
         const stmt = this.db.prepare(sql);
         const tx = this.db.transaction(() => {
             for (const row of rows) {

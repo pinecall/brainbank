@@ -22,7 +22,7 @@ import { ContextBuilder } from '@/search/context-builder.ts';
 import { SqlCodeGraphProvider } from '@/search/context/sql-code-graph.ts';
 import { SearchAPI } from './search-api.ts';
 
-/** Build a fully-wired SearchAPI from registry state. Returns undefined if no search strategies available. */
+/** Build a fully-wired SearchAPI from registry state. Always returns an instance — handles docs-only setups internally. */
 export function createSearchAPI(
     db: Database,
     embedding: EmbeddingProvider,
@@ -30,13 +30,11 @@ export function createSearchAPI(
     registry: PluginRegistry,
     kvService: KVService,
     sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
-): SearchAPI | undefined {
+): SearchAPI {
     const codeMod = sharedHnsw.get(PLUGIN.CODE);
     const gitMod  = sharedHnsw.get(PLUGIN.GIT);
     const memPlugin = registry.firstByType(PLUGIN.MEMORY);
     const memMod    = memPlugin && isHnswPlugin(memPlugin) ? memPlugin : undefined;
-
-    if (!codeMod && !gitMod && !memMod) return undefined;
 
     const code = codeMod
         ? new CodeVectorSearch({ db, hnsw: codeMod.hnsw, vecs: codeMod.vecCache })
@@ -48,9 +46,10 @@ export function createSearchAPI(
         ? new PatternVectorSearch({ db, hnsw: memMod.hnsw, vecs: memMod.vecCache })
         : undefined;
 
-    const search = new CompositeVectorSearch({
-        code, git, patterns, embedding,
-    });
+    const hasAnyStrategy = codeMod || gitMod || memMod;
+    const search = hasAnyStrategy
+        ? new CompositeVectorSearch({ code, git, patterns, embedding })
+        : undefined;
 
     const bm25 = new KeywordSearch(db);
 

@@ -36,8 +36,17 @@ export class KVService {
             .map(r => r.collection);
     }
 
-    /** Delete a collection's data and evict from cache. */
+    /** Delete a collection's data and evict from cache. Removes vectors from HNSW to prevent ghost entries. */
     delete(name: string): void {
+        const ids = this._db.prepare(
+            'SELECT id FROM kv_data WHERE collection = ?'
+        ).all(name) as { id: number }[];
+
+        for (const { id } of ids) {
+            this._hnsw.remove(id);
+            this._vecs.delete(id);
+        }
+
         this._db.prepare('DELETE FROM kv_data WHERE collection = ?').run(name);
         this._collections.delete(name);
     }
@@ -45,7 +54,7 @@ export class KVService {
     /** Access the shared HNSW index (used by reembed). */
     get hnsw(): HNSWIndex     { return this._hnsw; }
 
-    /** Access the shared vector cache (used by reembed). */
+    /** Access the shared vector cache. @internal */
     get vecs(): Map<number, Float32Array> { return this._vecs; }
 
     /** Clear all cached collections and vectors. */
