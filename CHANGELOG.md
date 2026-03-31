@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Breaking Changes
+- Removed `brain.indexCode()` and `brain.indexGit()` — use `brain.code?.index()` and `(brain.git as IndexablePlugin)?.index()` directly
+
+### Added
+- `brain.code` typed accessor (matches existing `brain.docs` and `brain.git`)
+- `docs/local-development.md` — full local dev setup guide with troubleshooting
+- `.agents/workflows/setup-local.md` — automated workflow for fresh machine setup
+
 ### Fixed
 - **BUG-01: docs-only setup crash** — `createSearchAPI()` now always returns a `SearchAPI` instance. Docs-only setups no longer crash on `brain.search()`
 - **BUG-02: ghost HNSW vectors** — `KVService.delete()` now removes vectors from HNSW + vecCache before deleting DB rows

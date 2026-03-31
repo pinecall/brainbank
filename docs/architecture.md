@@ -41,6 +41,8 @@
 17. [Data Flow Diagrams](#17-data-flow-diagrams)
 18. [Design Patterns Reference](#18-design-patterns-reference)
 19. [Complete Dependency Graph](#19-complete-dependency-graph)
+20. [Testing Strategy](#20-testing-strategy)
+21. [Concurrency & WAL Strategy](#21-concurrency--wal-strategy)
 
 ---
 
@@ -163,6 +165,14 @@ brainbank/
 │   │   ├── plugin-registry.ts         ← PluginRegistry: registration + type-prefix lookup
 │   │   └── watch.ts                   ← Watcher: fs.watch with debounce + plugin routing
 │   │
+│   ├── lib/
+│   │   ├── fts.ts                     ← sanitizeFTS, normalizeBM25, escapeLike
+│   │   ├── languages.ts               ← SUPPORTED_EXTENSIONS, IGNORE_DIRS, IGNORE_FILES
+│   │   ├── math.ts                    ← cosineSimilarity, normalize, vecToBuffer
+│   │   ├── provider-key.ts            ← providerKey(): EmbeddingProvider → canonical key
+│   │   ├── rerank.ts                  ← Position-aware score blending
+│   │   └── rrf.ts                     ← reciprocalRankFusion + fuseRankedLists<T>
+│   │
 │   └── cli/
 │       ├── index.ts                   ← CLI dispatcher
 │       ├── utils.ts                   ← Colors, arg parsing, result printer
@@ -238,7 +248,7 @@ brainbank/
 @brainbank/memory  ── (none)  ──  uses Collection interface from brainbank at runtime
 ```
 
-> **Schema ownership:** Core owns ALL table schemas. Plugins only populate them.
+> **Schema ownership:** Core owns ALL table schemas via `createSchema()` in `src/db/schema.ts`.
 > Plugins never define DDL — they only call `ctx.db.prepare(...)` against tables
 > that `createSchema()` already created.
 
@@ -246,7 +256,8 @@ brainbank/
 
 ## 3. BrainBank — Main Facade
 
-**Pattern: Facade + EventEmitter**
+**File:** `src/brainbank.ts` (359 lines)
+**Pattern:** Facade + EventEmitter
 
 `BrainBank` is a **thin orchestrator**. It owns state, enforces initialization
 guards, and delegates every operation to specialized subsystems. Contains
@@ -279,10 +290,8 @@ no business logic itself.
 │  .listCollectionNames()    list all collections with data              │
 │  .deleteCollection(name)   remove from DB + evict from cache           │
 │  .index(opts)              delegates to IndexAPI                       │
-│  .indexCode(opts)          code-only shortcut                          │
-│  .indexGit(opts)           git-only shortcut                           │
-│  .search(query, opts)      vector search (scope via sources: {code:10, git:0}) │
-│  .hybridSearch(query, opts)  vector + BM25 → RRF, scope via sources            │
+│  .search(query, opts)      vector search → RRF if multiple sources     │
+│  .hybridSearch(query, opts)  vector + BM25 → RRF → optional rerank    │
 │  .searchBM25(query, opts)  keyword-only search                         │
 │  .getContext(task, opts)   formatted markdown for LLM system prompt    │
 │  .rebuildFTS()             rebuild FTS5 indices                        │
@@ -293,14 +302,11 @@ no business logic itself.
 │  .plugin<T>(name)          typed plugin access, undefined if missing   │
 │  .close()                  cleanup all resources                       │
 │                                                                        │
-│  TYPED PLUGIN ACCESSORS (post-.use(), before init)                    │
+│  TYPED PLUGIN ACCESSORS (available after .use(), before init)          │
 │  ─────────────────────────────────────────────────────────────────    │
 │  .docs  → DocsPlugin | undefined   (registry.firstByType('docs'))     │
 │  .git   → Plugin | undefined       (registry.firstByType('git'))      │
-│                                                                        │
-│  NOTE: .docs returns DocsPlugin (typed), .git returns Plugin.         │
-│  For plugin-specific methods like fileHistory(), use:                  │
-│    brain.plugin('git') as any  OR  brain.git as any                   │
+│  .code  → Plugin | undefined       (registry.firstByType('code'))     │
 │                                                                        │
 │  CONFIG / STATUS (read-only)                                           │
 │  .isInitialized  → boolean                                             │
@@ -313,6 +319,7 @@ no business logic itself.
 │  'indexed'      → { code?, git?, docs?, [custom]? }                   │
 │  'reembedded'   → ReembedResult                                        │
 │  'progress'     → string message                                       │
+│  'warn'         → string message                                       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -320,18 +327,20 @@ no business logic itself.
 
 ```
 Methods that call await this.initialize() (auto-init, transparent):
-  index, indexCode, indexGit
+  index
   search, hybridSearch, getContext
-  collection (only the first call if not yet initialized)
+  reembed (calls initialize first)
 
 Methods that call _requireInit() (throw if not initialized):
-  searchBM25, rebuildFTS, watch, stats, reembed
+  searchBM25, rebuildFTS, watch, stats
   listCollectionNames, deleteCollection
 
-  → Design intent: BM25 and stats are "quick" operations that
-    shouldn't silently trigger a slow async init. The caller
-    must explicitly initialize first.
+collection() — special case:
+  throws "Collections not ready" if _kvService is undefined
+  (i.e., must call initialize() first)
 
+.use(plugin) — throws after _initialized === true:
+  "Cannot add plugin 'X' after initialization. Call .use() before any operations."
 
 Concurrent init guard:
   caller A → await brain.search()   ─────────────────────────► delegates
@@ -343,27 +352,57 @@ Concurrent init guard:
                                                        earlyInit → lateInit
                                                        _initialized = true
                                                        .then(() => _initPromise = null)
-                                                       .catch(() => _initPromise = null)
-  NOTE: _initPromise is nulled via explicit .then/.catch, NOT via finally.
-  A finally block would null the promise BEFORE the catch handler completes,
-  allowing a concurrent caller to start a new init while cleanup is in progress.
+                                                       .catch(() => cleanup + _initPromise = null + rethrow)
+```
+
+**Error cleanup in catch block** (`_runInitialize` catch):
+
+```
+for ({ hnsw } of _sharedHnsw.values()):
+  try { hnsw.reinit() } catch { emit('warn', ...) }
+_kvService?.clear()
+try { _kvService.hnsw.reinit() } catch { emit('warn', ...) }
+try { _db?.close() } catch { /* DB already closed */ }
+_db = undefined
+_kvService = undefined
+_searchAPI = undefined
+_indexAPI = undefined
+_initPromise = null
+throw err  ← re-throw so caller sees the failure
+```
+
+**close() cleanup sequence:**
+
+```
+_watcher?.close()
+for (indexer of registry.all): indexer.close?.()
+reranker?.close?.()    ← release Qwen3 native model
+_embedding?.close().catch(() => {})
+_db?.close()
+_initialized = false
+_kvService?.clear()
+_sharedHnsw.clear()
+_kvService = undefined
+_searchAPI = undefined
+_indexAPI = undefined
+_registry.clear()
 ```
 
 ---
 
 ## 4. Two-Phase Initialization
 
-**Pattern: Two-Phase Construction**
+**File:** `src/bootstrap/initializer.ts` (194 lines)
+**Pattern:** Two-Phase Construction
 
 The split exists because plugins call `ctx.collection()` during their own
 `initialize()`. `collection()` requires `KVService` (which holds `kvHnsw`),
-so `KVService` must exist before Phase 2 runs plugins. Only after
-`this._kvService` is assigned can Phase 2 safely run.
+so `KVService` must exist before Phase 2 runs plugins.
 
 ```
 BrainBank._runInitialize({ force? })
 │
-├── PHASE 1: earlyInit(config, emit, { force? })  [src/bootstrap/initializer.ts]
+├── PHASE 1: earlyInit(config, emit, { force? })
 │   │
 │   ├── new Database(config.dbPath)
 │   │     fs.mkdirSync(dirname) if needed
@@ -379,13 +418,16 @@ BrainBank._runInitialize({ force? })
 │   │     compare { constructor.name, dims } stored vs current
 │   │     ├── null → first time, no stored data, proceed
 │   │     ├── mismatch && !force → db.close(), throw Error
-│   │     │     "BrainBank: Embedding dimension mismatch (stored: X/384, current: Y/1536).
+│   │     │     "Embedding dimension mismatch (stored: X/384, current: Y/1536).
 │   │     │      Run brain.reembed() or switch back."
 │   │     └── mismatch && force → skipVectorLoad = true
-│   │           ← load with wrong dims is OK; user must reembed() after
 │   │
 │   ├── setEmbeddingMeta(db, embedding)
 │   │     UPSERT embedding_meta: provider, dims, provider_key, indexed_at
+│   │
+│   ├── dims = embedding.dims ?? config.embeddingDims
+│   │     ← Sync dims from resolved provider. Without this, passing OpenAI (1536d)
+│   │       without explicit embeddingDims would create a 384-dim kvHnsw.
 │   │
 │   └── new HNSWIndex(dims, maxElements, M, efConstruction, efSearch).init()
 │         ← kvHnsw READY
@@ -394,7 +436,7 @@ BrainBank._runInitialize({ force? })
 │   BrainBank assigns:
 │     this._db          = early.db
 │     this._embedding   = early.embedding
-│     this._kvService   = new KVService(db, embedding, kvHnsw, new Map(), reranker?)
+│     this._kvService   = new KVService(db, embedding, kvHnsw, new Map(), config.reranker)
 │     ← collection() NOW WORKS (plugins can call ctx.collection() in Phase 2)
 │
 └── PHASE 2: lateInit(config, earlyResult, registry, sharedHnsw, kvService)
@@ -412,25 +454,15 @@ BrainBank._runInitialize({ force? })
     ├── privateHnsw = new Map<string, HNSWIndex>()
     ├── ctx = buildPluginContext(config, db, embedding, sharedHnsw, skipVectorLoad,
     │                            kvService, privateHnsw)
-    │     createHnsw:              creates + registers in privateHnsw
-    │     loadVectors:             wraps hnswPath/tryLoad/loadVectors with skip logic
-    │     getOrCreateSharedHnsw:   checks sharedHnsw Map, creates if absent
-    │     collection:              delegates to kvService.collection(name)
     │
     ├── for each mod in registry.all:
     │     await mod.initialize(ctx)
     │
     ├── saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw, privateHnsw)
-    │     kvHnsw.save('hnsw-kv.index')
-    │     for [name, {hnsw}] in sharedHnsw: hnsw.save('hnsw-{name}.index')
-    │     for [name, hnsw]   in privateHnsw: hnsw.save('hnsw-{name}.index')
     │     ← non-fatal try/catch; next startup rebuilds from SQLite if missing
     │
     └── createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw)
-          → SearchAPI | undefined   (undefined if no code/git/memory loaded)
-          BrainBank assigns: this._searchAPI, this._indexAPI
-          _initialized = true
-          emit('initialized', { plugins })
+          → SearchAPI (always created, even if no vector search available)
 ```
 
 **HNSW persistence strategy:**
@@ -446,25 +478,19 @@ Startup (tryLoad):
     → slower but always correct
 
 After all plugins initialize:
-  saveAllHnsw() → write .index files
+  saveAllHnsw() → write .index files for kv, shared, and private
   ← next cold start will be fast via tryLoad()
-
-Error cleanup in _runInitialize (catch block):
-  for {hnsw} in _sharedHnsw: hnsw.reinit()
-  kvService.clear()
-  kvService.hnsw.reinit()
-  db.close()
-  ← resets state so a subsequent .initialize() call can retry cleanly
 ```
 
 ---
 
 ## 5. Plugin Registry
 
-**Pattern: Registry + Type-Prefix Matching**
+**File:** `src/services/plugin-registry.ts` (114 lines)
+**Pattern:** Registry + Type-Prefix Matching
 
 ```
-PluginRegistry  [src/services/plugin-registry.ts]
+PluginRegistry
 │
 │  _map: Map<string, Plugin>   (insertion-order)
 │
@@ -519,9 +545,10 @@ registry.has('docs')        → false (not registered)
 
 ## 6. Plugin System & Plugin Context
 
-**Pattern: Extension Point + Dependency Injection**
+**File:** `src/plugin.ts` (185 lines)
+**Pattern:** Extension Point + Dependency Injection
 
-### 6.1 Plugin Interfaces  (`src/plugin.ts`)
+### 6.1 Plugin Interfaces
 
 ```
 Plugin  (base — every plugin must implement)
@@ -530,7 +557,7 @@ Plugin  (base — every plugin must implement)
 │  stats?():  Record<string, number | string>
 │  close?():  void
 
-IndexOptions  (typed, replaces `any`)
+IndexOptions  (typed options for IndexablePlugin.index())
 │  forceReindex?: boolean
 │  depth?: number
 │  onProgress?: ProgressCallback
@@ -550,23 +577,20 @@ DocsPlugin extends SearchablePlugin
 │  addCollection(collection: DocumentCollection): void
 │  removeCollection(name: string): void
 │  listCollections(): DocumentCollection[]
-│  indexDocs(options?): Promise<Record<string, IndexResult>>
+│  indexDocs(options?): Promise<Record<string, { indexed, skipped, chunks }>>
 │  addContext(collection, path, context): void
 │  listContexts(): PathContext[]
 
 HnswPlugin extends Plugin
 │  hnsw:     HNSWIndex
 │  vecCache: Map<number, Float32Array>
-│  ← used to expose plugin's HNSW to SearchFactory
 
 CoEditPlugin extends Plugin
 │  coEdits: { suggest(filePath: string, limit: number): CoEditSuggestion[] }
-│  ← used by ContextBuilder for co-edit suggestions
 
 ReembeddablePlugin extends Plugin
 │  reembedConfig(): ReembedTable
 │  ← ReembedTable: { name, textTable, vectorTable, idColumn, fkColumn, textBuilder }
-│  ← reembedAll() collects these from all plugins + adds core tables (kv, memory)
 ```
 
 **Type guards (all in `src/plugin.ts`):**
@@ -585,9 +609,8 @@ isReembeddable(p) → typeof p.reembedConfig === 'function'
 
 ### 6.2 PluginContext — Dependency Injection Container
 
-Every plugin receives exactly one `PluginContext` during `initialize()`.
-This is the **only coupling** between core and plugin packages.
 Built by `buildPluginContext()` in `src/bootstrap/initializer.ts`.
+Every plugin receives exactly one `PluginContext` during `initialize()`.
 
 ```
 PluginContext
@@ -596,23 +619,22 @@ PluginContext
 │     ← shared SQLite (ALL plugins use the same file)
 │
 ├── embedding: EmbeddingProvider
-│     ← global OR per-plugin override
-│     ← in plugin: const emb = opts.embeddingProvider ?? ctx.embedding
+│     ← global embedding; plugins can override with opts.embeddingProvider ?? ctx.embedding
 │
 ├── config: ResolvedConfig
 │
 ├── createHnsw(maxElements?, dims?, name?): Promise<HNSWIndex>
 │     ← creates a PRIVATE HNSW for the plugin
+│     ← dims defaults to config.embeddingDims
 │     ← name → registered in privateHnsw Map → saved to 'hnsw-{name}.index'
-│     ← dims defaults to config.embeddingDims (may be overridden by embedding.dims)
 │     ← used by: DocsPlugin ('doc'), PatternsPlugin ('memory')
 │
 ├── loadVectors(table, idCol, hnsw, cache): void
 │     ← no-op if skipVectorLoad === true (force-init with dim mismatch)
 │     ← otherwise: hnswPath → tryLoad → loadVecCache (hit) / loadVectors (miss)
-│     ← wraps the hnsw-loader utilities with the skipVectorLoad guard
 │
-├── getOrCreateSharedHnsw(type, maxElements?, dims?): Promise<{hnsw, vecCache, isNew}>
+├── getOrCreateSharedHnsw(type, maxElements?, dims?):
+│     Promise<{ hnsw, vecCache, isNew }>
 │     ← checks _sharedHnsw Map for existing entry by type
 │     ← if existing: return { hnsw, vecCache, isNew: false }
 │     ← if new: create HNSWIndex, register in sharedHnsw, return { ..., isNew: true }
@@ -621,7 +643,6 @@ PluginContext
 │
 └── collection(name): ICollection
       ← delegates to kvService.collection(name)
-      ← plugins can store their own data in KV during initialize()
 ```
 
 **HNSW allocation per plugin type:**
@@ -642,9 +663,7 @@ KV store      │ KVService._hnsw (kvHnsw)  │ ✓ all KV collections │ hnsw-
 
 ### 7.1 @brainbank/code
 
-**Purpose:** Semantic indexing of source code using Tree-sitter AST.
-Chunks code into functions/classes/interfaces, builds import graph and
-call graph, embeds with import context for better retrieval quality.
+**Files:** `packages/code/src/` — `code-plugin.ts`, `code-walker.ts`, `code-chunker.ts`, `grammars.ts`, `import-extractor.ts`, `symbol-extractor.ts`
 
 ```
 code({ repoPath?, name?, embeddingProvider?, maxFileSize?, ignore? })
@@ -654,16 +673,10 @@ CodePlugin.initialize(ctx)
          │
          ├── embedding = opts.embeddingProvider ?? ctx.embedding
          ├── shared = ctx.getOrCreateSharedHnsw('code', undefined, embedding.dims)
-         │     ← ALL code plugins share ONE HNSW in _sharedHnsw['code']
          ├── if shared.isNew:
          │     ctx.loadVectors('code_vectors', 'chunk_id', shared.hnsw, shared.vecCache)
-         │     ← only the FIRST CodePlugin that initializes loads vectors
-         └── new CodeWalker(repoPath ?? config.repoPath, {
-                 db: ctx.db,
-                 hnsw: shared.hnsw,
-                 vectorCache: shared.vecCache,
-                 embedding
-             }, maxFileSize ?? config.maxFileSize, ignore)
+         └── new CodeWalker(repoPath, { db, hnsw, vectorCache, embedding },
+                            maxFileSize, ignore)
                ← ignore compiled via picomatch({ dot: true }) if provided
 
 
@@ -671,12 +684,12 @@ CodeWalker.index({ forceReindex?, onProgress? })
          │
          ├── _walkRepo(repoPath) → absolute file paths[]
          │     filter rules:
-         │       dirs:  isIgnoredDir(entry.name)   ← from lib/languages.ts
-         │              _isIgnored(relDir) picomatch custom patterns
-         │       files: isIgnoredFile(entry.name)  ← lockfiles etc
+         │       dirs:  isIgnoredDir(name)       ← IGNORE_DIRS from lib/languages.ts
+         │              _isIgnored(relDir)        ← picomatch custom patterns
+         │       files: isIgnoredFile(name)       ← lockfiles etc
          │              ext not in SUPPORTED_EXTENSIONS
          │              stat.size > maxFileSize
-         │              _isIgnored(relPath) picomatch
+         │              _isIgnored(relPath)
          │
          ├── for each file:
          │     content = fs.readFileSync()
@@ -684,7 +697,6 @@ CodeWalker.index({ forceReindex?, onProgress? })
          │     SELECT file_hash FROM indexed_files WHERE file_path = rel
          │     if same hash && !forceReindex → skipped++; continue
          │     chunkCount = await _indexFile(filePath, rel, content, hash)
-         │     indexed++; totalChunks += chunkCount
          │
          └── returns { indexed, skipped, chunks: totalChunks }
 
@@ -701,88 +713,60 @@ CodeWalker._indexFile(filePath, rel, content, hash)
          │     │     try require(pkg)                  ← CJS fast path
          │     │     catch ERR_REQUIRE_ASYNC_MODULE
          │     │          ERR_REQUIRE_ESM → await import(pkg)  ← ESM fallback
-         │     │     catch other → throw "BrainBank: Grammar not installed: npm i -g {pkg}"
+         │     │     catch other → throw "Grammar not installed: npm i -g {pkg}"
          │     │
          │     ├── if parser + grammar:
          │     │     parser.setLanguage(grammar.grammar)
          │     │     tree = parser.parse(content)
          │     │     _extractChunks(rootNode, langConfig):
-         │     │       iterate top-level AST nodes:
-         │     │         export_statement → unwrap inner declaration
-         │     │         decorated_definition → unwrap Python @decorator
-         │     │         class/struct/impl:
-         │     │           nodeLines > MAX → _splitClassIntoMethods()
-         │     │             find body node; for each method:
-         │     │               methodLines > MAX → _splitLargeBlock(overlap=5)
-         │     │               else → _addChunk() as 'method'
-         │     │             no methods found → _splitLargeBlock() as 'class'
-         │     │           else → _addChunk() as 'class'
-         │     │         function/interface/variable:
-         │     │           nodeLines > MAX → _splitLargeBlock()
-         │     │           else → _addChunk()
+         │     │       export_statement → unwrap inner declaration
+         │     │       decorated_definition → unwrap Python @decorator
+         │     │       class/struct/impl > MAX_LINES → _splitClassIntoMethods()
+         │     │       function/interface/variable > MAX_LINES → _splitLargeBlock(overlap=5)
+         │     │       normal-sized → _addChunk()
          │     │
          │     └── fallback → _chunkGeneric():
-         │                     sliding window, step = MAX - OVERLAP (5)
+         │           sliding window, step = MAX - OVERLAP (5)
          │
          ├── extractImports(content, language)  ← regex patterns per language
-         │     typescript/javascript: from 'X', require('X')
-         │     python:     import X, from X import
-         │     go:         import "X"
-         │     rust:       use X::Y, mod X
-         │     java/kotlin/scala: import X.Y.Z
-         │     c/cpp:      #include <X>
-         │     ruby:       require 'X', require_relative 'X'
-         │     php:        use X\Y, require 'X'
-         │     (and more: lua, elixir, swift, bash, html, css)
-         │     → simplified module names: ['react', 'express', 'pg']
+         │     typescript/javascript, python, go, rust, java/kotlin/scala,
+         │     c/cpp, ruby, php, lua, elixir, swift, bash, html, css
+         │     → simplified module names via simplifyModule()
          │
          ├── build embeddingTexts per chunk:
-         │     "File: src/api.ts
-         │      Imports: express, zod           ← context enrichment
-         │      Class: MyService                ← for method chunks only
-         │      function: handleRequest
-         │      <code content>"
+         │     "File: src/api.ts\nImports: express, zod\n
+         │      Class: MyService\nfunction: handleRequest\n<code>"
          │
          ├── embedding.embedBatch(embeddingTexts) → Float32Array[]
          │
          ├── _extractSymbolsSafe(content, rel, language)
-         │     uses cached parser + grammar from CodeChunker
-         │     extractSymbols(tree.rootNode, rel, language):
-         │       walk AST → SymbolDef[] { name, kind, line, filePath }
-         │       kinds: 'function'|'class'|'method'|'variable'|'interface'
-         │       methods get qualified names: 'ClassName.methodName'
+         │     extractSymbols(tree.rootNode, rel, language)
+         │     → SymbolDef[] { name, kind, line, filePath }
+         │     kinds: 'function'|'class'|'method'|'variable'|'interface'
+         │
+         ├── Collect old chunk IDs for HNSW cleanup BEFORE transaction
          │
          └── DB TRANSACTION (atomic delete-old + insert-new):
-               _removeOldChunks(rel):
-                 SELECT id FROM code_chunks WHERE file_path = rel
-                 hnsw.remove(id) + vectorCache.delete(id) per id
-                 DELETE FROM code_chunks WHERE file_path = rel (CASCADE deletes vectors)
-               _removeOldGraph(rel):
-                 DELETE FROM code_imports WHERE file_path = rel
-                 DELETE FROM code_symbols WHERE file_path = rel
-               INSERT code_chunks → id[] (lastInsertRowid)
-               INSERT code_vectors (chunk_id, vecToBuffer(vec[i]))
-               hnsw.add(vecs[i], id) + vectorCache.set(id, vecs[i]) per chunk
-               INSERT OR IGNORE code_imports (file_path, imports_path) per import
-               INSERT code_symbols (file_path, name, kind, line, chunk_id) per symbol
-               INSERT code_refs (chunk_id, symbol_name) per call ref per chunk:
-                 _extractCallRefsSafe(content, chunk, language)
-                   extractCallRefs(tree.rootNode, language):
-                     find call_expression / new_expression / method_invocation nodes
-                     extract callee name (member_expression.property for JS/TS)
-                     filter _isBuiltin(name): skip push, forEach, map, console, ...
+               DELETE code_chunks WHERE file_path = rel (CASCADE)
+               DELETE code_imports, code_symbols WHERE file_path = rel
+               INSERT code_chunks → chunkIds[]
+               INSERT code_vectors (chunk_id, vecToBuffer(vec))
+               INSERT OR IGNORE code_imports (file_path, imports_path)
+               INSERT code_symbols (file_path, name, kind, line, chunk_id)
+               INSERT code_refs (chunk_id, symbol_name) per call ref:
+                 extractCallRefs(tree.rootNode, language)
+                   → filter _isBuiltin(name): skip push, forEach, map, console...
                UPSERT indexed_files (file_path, file_hash)
+
+             AFTER transaction success:
+               hnsw.remove(oldId) + vectorCache.delete(oldId) per old chunk
+               hnsw.add(vec, newId) + vectorCache.set(newId, vec) per new chunk
 
 
 CodePlugin.reembedConfig(): ReembedTable
-  {
-    name: 'code',
-    textTable: 'code_chunks',
-    vectorTable: 'code_vectors',
-    idColumn: 'id',
-    fkColumn: 'chunk_id',
-    textBuilder: (r) => "File: {file_path}\n{chunk_type}: {name}\n{content}"
-  }
+  { name:'code', textTable:'code_chunks', vectorTable:'code_vectors',
+    idColumn:'id', fkColumn:'chunk_id',
+    textBuilder: (r) => "File: {file_path}\n{chunk_type}: {name}\n{content}" }
 
 CodePlugin.stats():
   { files: COUNT(DISTINCT file_path), chunks: COUNT(*), hnswSize: hnsw.size }
@@ -791,17 +775,16 @@ CodePlugin.stats():
 **Grammar registry (`grammars.ts`):**
 
 ```
-typescript, javascript → tree-sitter-typescript (.typescript accessor)
-python, go, rust, c, cpp, java, kotlin, scala
-ruby, php (.php accessor), lua, bash, elixir, swift, html, css, c_sharp
+typescript (.typescript accessor), javascript, python, go, rust, c, cpp
+java, kotlin, scala, ruby, php (.php accessor), lua, bash, elixir
+swift, html, css, c_sharp
 ```
 
 ---
 
 ### 7.2 @brainbank/git
 
-**Purpose:** Index git commit history with message + diff embeddings.
-Compute file co-editing patterns. Provide file history queries.
+**Files:** `packages/git/src/` — `git-plugin.ts`, `git-indexer.ts`, `co-edit-analyzer.ts`
 
 ```
 git({ repoPath?, depth?, maxDiffBytes?, name?, embeddingProvider? })
@@ -811,12 +794,9 @@ GitPlugin.initialize(ctx)
          │
          ├── embedding = opts.embeddingProvider ?? ctx.embedding
          ├── shared = ctx.getOrCreateSharedHnsw('git', 500_000, embedding.dims)
-         │     ← ALL git plugins share ONE HNSW in _sharedHnsw['git']
          ├── if shared.isNew:
          │     ctx.loadVectors('git_vectors', 'commit_id', shared.hnsw, shared.vecCache)
-         ├── new GitIndexer(repoPath ?? config.repoPath, {
-         │       db, hnsw: shared.hnsw, vectorCache: shared.vecCache, embedding
-         │   }, maxDiffBytes ?? config.maxDiffBytes)
+         ├── new GitIndexer(repoPath, { db, hnsw, vectorCache, embedding }, maxDiffBytes)
          └── new CoEditAnalyzer(ctx.db)
 
 
@@ -825,90 +805,56 @@ GitIndexer.index({ depth=500, onProgress? })
          ├── simpleGit(repoPath)   ← dynamic import('simple-git')
          │   git.log({ maxCount: depth }) → { all: Commit[] }
          │
-         ├── _prepareStatements()  ← hoist all SQL outside the loop
-         │     check, deleteFiles, deleteCommit, insertCommit, insertFile, insertVec
+         ├── _prepareStatements()  ← hoist all SQL outside loops
          │
          ├── PHASE 1: _collectCommits() [async git calls per commit]
-         │     for each commit c in log.all:
-         │       onProgress('[hash] message...', i+1, total)
-         │       stmts.check.get(c.hash) → { id, has_vector }
-         │         has_vector → skipped++; continue
-         │         exists but no vector (zombie) → deleteFiles + deleteCommit
+         │     for each commit:
+         │       check DB: has_vector? → skip
+         │       zombie (data, no vector)? → cleanup
          │       _parseCommit(git, c):
          │         git show --numstat → filesChanged[], additions, deletions
-         │         git show --unified=3 --no-color → diff (truncated maxDiffBytes)
-         │         isMerge = /^(Merge|merge)\s+(branch|pull|remote|tag)/.test(message)
-         │         text = "Commit: {msg}\nAuthor: {author}\nDate: {date}\n
-         │                 Files: {files.join(', ')}\nChanges:\n{diff[:2000]}"
-         │       toProcess.push({ commit, diff, additions, deletions,
-         │                        filesChanged, isMerge, text })
+         │         git show --unified=3 → diff (truncated maxDiffBytes)
+         │         isMerge = /^(Merge|merge)\s+(branch|pull|remote|tag)/.test(msg)
+         │         text = "Commit: {msg}\nAuthor:\nDate:\nFiles:\nChanges:\n{diff[:2000]}"
          │
-         ├── embedding.embedBatch(toProcess.map(d => d.text)) → vecs[]
-         │     ← SINGLE batch for all new commits (efficient API usage)
+         ├── embedding.embedBatch(all new texts) → vecs[]
          │
          ├── PHASE 2: _insertCommits() [one DB transaction]
-         │     for each CommitData + vec:
-         │       INSERT git_commits (hash, short_hash, message, author, date,
-         │                          timestamp, files_json, diff, additions,
-         │                          deletions, is_merge)
-         │       if result.changes === 0 → skip (concurrent insert race)
-         │       INSERT commit_files (commit_id, file_path) per file
-         │       INSERT git_vectors (commit_id, vecToBuffer(vecs[i]))
-         │       newCommitIds.push({ commitId, vecIndex: i })
-         │       indexed++
+         │     INSERT git_commits + commit_files + git_vectors
          │
          └── PHASE 3: _updateHnsw() + _computeCoEdits()
-               for { commitId, vecIndex } in newCommitIds:
-                 hnsw.add(vecs[vecIndex], commitId)
-                 vectorCache.set(commitId, vecs[vecIndex])
-               _computeCoEdits(newCommitIds):
-                 _queryCommitFiles() in chunks of 500 (SQLite 999-variable limit)
-                 group file_paths by commit_id
-                 for each commit with 2–20 files (skip trivial / noisy):
-                   for each pair (a, b): [a, b].sort() → canonical order
-                   UPSERT co_edits (file_a, file_b, count) ON CONFLICT count+1
+               hnsw.add() + vectorCache.set() per commit
+               _computeCoEdits:
+                 _queryCommitFiles() in chunks of 500 (SQLite 999-var limit)
+                 group by commit_id
+                 for commits with 2–20 files:
+                   UPSERT co_edits (file_a, file_b, count+1)
+                   ← [a, b].sort() canonical order
 
 
 CoEditAnalyzer.suggest(filePath, limit=5):
-  SELECT
-    CASE WHEN file_a = ? THEN file_b ELSE file_a END AS file,
-    count
-  FROM co_edits
-  WHERE file_a = ? OR file_b = ?
+  SELECT file, count FROM co_edits WHERE file_a=? OR file_b=?
   ORDER BY count DESC LIMIT ?
-  → [{ file: 'src/db.ts', count: 23 }]
-
 
 GitPlugin.fileHistory(filePath, limit=20):
-  SELECT c.short_hash, c.message, c.author, c.date, c.additions, c.deletions
-  FROM git_commits c
-  JOIN commit_files cf ON c.id = cf.commit_id
-  WHERE cf.file_path LIKE '%{filePath}%' AND c.is_merge = 0
-  ORDER BY c.timestamp DESC LIMIT limit
-
+  SELECT ... FROM git_commits JOIN commit_files
+  WHERE file_path LIKE '%{escaped}%' AND is_merge = 0
+  ORDER BY timestamp DESC
 
 GitPlugin.reembedConfig(): ReembedTable
-  {
-    name: 'git',
-    textTable: 'git_commits',
-    vectorTable: 'git_vectors',
-    idColumn: 'id',
-    fkColumn: 'commit_id',
-    textBuilder: (r) => "Commit: {message}\nAuthor: {author}\nDate: {date}\n
-                         Files: {files_json_parsed}\nChanges:\n{diff[:2000]}"
-  }
+  { name:'git', textTable:'git_commits', vectorTable:'git_vectors',
+    idColumn:'id', fkColumn:'commit_id',
+    textBuilder: (r) => "Commit: {message}\nAuthor:\nDate:\nFiles:\nChanges:\n{diff[:2000]}" }
 
 GitPlugin.stats():
-  { commits, filesTracked: COUNT(DISTINCT file_path), coEdits, hnswSize }
+  { commits, filesTracked, coEdits, hnswSize }
 ```
 
 ---
 
 ### 7.3 @brainbank/docs
 
-**Purpose:** Index folders of markdown/text files as named collections.
-Heading-aware smart chunking, incremental by SHA-256 content hash.
-Private HNSW per plugin instance (not shared).
+**Files:** `packages/docs/src/` — `docs-plugin.ts`, `docs-indexer.ts`, `document-search.ts`
 
 ```
 docs({ embeddingProvider? })
@@ -918,106 +864,44 @@ DocsPlugin.initialize(ctx)
          │
          ├── embedding = opts.embeddingProvider ?? ctx.embedding
          ├── this.hnsw = await ctx.createHnsw(undefined, embedding.dims, 'doc')
-         │     ← PRIVATE HNSW (NOT in _sharedHnsw pool)
-         │     ← persisted to 'hnsw-doc.index'
+         │     ← PRIVATE HNSW (NOT in _sharedHnsw), persisted to 'hnsw-doc.index'
          ├── ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache)
          ├── this.indexer = new DocsIndexer(db, embedding, hnsw, vecCache)
-         └── this._search = new DocumentSearch({
-                 db, embedding, hnsw, vecCache,
-                 reranker: ctx.config.reranker
-             })
+         └── this._search = new DocumentSearch({ db, embedding, hnsw, vecCache, reranker })
 
 
-DocsPlugin.addCollection({ name, path, pattern?, ignore?, context? })
-  INSERT OR REPLACE INTO collections (name, path, pattern, ignore_json, context)
-  ← synchronous, no return value
-
-DocsPlugin.removeCollection(name)
-  → this.indexer.removeCollection(name):
-      SELECT id FROM doc_chunks WHERE collection = ?
-      hnsw.remove(id) + vecCache.delete(id) per id
-      DELETE FROM doc_chunks (CASCADE deletes doc_vectors)
-      DELETE FROM collections WHERE name = ?
-      DELETE FROM path_contexts WHERE collection = ?
-
-DocsPlugin.indexDocs({ collections?, onProgress? })
-  listCollections() → all from DB
-  filter if collections?: string[] provided
-  for each: DocsIndexer.indexCollection(name, path, pattern, { ignore, onProgress })
-  → Record<string, { indexed, skipped, chunks }>
+DocsIndexer._smartChunk(text) → [{ text, pos }]
+  if text.length ≤ TARGET_CHARS (3000) → single chunk
+  _findBreakPoints(lines):
+    H1=100, H2=90, H3=80, H4=70, H5=60, H6=50
+    code-fence-close=80, ---=60, ***=60, blank=20, list-item=5
+    tracks inCodeBlock (toggle on ```)
+  greedy split:
+    WINDOW_CHARS=600, targetEnd = chunkStart + TARGET_CHARS
+    for each breakpoint in window:
+      finalScore = score * (1 - (dist/WINDOW)² * 0.7)  ← distance decay
+    MIN_CHUNK_CHARS=200: merge tiny remainder into last chunk
 
 
 DocsIndexer.indexCollection(collection, dirPath, pattern, opts)
-         │
-         ├── _walkFiles(absDir, pattern, ignore)
-         │     recursive readdir
-         │     skip: IGNORED_DOC_DIRS (node_modules, .git, dist, ...)
-         │     skip: _isIgnoredFile(rel, ignore) → glob-to-regex via string replace
-         │     filter: ext matches patternExt (e.g. 'md' from '**/*.md')
-         │     → relPath[] (relative to absDir)
-         │
-         ├── for each relPath:
-         │     content = fs.readFileSync()
-         │     hash = SHA-256(content).slice(0, 16)   ← 16-char hex prefix
-         │     _isUnchanged(collection, relPath, hash):
-         │       SELECT dc.id, dc.content_hash, dv.chunk_id AS has_vector
-         │       FROM doc_chunks LEFT JOIN doc_vectors
-         │       → true if ALL rows: same hash AND has_vector not null
-         │     if unchanged → skipped++; continue
-         │     _removeOldChunks() → hnsw.remove() + vecCache.delete() + DELETE
-         │     chunkCount = await _indexFile(collection, relPath, content, hash)
-         │
-         └── returns { indexed, skipped, chunks }
+  _walkFiles → filter by ext, IGNORED_DOC_DIRS, custom ignore patterns
+  for each file:
+    SHA-256(content).slice(0,16) → hash
+    _isUnchanged: all chunks same hash AND have vectors? → skip
+    _removeOldChunks() → hnsw.remove + vecCache.delete + DELETE
+    _indexFile():
+      _extractTitle: first H1/H2/H3 or basename
+      _smartChunk(content)
+      texts = chunks.map("title: {title} | text: {text}")
+      embedding.embedBatch(texts) → embeddings
+      TRANSACTION: INSERT doc_chunks + doc_vectors
+      AFTER: hnsw.add() + vecCache.set() per chunk
 
-
-DocsIndexer._indexFile(collection, relPath, content, hash)
-         │
-         ├── _extractTitle(content, relPath)
-         │     match /^#{1,3}\s+(.+)$/m → first H1/H2/H3
-         │     fallback → path.basename(relPath, ext)
-         │
-         ├── _smartChunk(content) → [{ text, pos }]
-         │     if content.length ≤ TARGET_CHARS (3000) → [{ text, pos: 0 }]
-         │     _findBreakPoints(lines):
-         │       track inCodeBlock (toggle on ```)
-         │       score each line (outside code blocks only):
-         │         H1=100, H2=90, H3=80, code-fence-close=80
-         │         ---=60, ***=60, blank=20, list-item=5
-         │       → [{ pos: charPos, score }]
-         │     greedy split:
-         │       WINDOW_CHARS = 600, targetEnd = chunkStart + TARGET_CHARS
-         │       for each breakpoint in window:
-         │         finalScore = score * (1 - (dist/WINDOW)² * 0.7)  ← distance decay
-         │       flush remainder: merge into last chunk if < MIN_CHUNK_CHARS (200)
-         │
-         ├── TRANSACTION: INSERT doc_chunks (collection, file_path, title,
-         │                                  content, seq, pos, content_hash)
-         │     → chunkIds[]
-         │
-         ├── texts = chunks.map(c => "title: {title} | text: {c.text}")
-         │   embeddings = await embedding.embedBatch(texts)
-         │
-         ├── TRANSACTION: INSERT OR REPLACE doc_vectors (chunk_id, embedding)
-         │
-         └── hnsw.add(embeddings[j], chunkIds[j]) + vecCache.set() per chunk
-
-
-DocsPlugin.search(query, opts?)   → DocumentSearch.search()   (see §11.8)
-
-DocsPlugin.addContext(collection, path, context)
-  → UPSERT path_contexts (collection, path, context)
-
-DocsPlugin.listContexts() → SELECT * FROM path_contexts
 
 DocsPlugin.reembedConfig(): ReembedTable
-  {
-    name: 'docs',
-    textTable: 'doc_chunks',
-    vectorTable: 'doc_vectors',
-    idColumn: 'id',
-    fkColumn: 'chunk_id',
-    textBuilder: (r) => "title: {title} | text: {content}"
-  }
+  { name:'docs', textTable:'doc_chunks', vectorTable:'doc_vectors',
+    idColumn:'id', fkColumn:'chunk_id',
+    textBuilder: (r) => "title: {title} | text: {content}" }
 
 DocsPlugin.stats():
   { collections, documents: COUNT(DISTINCT file_path), chunks, hnswSize }
@@ -1027,265 +911,132 @@ DocsPlugin.stats():
 
 ## 8. @brainbank/memory Package
 
-**Purpose:** Unified memory for AI agents. Two complementary systems:
+**Files:** `packages/memory/src/` — `memory.ts`, `entities.ts`, `llm.ts`, `prompts.ts`, `patterns-plugin.ts`, `pattern-store.ts`, `consolidator.ts`, `pattern-distiller.ts`
 
-1. **Conversational Memory** (`Memory` + `EntityStore`) — LLM-powered fact
-   extraction, deduplication, optional knowledge graph. Uses `Collection`
-   (KV store) as storage backend.
-2. **Pattern Learning** (`patterns()` plugin + `PatternStore`) — structured
-   learning from completed tasks. Uses dedicated HNSW + DB tables owned by core.
+Two complementary systems:
 
-```
-packages/memory/src/
-├── memory.ts            ← Memory class
-├── entities.ts          ← EntityStore class
-├── llm.ts               ← LLMProvider interface + OpenAIProvider
-├── prompts.ts           ← extraction + dedup prompts
-├── patterns-plugin.ts   ← patterns() / memory() plugin factory
-├── pattern-store.ts     ← PatternStore: LearningPattern CRUD + vector search
-├── consolidator.ts      ← prune old failures + cosine dedup
-└── pattern-distiller.ts ← aggregate patterns → strategy text
-```
+1. **Conversational Memory** (`Memory` + `EntityStore`) — LLM-powered fact extraction + dedup + optional knowledge graph. Uses `Collection` (KV store) as storage.
+2. **Pattern Learning** (`patterns()` plugin) — structured learning from completed tasks. Uses dedicated HNSW + DB tables.
 
 ### 8.1 Memory Class
 
 ```
-Memory
+Memory(provider: CollectionProvider | MemoryStore, options: MemoryOptions)
 │
-│  constructor accepts either:
-│    A) CollectionProvider + MemoryOptions   ← recommended
-│         CollectionProvider = { collection(name): MemoryStore }
-│         ← BrainBank satisfies this interface
-│         → stores in brain.collection(opts.collectionName ?? 'memories')
-│    B) MemoryStore + MemoryOptions
-│         ← pass a Collection directly (legacy)
+│  If provider has .collection(): store = provider.collection(collectionName ?? 'memories')
+│  Else: store = provider as MemoryStore
 │
 │  MemoryOptions:
 │    llm:             LLMProvider    ← REQUIRED
-│    entityStore?:    EntityStore    ← enables entity extraction (opt-in)
-│    maxFacts?:       5              ← max facts extracted per turn
-│    maxMemories?:    50             ← max existing memories for dedup context
-│    dedupTopK?:      3              ← top-k similar memories sent to LLM
-│    extractPrompt?:  string         ← override extraction prompt
-│    dedupPrompt?:    string         ← override dedup prompt
-│    onOperation?:    callback       ← fired per MemoryOperation
+│    entityStore?:    EntityStore    ← enables entity extraction
+│    maxFacts?:       5
+│    maxMemories?:    50
+│    dedupTopK?:      3
+│    extractPrompt?:  auto-selected based on entityStore presence
+│    dedupPrompt?:    DEDUP_PROMPT
+│    onOperation?:    callback
 │    collectionName?: 'memories'
 │
-│  NOTE: if entityStore provided, constructor:
-│    1. Switches to EXTRACT_WITH_ENTITIES_PROMPT automatically
-│    2. Calls entityStore.setLLM(this.llm) to share the LLM instance
+│  Constructor auto-shares LLM with EntityStore: entityStore.setLLM(llm)
+│  Selects EXTRACT_WITH_ENTITIES_PROMPT when entityStore provided
 
 
 Memory.process(userMessage, assistantMessage): Promise<ProcessResult>
          │
-         ├── STEP 1: extract facts (and entities if entityStore present)
-         │     llm.generate([
-         │       { role:'system', content: extractPrompt },
-         │       { role:'user', content: "User: {u}\n\nAssistant: {a}" }
-         │     ], { json: true, maxTokens: 500 })
-         │     → { facts: string[], entities: [], relationships: [] }
-         │     parse error → { facts:[], entities:[], relationships:[] }
-         │
-         ├── if facts.length === 0 && entities.length === 0 → return { operations: [] }
+         ├── STEP 1: extract({ facts, entities, relationships })
+         │     llm.generate([system: extractPrompt, user: "User: ...\nAssistant: ..."])
+         │     { json: true, maxTokens: 500 }
          │
          ├── STEP 2: existing = store.list({ limit: maxMemories })
          │
          ├── STEP 3: for each fact:
-         │     similar = await store.search(fact, { k: dedupTopK })
-         │     if similar.length === 0 → { action:'ADD', reason:'no similar found' }
-         │     else:
-         │       context = similar.map((m, i) => "[{i}] {m.content}").join('\n')
-         │       llm.generate(DEDUP_PROMPT, "NEW FACT: {fact}\n\nEXISTING:\n{context}")
-         │       → { action: 'ADD'|'UPDATE'|'NONE', reason: '...' }
-         │       parse error → default to ADD
-         │     execute:
-         │       ADD    → store.add(fact)
-         │       UPDATE → store.remove(similar[0].id) + store.add(fact)
-         │       NONE   → skip
-         │     onOperation?.(op)
+         │     similar = store.search(fact, { k: dedupTopK })
+         │     if none → { action:'ADD' }
+         │     else: llm.generate(DEDUP_PROMPT + context) → { action, reason }
+         │     execute: ADD → store.add(fact)
+         │             UPDATE → store.remove(similar[0].id) + store.add(fact)
+         │             NONE → skip
          │
-         └── STEP 4: if entityStore && entities/relationships found:
-               context = first 200 chars of "${user} — ${assistant}"
+         └── STEP 4: if entityStore:
                entityStore.processExtraction(entities, relationships, context)
-               → { entitiesProcessed, relationshipsProcessed }
 
-ProcessResult: { operations: MemoryOperation[], entities?: EntityOperation }
-MemoryOperation: { fact, action: 'ADD'|'UPDATE'|'NONE', reason }
-
-Memory.search(query, k=5)   → store.search(query, { k })
-Memory.recall(limit=20)     → store.list({ limit })
-Memory.count()              → store.count()
 Memory.buildContext(limit=20):
   "## Memories\n- fact1\n- fact2..."
   + entityStore.buildContext() if present
-Memory.getEntityStore()     → EntityStore | undefined
-
-
-PROMPTS (src/prompts.ts):
-  EXTRACT_PROMPT:               extracts { facts: [] }
-  EXTRACT_WITH_ENTITIES_PROMPT: extracts { facts, entities, relationships }
-  DEDUP_PROMPT: ADD / UPDATE / NONE with reason
-    "Be conservative — if in doubt, say NONE."
 ```
 
-### 8.2 EntityStore Class
+### 8.2 EntityStore
 
 ```
-EntityStore
+EntityStore(provider: CollectionProvider | EntityStoreOptions, config?)
 │
-│  constructor accepts either:
-│    A) CollectionProvider + EntityStoreConfig   ← recommended
-│         → brain.collection(entityCollectionName ?? 'entities')
-│            brain.collection(relationCollectionName ?? 'relationships')
-│    B) EntityStoreOptions (legacy):
-│         → { entityCollection, relationCollection, llm?, onEntity? }
-│
-│  Entity: { name, type, attributes?, firstSeen?, lastSeen?, mentionCount? }
-│  type: 'person'|'service'|'project'|'organization'|'concept'|string
-│  Relationship: { source, target, relation, context?, timestamp? }
-│  relation: lowercase verb phrases ('works_on', 'prefers', 'depends_on')
+│  entities = provider.collection(entityCollectionName ?? 'entities')
+│  relations = provider.collection(relationCollectionName ?? 'relationships')
 
-
-EntityStore.upsert(entity)
-  findEntity(entity.name) → existing?
-  if exists:
-    remove old entry + re-add with mentionCount+1 + merged attributes
-  if new:
-    add with mentionCount=1
-  onEntity?.({ action:'NEW'|'UPDATED', name, type })
-
-
-EntityStore.findEntity(name): MemoryItem | null
-  1. entities.search(name, { k: 5 })
-  2. exact case-insensitive match: extractName(r.content).toLowerCase() === name.toLowerCase()
-  3. if llm && candidates:
-       resolveEntity(name, candidateNames):
-         prompt: ENTITY_RESOLVE_PROMPT
-           "TS" = "TypeScript", "berna" = "Berna", "GCP" = "Google Cloud Platform"
-         response: matching name OR "NONE"
-         verify response is actually in candidates list
-  → first match or null
-
-
-EntityStore.relate(source, target, relation, context?)
-  relations.add("${source} → ${relation} → ${target}", {
-    metadata: { source, target, relation, context, timestamp: Date.now() }
-  })
-
+EntityStore.upsert(entity):
+  findEntity(name) → existing?
+    1. entities.search(name, { k: 5 })
+    2. exact case-insensitive match
+    3. if llm: resolveEntity(name, candidates) via ENTITY_RESOLVE_PROMPT
+       "TS" = "TypeScript", "GCP" = "Google Cloud Platform", etc.
+  if exists: remove + re-add with mentionCount+1, merged attributes
+  if new: add with mentionCount=1
 
 EntityStore.traverse(startEntity, maxDepth=2): TraversalResult
-  BFS:
-    queue = [{ entity: start, depth: 0, path: [start], relation: '' }]
-    while queue not empty:
-      if depth > maxDepth || visited → continue
-      rels = getRelated(entity)  ← filters source === entity OR target === entity
-      push connected entities to queue
-  → { start, maxDepth, nodes: TraversalNode[] }
-  TraversalNode: { entity, relation, depth, path: string[] }
+  BFS: queue → getRelated() → push connected → TraversalNode[]
 
-
-EntityStore.buildContext(entityName?)
-  with entityName:   entity info + its relationships as markdown
-  without:           all entities (name, type, mentions) + all relationships
-
-EntityStore.processExtraction(entities[], relationships[], context?)
-  for each entity: upsert()
-  for each rel:    relate()
-  → { entitiesProcessed, relationshipsProcessed }
+EntityStore.buildContext(entityName?):
+  with name: entity info + its relationships
+  without: all entities + all relationships as markdown
 ```
 
-### 8.3 patterns() Plugin (Structured Learning)
+### 8.3 patterns() Plugin
 
 ```
-patterns() / memory()   ← memory() is a backwards-compat alias for patterns()
+patterns() / memory()   ← memory() is backwards-compat alias
          │
-         ▼
-PatternsPlugin.initialize(ctx)
-         │
-         ├── this.hnsw = await ctx.createHnsw(100_000, undefined, 'memory')
-         │     ← PRIVATE HNSW, persisted to 'hnsw-memory.index'
-         ├── ctx.loadVectors('memory_vectors', 'pattern_id', this.hnsw, this.vecCache)
-         ├── new PatternStore({ db, hnsw, vectorCache: vecCache, embedding: ctx.embedding })
-         ├── new Consolidator(ctx.db, this.vecCache)
-         └── new PatternDistiller(ctx.db)
+PatternsPlugin.initialize(ctx):
+  hnsw = ctx.createHnsw(100_000, undefined, 'memory')  ← PRIVATE
+  ctx.loadVectors('memory_vectors', 'pattern_id', hnsw, vecCache)
+  PatternStore + Consolidator + PatternDistiller
 
+PatternStore.learn(pattern: LearningPattern):
+  INSERT memory_patterns → id
+  embed("{task_type} {task} {approach}") → vec
+  INSERT memory_vectors + hnsw.add()
+  auto-consolidate every 50 patterns
 
-PatternStore.learn(pattern: LearningPattern): Promise<number>
-  INSERT memory_patterns (task_type, task, approach, outcome, success_rate,
-                          critique, tokens_used, latency_ms)
-  → id (lastInsertRowid)
-  text = "{task_type} {task} {approach}"
-  vec = await embedding.embed(text)
-  INSERT memory_vectors (pattern_id, vecToBuffer(vec))
-  hnsw.add(vec, id); vectorCache.set(id, vec)
-  ← auto-consolidate every 50 patterns
+Consolidator.prune(maxAgeDays=90, minSuccess=0.3):
+  DELETE WHERE success_rate < ? AND created_at < cutoff
 
+Consolidator.dedup(threshold=0.95):
+  for all pairs in vectorCache: cosine > 0.95 → keep higher success
 
-PatternStore.search(query, k=4, minSuccess=0.5)
-  embedding.embed(query) → queryVec
-  hnsw.search(queryVec, k*2)   ← over-fetch
-  SELECT * FROM memory_patterns WHERE id IN (?) AND success_rate >= ?
-  sort by vector score, slice to k
-  → (LearningPattern & { score: number })[]
-
-
-Consolidator.prune(maxAgeDays=90, minSuccess=0.3)
-  DELETE FROM memory_patterns WHERE success_rate < ? AND created_at < cutoff
-  → count removed
-
-Consolidator.dedup(threshold=0.95)
-  iterate all entries in vectorCache as pairs
-  cosine(vecA, vecB) > 0.95 → keep higher success_rate, delete other
-  DELETE in batch + vectorCache.delete()
-  → count deduped
-
-Consolidator.consolidate() → { pruned, deduped }
-
-
-PatternDistiller.distill(taskType, topK=10): DistilledStrategy | null
-  SELECT approach, success_rate, critique FROM memory_patterns
-  WHERE task_type = ? AND success_rate >= 0.7
-  ORDER BY success_rate DESC LIMIT topK
-  UPSERT distilled_strategies (task_type, strategy, confidence, updated_at)
-  → formatted strategy text
-
-PatternDistiller.get(taskType) → DistilledStrategy | null
-PatternDistiller.list()        → DistilledStrategy[]
-
-
-PatternsPlugin.stats():
-  { patterns: COUNT(*), avgSuccess: AVG(success_rate), hnswSize: hnsw.size }
+PatternDistiller.distill(taskType, topK=10):
+  SELECT approach, success_rate WHERE task_type=? AND success_rate >= 0.7
+  UPSERT distilled_strategies → formatted strategy text
 ```
 
 ### 8.4 LLMProvider Interface
 
 ```typescript
-// Framework-agnostic — implement to use any LLM
 interface LLMProvider {
     generate(messages: ChatMessage[], options?: GenerateOptions): Promise<string>
 }
 interface ChatMessage { role: 'system'|'user'|'assistant'; content: string }
 interface GenerateOptions { json?: boolean; maxTokens?: number; temperature?: number }
 
-// Built-in: direct fetch to OpenAI
-class OpenAIProvider implements LLMProvider {
-    constructor({ apiKey?, model='gpt-4.1-nano', baseUrl? })
-    generate() → POST /v1/chat/completions
-      options.json=true → response_format: { type:'json_object' }
-}
-
+// Built-in: OpenAIProvider({ apiKey?, model='gpt-4.1-nano', baseUrl? })
 // Compatible with: LangChain, Vercel AI SDK, Anthropic, Ollama, etc.
-// by wrapping their generate() in this interface
 ```
 
 ---
 
 ## 9. @brainbank/mcp Package
 
-**Purpose:** Expose BrainBank as an MCP server via stdio transport.
-Works with Claude Desktop, Google Gemini, and any MCP-compatible client.
+**File:** `packages/mcp/src/mcp-server.ts` (514 lines)
 
-**6 registered tools:**
+6 registered MCP tools via `@modelcontextprotocol/sdk`:
 
 | Tool | Description |
 |------|------------|
@@ -1299,69 +1050,41 @@ Works with Claude Desktop, Google Gemini, and any MCP-compatible client.
 **Multi-workspace LRU pool:**
 
 ```
-const _pool = new Map<string, { brain: BrainBank, lastAccess: number }>()
+_pool: Map<string, { brain: BrainBank, lastAccess: number }>
 MAX_POOL_SIZE = 10
 
 getBrainBank(targetRepo?)
-         │
-         ├── repo = targetRepo ?? BRAINBANK_REPO env ?? findRepoRoot(cwd)
-         │     findRepoRoot: walk up from startDir checking for .git/
-         │     fallback: use startDir if no .git found
-         │     resolved = rp.replace(/\/+$/, '')  ← normalize trailing slash
-         │
-         ├── if _pool.has(resolved):
-         │     health check: code HNSW empty but DB > 100KB → evict
-         │     else: entry.lastAccess = Date.now(), return cached brain
-         │
-         ├── if _pool.size >= MAX_POOL_SIZE:
-         │     evict entry with oldest lastAccess (LRU strategy)
-         │
-         └── _createBrain(resolved):
-               read .brainbank/config.json (if exists)
-               resolve plugins list from config (default: code + git + docs)
-               resolve embedding: config.json.embedding > BRAINBANK_EMBEDDING env
-               new BrainBank({ repoPath, reranker: _sharedReranker, embeddingProvider? })
-               use(code(..., ignore: config.code.ignore))
-               use(git(...))
-               use(docs())
-               brain.initialize()
-               ← on HNSW corruption error ("Invalid the given array length"):
-                   delete brainbank.db + wal + shm
-                   recreate with fresh BrainBank instance
+  repo = targetRepo ?? BRAINBANK_REPO env ?? findRepoRoot(cwd)
+  findRepoRoot: walk up from startDir checking for .git/
+  if pool hit: health check (code HNSW empty but DB > 100KB → evict)
+  if pool full: evict oldest lastAccess (LRU)
+  _createBrain(resolved):
+    read .brainbank/config.json
+    resolve embedding: config > BRAINBANK_EMBEDDING env
+    new BrainBank + use(code/git/docs)
+    brain.initialize()
+    ← corruption recovery: delete DB + retry fresh
 
 _sharedReranker: created once from BRAINBANK_RERANKER=qwen3 env
-                 shared across ALL workspaces in the pool
+                 shared across ALL workspace pool entries
 ```
 
 ---
 
 ## 10. Collection — KV Store
 
-**Pattern: Repository + Hybrid Search + Shared HNSW**
+**Files:** `src/services/collection.ts` (407 lines), `src/services/kv-service.ts` (66 lines)
+**Pattern:** Repository + Hybrid Search + Shared HNSW
 
-The universal data primitive. All collections share **one kvHnsw** owned
-by `KVService`. Cross-collection isolation is achieved via SQL `WHERE collection = ?`
-filtering after an adaptive over-fetch.
-
-```
-brain.collection('debug_errors')
-  → KVService.collection(name)
-  → new Collection(name, db, embedding, kvHnsw, kvVecs, reranker?)
-     ← KVService creates and caches Collection instances by name
-     ← all collections share the same kvHnsw + kvVecs
-```
-
-**KVService (`src/services/kv-service.ts`):**
+All collections share **one kvHnsw** owned by `KVService`. Cross-collection isolation via `WHERE collection = ?` after adaptive over-fetch.
 
 ```
 KVService(db, embedding, hnsw, vecs, reranker?)
   _collections: Map<string, Collection>   ← instance cache
-
-  collection(name) → cached or new Collection
-  listNames()      → SELECT DISTINCT collection FROM kv_data ORDER BY collection
-  delete(name)     → DELETE FROM kv_data; _collections.delete(name)
-  hnsw             → getter for kvHnsw
-  vecs             → getter for kvVecs
+  collection(name) → cached or new Collection(name, db, embedding, hnsw, vecs, reranker?)
+  listNames()      → SELECT DISTINCT collection FROM kv_data
+  delete(name)     → hnsw.remove() + vecs.delete() per id; DELETE FROM kv_data
+  hnsw / vecs      → getters for reembed access
   clear()          → _collections.clear(); _vecs.clear()
 ```
 
@@ -1369,93 +1092,65 @@ KVService(db, embedding, hnsw, vecs, reranker?)
 
 ```
 add(content, options?)
-  options shape A: { metadata?, tags?, ttl? }       ← recommended
-  options shape B: { key: value, ... }               ← legacy metadata shorthand
-  detection: 'tags' in opts || 'ttl' in opts || 'metadata' in opts → shape A
+  options: { metadata?, tags?, ttl? } OR { key: value } (legacy shorthand)
+  detection: 'tags' in opts || 'ttl' in opts || 'metadata' in opts → structured form
   │
-  ├── embedding.embed(content)      ← embed FIRST (fail before DB orphan rows)
+  ├── embedding.embed(content)      ← embed FIRST (fail before DB orphans)
   ├── INSERT kv_data (collection, content, meta_json, tags_json, expires_at)
-  │     expires_at = floor(now/1000) + parseDuration(ttl) if ttl given
-  │     parseDuration: '7d'→604800, '24h'→86400, '30m'→1800, '5s'→5
+  │     expires_at = floor(now/1000) + parseDuration(ttl)
+  │     parseDuration: '30d'→2592000, '24h'→86400, '5m'→300, '10s'→10
   │     FTS trigger fires: INSERT INTO fts_kv(rowid, content, collection)
   ├── INSERT kv_vectors (data_id, vecToBuffer(vec))
   ├── kvHnsw.add(vec, id)
   └── kvVecs.set(id, vec)
 
-update(id, content, options?)
-  fetch existing row; merge metadata/tags; _removeById(id); add(content, ...)
-
 addMany(items[])
-  embedBatch(all texts)               ← single API call
+  embedBatch(all texts)                 ← single API call
   single DB transaction for all inserts
   HNSW + cache updated AFTER transaction ← no orphan risk on rollback
 
 search(query, { k=5, mode='hybrid', minScore=0.15, tags? })
-  │
-  ├── _pruneExpired():
-  │     SELECT id WHERE expires_at IS NOT NULL AND expires_at <= now
-  │     _removeById(id) per expired item
-  │
-  ├── mode='keyword' → _searchBM25(q, k, minScore) → _filterByTags(results, tags)
-  ├── mode='vector'  → _searchVector(q, k, minScore) → _filterByTags(results, tags)
-  └── mode='hybrid':
-        parallel: _searchVector(k, minScore=0) + _searchBM25(k, minScore=0)
-        fuseRankedLists([vectorHits, bm25Hits], id => String(h.id), h => h.score ?? 0)
-          ← generic RRF that works on CollectionItem (not SearchResult)
-        map fused { item, score } back to CollectionItems
-        filter score >= minScore, slice to k
-        if reranker && results.length > 1:
-          cast to SearchResult[] (type:'collection')
-          await rerank(query, asSearchResults, reranker)
-          map reranked scores back to CollectionItems
-        _filterByTags(results, tags)
+  _pruneExpired():
+    SELECT WHERE expires_at IS NOT NULL AND expires_at <= now
+    _removeById() per expired item
 
-searchAsResults(query, k): Promise<SearchResult[]>
-  search(query, { k })
-  → map to { type:'collection', score, content, metadata: { id, collection, ...metadata } }
-  ← used by SearchAPI._collectKvCollections()
+  mode='keyword' → _searchBM25 → _filterByTags
+  mode='vector'  → _searchVector → _filterByTags
+  mode='hybrid':
+    parallel: _searchVector(k, 0) + _searchBM25(k, 0)
+    fuseRankedLists([vectorHits, bm25Hits], String(h.id), h.score)
+      ← generic RRF on CollectionItem (not SearchResult)
+    filter score >= minScore, slice to k
+    if reranker && results.length > 1:
+      cast to SearchResult[] (type:'collection')
+      rerank(query, asSearchResults, reranker)
+      map scores back
+    _filterByTags(results, tags)
 
 _searchVector(query, k, minScore):
   queryVec = embedding.embed(query)
   searchK = _adaptiveSearchK(k):
-    if totalSize === 0 → 0
-    if collectionCount === 0 → min(k*3, totalSize)
-    ratio = ceil(totalSize / collectionCount), clamped [3, 50]
+    ratio = ceil(totalHnswSize / collectionCount), clamped [3, 50]
     → min(k * ratio, totalSize)
-    ← compensates for shared HNSW: if 1000 total / 50 in this collection → ratio=20
   kvHnsw.search(queryVec, searchK)
   SELECT * FROM kv_data WHERE id IN (?) AND collection = ?
-  sort by score, filter >= minScore, slice to k
 
 _searchBM25(query, k, minScore):
   sanitizeFTS(query) → ftsQuery
   SELECT d.*, bm25(fts_kv, 5.0, 1.0) AS score
-  FROM fts_kv JOIN kv_data WHERE fts_kv MATCH ? AND collection = ?
-  ORDER BY score ASC LIMIT k
-  normalizeBM25 each score
+  FROM fts_kv JOIN kv_data WHERE MATCH ? AND collection = ?
 
 _filterByTags(items, tags?):
-  tags: item.tags must include ALL specified tags (AND semantics)
-
-list({ limit=20, offset=0, tags? })
-  SELECT * WHERE collection = ? AND (expires_at IS NULL OR expires_at > now)
-  ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
-
-count()
-  SELECT COUNT(*) WHERE collection = ? AND (expires_at IS NULL OR expires_at > now)
-
-trim({ keep })
-  SELECT id ORDER BY created_at DESC LIMIT -1 OFFSET keep → _removeById each
-
-prune({ olderThan: '30d' })
-  cutoff = now - parseDuration(olderThan)
-  SELECT id WHERE created_at < cutoff → _removeById each
+  item.tags must include ALL specified tags (AND semantics)
 
 _removeById(id):
-  DELETE FROM kv_data (CASCADE: deletes kv_vectors, FTS trigger fires)
-  kvHnsw.remove(id)
+  DELETE FROM kv_data (CASCADE + FTS trigger)  ← DB first, can fail
+  kvHnsw.remove(id)                            ← these always succeed
   kvVecs.delete(id)
-  ← DB first: if fails, HNSW+cache stay consistent (no phantom entries)
+
+searchAsResults(query, k): Promise<SearchResult[]>
+  → map CollectionItem to { type:'collection', score, content, metadata }
+  ← used by SearchAPI._collectKvCollections()
 ```
 
 ---
@@ -1468,118 +1163,83 @@ _removeById(id):
 // src/search/types.ts
 interface SearchStrategy {
     search(query: string, options?: SearchOptions): Promise<SearchResult[]>
-    rebuild?(): void   // optional: FTS5 full rebuild
+    rebuild?(): void
 }
-
 interface SearchOptions {
-    sources?: Record<string, number> // e.g. { code: 6, git: 5, memory: 4 }
+    sources?: Record<string, number>  // { code: 6, git: 5, memory: 4, myNotes: 10 }
     minScore?:  number   // default 0.25
     useMMR?:    boolean  // default true
     mmrLambda?: number   // default 0.7
 }
 ```
 
-Both `CompositeVectorSearch` and `KeywordSearch` implement this interface.
-
 ### 11.2 CompositeVectorSearch
 
-**Pattern: Composite — three domain strategies sharing one embed() call.**
+**File:** `src/search/vector/composite-vector-search.ts`
 
 ```
 CompositeVectorSearch({ code?, git?, patterns?, embedding })
   implements SearchStrategy
 
   .search(query, options):
-    queryVec = await embedding.embed(query)   ← ONE embed call for all domains
+    queryVec = await embedding.embed(query)   ← ONE embed call
     results = []
 
     if code && codeK > 0:
       CodeVectorSearch.search(queryVec, codeK, minScore, useMMR, mmrLambda)
-        if hnsw.size === 0 → skip
-        hits = useMMR
-          ? searchMMR(hnsw, queryVec, vecs, k, lambda)
-          : hnsw.search(queryVec, k)
-        ids = hits.map(h => h.id)
-        SELECT * FROM code_chunks WHERE id IN ({placeholders})
-        for each row where score >= minScore:
-          { type:'code', score, filePath, content,
+        useMMR ? searchMMR(hnsw, queryVec, vecs, k, lambda) : hnsw.search(queryVec, k)
+        SELECT * FROM code_chunks WHERE id IN (?)
+        → { type:'code', score, filePath, content,
             metadata: { id, chunkType, name, startLine, endLine, language } }
 
     if git && gitK > 0:
       GitVectorSearch.search(queryVec, gitK, minScore)
         hnsw.search(queryVec, k*2)   ← over-fetch for merge filtering
         SELECT * FROM git_commits WHERE id IN (?) AND is_merge = 0
-        for each row where score >= minScore:
-          { type:'commit', score, content: message,
-            metadata: { hash, shortHash, author, date, files,
-                        additions, deletions, diff } }
+        → { type:'commit', score, content:message, metadata: { hash, ... } }
 
     if patterns && patternK > 0:
       PatternVectorSearch.search(queryVec, patternK, minScore, useMMR, mmrLambda)
-        searchMMR or hnsw.search
         SELECT * FROM memory_patterns WHERE id IN (?) AND success_rate >= 0.5
-        for each row where score >= minScore:
-          { type:'pattern', score, content: approach,
-            metadata: { taskType, task, outcome, successRate, critique } }
+        → { type:'pattern', score, content:approach, metadata: { taskType, ... } }
 
     results.sort((a, b) => b.score - a.score)
-    → SearchResult[]
-
-
-SearchResult discriminated union:
-  CodeResult:       { type:'code',       score, filePath, content, context?, metadata: CodeResultMetadata }
-  CommitResult:     { type:'commit',     score, content, context?, metadata: CommitResultMetadata }
-  PatternResult:    { type:'pattern',    score, content, context?, metadata: PatternResultMetadata }
-  DocumentResult:   { type:'document',   score, filePath, content, context?, metadata: DocumentResultMetadata }
-  CollectionResult: { type:'collection', score, content, context?, metadata: CollectionResultMetadata }
-
-Type guards: isCodeResult(), isCommitResult(), isDocumentResult(),
-             isPatternResult(), isCollectionResult()
-
-matchResult(result, { code: r=>..., commit: r=>..., _: r=>... }):
-  exhaustive pattern match with optional fallback handler
 ```
 
 ### 11.3 KeywordSearch (BM25)
 
+**File:** `src/search/keyword/keyword-search.ts`
+
 ```
 KeywordSearch(db)  implements SearchStrategy
 
-.search(query, { sources: { code: 8, git: 5, memory: 4 } })
-         │
-         ├── sanitizeFTS(query):  [src/lib/fts.ts]
-         │     1. strip FTS5 special chars: {}[]()^~*:
-         │     2. remove boolean operators: AND OR NOT NEAR
-         │     3. split compound words:
-         │          camelCase: ([a-z])([A-Z]) → $1 $2
-         │          acronyms:  ([A-Z]+)([A-Z][a-z]) → $1 $2
-         │          separators: [_\-./\\] → space
-         │          "MagicLinkCallback" → "Magic Link Callback"
-         │          "tenant_worker"     → "tenant worker"
-         │     4. split on whitespace, filter length > 1
-         │     5. wrap each: "word" → implicit AND
-         │     → '' if nothing left → return []
-         │
-         ├── _searchCode(ftsQuery, rawQuery, codeK, results):
-         │     SELECT c.*, bm25(fts_code, 5.0, 3.0, 1.0) AS score
-         │     FROM fts_code JOIN code_chunks ON rowid
-         │     WHERE fts_code MATCH ? ORDER BY score ASC LIMIT codeK
-         │     normalizeBM25(rawScore):
-         │       abs = Math.abs(rawScore)   ← FTS5 returns negative (lower=better)
-         │       1.0 / (1.0 + exp(-0.3 * (abs - 5)))   → 0..1 sigmoid
-         │     seenIds.add() to avoid path-fallback duplicates
-         │     _searchCodeByPath(rawQuery, seenIds):
-         │       words from rawQuery (length > 2)
-         │       LIKE '%word%' on file_path WHERE chunk_type = 'file'
-         │       score = 0.6 (bm25-path label)
-         │
-         ├── _searchGit(ftsQuery, sources.git, results):
-         │     bm25(fts_commits, 5.0, 2.0, 1.0)  message×5, author×2, diff×1
-         │     filter: is_merge = 0
-         │
-         └── _searchPatterns(ftsQuery, sources.memory, results):
-               bm25(fts_patterns, 3.0, 5.0, 5.0, 1.0)
-               filter: success_rate >= 0.5
+.search(query, options):
+  sanitizeFTS(query):  [src/lib/fts.ts]
+    1. strip: {}[]()^~*:
+    2. remove: AND OR NOT NEAR
+    3. splitCompound:
+         camelCase → "camel Case"
+         HTMLParser → "HTML Parser"
+         snake_case → "snake case"
+    4. filter length > 1
+    5. wrap each: "word" → implicit AND
+    → '' → return []
+
+  _searchCode(ftsQuery, rawQuery, codeK):
+    bm25(fts_code, 5.0, 3.0, 1.0)  ← file_path×5, name×3, content×1
+    + _searchCodeByPath(rawQuery): LIKE '%word%' fallback, score=0.6
+
+  _searchGit(ftsQuery, gitK):
+    bm25(fts_commits, 5.0, 2.0, 1.0)  ← message×5, author×2, diff×1
+    filter: is_merge = 0
+
+  _searchPatterns(ftsQuery, patternK):
+    bm25(fts_patterns, 3.0, 5.0, 5.0, 1.0) ← task_type×3, task×5, approach×5, critique×1
+    filter: success_rate >= 0.5
+
+  normalizeBM25(rawScore):  [src/lib/fts.ts]
+    abs = Math.abs(rawScore)   ← FTS5 returns negative (lower=better)
+    1.0 / (1.0 + exp(-0.3 * (abs - 5)))   → 0..1 sigmoid
 
 .rebuild():
   INSERT INTO fts_code(fts_code) VALUES('rebuild')
@@ -1592,48 +1252,36 @@ KeywordSearch(db)  implements SearchStrategy
 ```
 SearchAPI.hybridSearch(query, options?)
          │
-         ├── sources = options?.sources ?? {}
-         ├── codeK = sources.code ?? 20
-         ├── gitK  = sources.git  ?? 8
-         ├── docsK = sources.docs ?? 8
+         ├── codeK = sources.code ?? 20, gitK = sources.git ?? 8, docsK = sources.docs ?? 8
          │
-         ├── if VectorSearch available (search field set):
+         ├── if CompositeVectorSearch available:
          │     parallel:
-         │     ├── vectorSearch.search(query, { ...options, sources: { code: codeK, git: gitK } }) → vecResults
-         │     └── bm25?.search(query, { sources: { code: codeK, git: gitK } }) ?? []  → kwResults
+         │       vectorSearch.search(query, { code: codeK, git: gitK })
+         │       bm25?.search(query, { code: codeK, git: gitK }) ?? []
          │     lists.push(vecResults, kwResults)
          │
          ├── if registry.has('docs'):
-         │     docs = await _collectDocs(query, { k: docsK })
-         │     if docs.length > 0: lists.push(docs)
+         │     _collectDocs(query, { k: docsK }) → lists.push(docResults)
          │
          ├── _collectCustomPlugins(query, options):
-         │     for each plugin NOT in {'code','git','docs'} that isSearchable:
-         │       hits = await mod.search(query, options)
-         │       if hits.length > 0: lists.push(hits)
+         │     non-builtin SearchablePlugins → lists.push(hits)
          │
          ├── _collectKvCollections(query, sources):
-         │     for [name, k] in sources where name NOT in {'code','git','docs'}:
-         │       hits = await kvService.collection(name).searchAsResults(query, k)
-         │       if hits.length > 0: lists.push(hits)
+         │     for [name, k] in sources not in {code,git,docs,memory}:
+         │       kvService.collection(name).searchAsResults(query, k)
          │
-         ├── reciprocalRankFusion(lists, k=60, maxResults=15)  [src/lib/rrf.ts]
+         ├── reciprocalRankFusion(lists, k=60, maxResults=15)
          │
          └── if config.reranker && fused.length > 1:
                rerank(query, fused, config.reranker)
 
 
 reciprocalRankFusion(resultSets, k=60, maxResults=15):  [src/lib/rrf.ts]
-  map: key → { result: SearchResult, rrfScore: number }
-  for each list:
-    for rank i, result r:
-      key = type-specific unique string (see below)
-      rrfScore += 1.0 / (60 + i + 1)
-      if key seen: accumulate rrfScore + keep higher original score
-  sort by rrfScore DESC, slice to maxResults
-  maxRRF = sorted[0].rrfScore
-  normalize: score = rrfScore / maxRRF  → 0..1 range
-  metadata.rrfScore = raw rrfScore preserved for debugging
+  for each list, for rank i:
+    key = resultKey(r)   ← type-specific unique string
+    rrfScore += 1.0 / (k + rank + 1)
+    accumulate + keep higher original score
+  sort by rrfScore DESC, normalize to 0..1
 
 Unique key generation:
   'code'       → "code:{filePath}:{startLine}-{endLine}"
@@ -1642,232 +1290,131 @@ Unique key generation:
   'document'   → "document:{filePath}:{collection}:{seq}:{content.slice(0,80)}"
   'collection' → "collection:{id or content.slice(0,80)}"
 
-fuseRankedLists<T>(lists, keyFn, scoreFn, k, maxResults):  [src/lib/rrf.ts]
+fuseRankedLists<T>(lists, keyFn, scoreFn, k, maxResults):
   ← generic variant used by Collection.search() hybrid mode
-  ← works on CollectionItem (no SearchResult needed)
 ```
 
 ### 11.5 MMR — Diversity
 
-```
-searchMMR(index, query, vectorCache, k, lambda=0.7)  [src/search/vector/mmr.ts]
-         │
-         ├── candidates = index.search(query, k*3)   ← over-fetch 3×
-         ├── if candidates.length ≤ k → return candidates as-is
-         │
-         └── greedy selection loop (k iterations):
-               for each remaining candidate i:
-                 relevance = candidate[i].score
-                 maxSim = max over already-selected:
-                   cosine(vectorCache.get(candidate[i].id), vectorCache.get(sel.id))
-                   if either not in cache → contribution = 0
-                 mmrScore = lambda * relevance - (1 - lambda) * maxSim
-               pick argmax(mmrScore), move to selected
+**File:** `src/search/vector/mmr.ts`
 
-lambda=0.7: 70% relevance, 30% diversity penalty (default)
-lambda=1.0: pure relevance (identical to regular HNSW search)
-lambda=0.0: pure diversity (maximize spread in embedding space)
+```
+searchMMR(index, query, vectorCache, k, lambda=0.7)
+  candidates = index.search(query, k*3)   ← over-fetch 3×
+  if candidates.length ≤ k → return as-is
+
+  greedy selection (k iterations):
+    for each remaining candidate:
+      relevance = candidate.score
+      maxSim = max cosine(candidate, selected) over all selected
+      mmrScore = lambda * relevance - (1 - lambda) * maxSim
+    pick argmax(mmrScore)
+
+lambda=0.7: 70% relevance, 30% diversity (default)
+lambda=1.0: pure relevance (≡ regular HNSW search)
+lambda=0.0: pure diversity
 ```
 
 ### 11.6 Reranking
 
-```
-rerank(query, results, reranker): Promise<SearchResult[]>  [src/lib/rerank.ts]
-         │
-         ├── documents = results.map(r => r.content)
-         ├── scores = await reranker.rank(query, documents)
-         │     ← cross-encoder scores each doc against query in full context
-         │
-         ├── for each result at position i (pos = i + 1):
-         │     rrfWeight = pos ≤ 3  ? 0.75   ← preserve exact matches at top
-         │               : pos ≤ 10 ? 0.60   ← balanced middle zone
-         │               :            0.40   ← trust reranker more for tail
-         │     blended = rrfWeight * r.score + (1 - rrfWeight) * scores[i]
-         │
-         └── sort by blended DESC
+**File:** `src/lib/rerank.ts`
 
-Rationale: positions 1-3 are often exact keyword matches. Pure reranker
-score would demote them. Position-aware blending preserves exact-match
-precision while letting the reranker improve tail ordering.
+```
+rerank(query, results, reranker): Promise<SearchResult[]>
+  documents = results.map(r => r.content)
+  scores = await reranker.rank(query, documents)
+
+  Position-aware blending:
+    pos 1-3:   rrfWeight = 0.75  ← preserve exact matches
+    pos 4-10:  rrfWeight = 0.60
+    pos 11+:   rrfWeight = 0.40  ← trust reranker more
+    blended = rrfWeight * r.score + (1 - rrfWeight) * scores[i]
+
+  sort by blended DESC
 ```
 
 ### 11.7 ContextBuilder
 
-**Decoupled from DB schema via `CodeGraphProvider` interface.**
+**File:** `src/search/context-builder.ts`
 
 ```
-ContextBuilder(search, coEdits?, codeGraph?, docsSearch?)
-                                                ↑
-                              DocsSearchFn: (query, opts?) => Promise<SearchResult[]>
+ContextBuilder(search?, coEdits?, codeGraph?, docsSearch?)
 
+.build(task, options?):
+  { sources: { code:6, git:5, memory:4 }, affectedFiles=[],
+    minScore=0.25, useMMR=true, mmrLambda=0.7 }
 
-CodeGraphProvider interface  [src/search/types.ts]:
-  getCallInfo(chunkId, symbolName?): { calls: string[], calledBy: string[] } | null
-  expandImportGraph(seedFiles: Set<string>): Set<string>
-  fetchBestChunks(filePaths: string[]): CodeChunkSummary[]
+  results = search.search(task, ...)
+  parts = [`# Context for: "${task}"\n`]
 
-SqlCodeGraphProvider  [src/search/context/sql-code-graph.ts]:
-  implements CodeGraphProvider backed by SQLite
-  encapsulates all code_refs, code_imports, code_chunks SQL in one file
-  delegates expandImportGraph → importGraph.expandViaImportGraph(db, seedFiles)
-  delegates fetchBestChunks  → importGraph.fetchBestChunks(db, filePaths)
+  formatCodeResults(codeHits, parts, codeGraph?):
+    group by filePath
+    codeGraph.getCallInfo(chunkId, name):
+      SELECT code_refs + JOIN code_chunks
+      → "*(calls: X | called by: Y)*"
 
+  formatCodeGraph(codeHits, parts, codeGraph?):
+    expandImportGraph(db, hitFiles):
+      2-hop BFS on code_imports
+      clusterSiblings: 3+ hits same dir → include all
+    fetchBestChunks(db, graphFiles):
+      largest chunk per file (ORDER BY end_line - start_line DESC)
+    → "## Related Code (Import Graph)\n..."
 
-ContextBuilder.build(task, options?)
-   { sources: { code: 6, git: 5, memory: 4 },
-     affectedFiles=[], minScore=0.25, useMMR=true, mmrLambda=0.7 }
-         │
-         ├── codeK = sources.code ?? 6, gitK = sources.git ?? 5
-         │   memoryK = sources.memory ?? 4
-         ├── results = await search.search(task, {
-         │       sources: { code: codeK, git: gitK, memory: memoryK },
-         │       minScore, useMMR, mmrLambda })
-         │
-         ├── parts = [`# Context for: "${task}"\n`]
-         │
-         ├── codeHits = results.filter(type==='code').slice(0, codeK)
-         │   formatCodeResults(codeHits, parts, codeGraph?):
-         │     group by filePath
-         │     for each chunk:
-         │       label = "function `name` (L10-50)" or "L10-50"
-         │       callInfo = codeGraph.getCallInfo(chunkId, name):
-         │         SELECT DISTINCT symbol_name FROM code_refs WHERE chunk_id = ?
-         │         SELECT cc.file_path, cc.name FROM code_refs cr
-         │                JOIN code_chunks cc WHERE cr.symbol_name = ?
-         │         → { calls: ['validateToken'], calledBy: ['authenticate'] }
-         │       "**{label}** — 87% match *(calls: X | called by: Y)*"
-         │       ```typescript\n{content}\n```
-         │
-         ├── formatCodeGraph(codeHits, parts, codeGraph?):
-         │     hitFiles = set of file paths from codeHits
-         │     expandViaImportGraph(db, hitFiles):
-         │       2-hop BFS on code_imports table:
-         │         SELECT imports_path WHERE file_path = seed
-         │         SELECT DISTINCT file_path WHERE imports_path LIKE basename
-         │       clusterSiblings: 3+ hits from same dir → include all dir siblings
-         │     fetchBestChunks(db, graphFiles):
-         │       SELECT file_path, content, name, chunk_type, start_line, end_line
-         │       FROM code_chunks WHERE file_path = ?
-         │       ORDER BY (end_line - start_line) DESC LIMIT 1   ← largest chunk
-         │     "## Related Code (Import Graph)\n..."
-         │
-         ├── formatGitResults(results, gitK, parts):
-         │     filter type='commit', slice to limit
-         │     "## Related Git History\n"
-         │     "**[abc1234]** fix auth bypass *(Jane, 2024-01-15, 92%)*"
-         │       Files: src/auth/middleware.ts
-         │       ```diff\n@@ ...\n+if (!token) ...\n```
-         │
-         ├── formatCoEdits(affectedFiles, parts, coEdits?):
-         │     for each file in affectedFiles (max 3):
-         │       coEdits.suggest(file, 4)
-         │     "## Co-Edit Patterns\n"
-         │     "- **src/api.ts** → also tends to change: src/routes.ts (18x)"
-         │
-         ├── formatPatternResults(results, memoryK, parts):
-         │     filter type='pattern', slice to limit
-         │     "## Learned Patterns\n"
-         │     "**api** — 87% success, 91% match"
-         │     "Approach: ...", "Lesson: ..."
-         │
-         └── if docsSearch:
-               docs = await docsSearch(task, { k: codeK })
-               formatDocuments(docs):
-                 "## Relevant Documents\n\n"
-                 "**[collection]** title — _context_\n\n{content}"
+  formatGitResults(results, gitK, parts)
+  formatCoEdits(affectedFiles, parts, coEdits?)
+  formatPatternResults(results, memoryK, parts)
+
+  if docsSearch:
+    docs = await docsSearch(task, { k, minScore })
+    formatDocuments(docs) → "## Relevant Documents\n..."
+
+  → parts.join('\n')
 ```
 
-**ContextBuilder is assembled in `createSearchAPI()` (`src/engine/search-factory.ts`):**
+**CodeGraphProvider interface** (`src/search/types.ts`):
 
-```
-gitPlugin = registry.firstByType(PLUGIN.GIT)
-coEdits   = isCoEditPlugin(gitPlugin) ? gitPlugin.coEdits : undefined
-codeGraph = new SqlCodeGraphProvider(db)
-docsSearch = async (query, opts?) => {
-  const d = registry.firstByType(PLUGIN.DOCS)
-  if (!d || !isSearchable(d)) return []
-  return d.search(query, opts)
+```typescript
+interface CodeGraphProvider {
+    getCallInfo(chunkId: number, symbolName?: string):
+        { calls: string[]; calledBy: string[] } | null
+    expandImportGraph(seedFiles: Set<string>): Set<string>
+    fetchBestChunks(filePaths: string[]): CodeChunkSummary[]
 }
-new ContextBuilder(compositeVectorSearch, coEdits, codeGraph, docsSearch)
 ```
+
+**SqlCodeGraphProvider** (`src/search/context/sql-code-graph.ts`):
+Concrete implementation backed by SQLite. Delegates to `import-graph.ts`.
 
 ### 11.8 DocumentSearch
+
+**File:** `packages/docs/src/document-search.ts`
 
 ```
 DocumentSearch({ db, embedding, hnsw, vecCache, reranker? })
 
 .search(query, { collection?, k=8, minScore=0, mode='hybrid' })
-         │
-         ├── mode='keyword' → _dedup(_searchBM25(q, k*2, minScore, coll), k)
-         ├── mode='vector'  → _dedup(await _searchVector(q, k*2, minScore, coll), k)
-         └── mode='hybrid':
-               fetchK = k*2
-               parallel: _searchVector(q, fetchK, 0, coll)  → vecHits
-               parallel: _searchBM25(q, fetchK, 0, coll)    → bm25Hits
+  mode='keyword' → _dedup(_searchBM25(...), k)
+  mode='vector'  → _dedup(_searchVector(...), k)
+  mode='hybrid':
+    parallel: _searchVector(fetchK=k*2) + _searchBM25(fetchK=k*2)
+    reciprocalRankFusion([vecHits, bm25Hits])
+    map fused results to originals via chunkId
+    _dedup(results, k) → _rerankResults(query, deduped)
 
-               if both empty → []
-               if bm25 empty → _dedup(vecHits.filter(>=minScore), k)
-               if vec empty  → _dedup(bm25Hits.filter(>=minScore), k)
-
-               fused = reciprocalRankFusion([vecHits, bm25Hits])
-               allById = Map<chunkId, SearchResult> from [...vecHits, ...bm25Hits]
-               for each fused result: get original + merge score
-               filter score >= minScore
-               deduped = _dedup(results, k)
-               → _rerankResults(query, deduped)
-
-
-_searchVector(query, k, minScore, collection?):
-  if hnsw.size === 0 → []
-  queryVec = embedding.embed(query)
-  searchK = k
-  if collection:
-    collCount = SELECT COUNT(*) FROM doc_chunks WHERE collection = ?
-    total     = SELECT COUNT(*) FROM doc_chunks
-    ratio = max(3, min(50, ceil(total / collCount)))
-    searchK = min(k * ratio, hnsw.size)
-    ← proportional over-fetch for shared HNSW across all doc collections
-  hits = hnsw.search(queryVec, searchK)
-  for each hit:
-    chunk = SELECT * FROM doc_chunks WHERE id = ?
-    if collection && chunk.collection !== collection → skip
-    {type:'document', score, filePath: file_path, content,
-     context: _getDocContext(collection, file_path),
-     metadata: { collection, title, seq, chunkId: id }}
-
-
-_searchBM25(query, k, minScore, collection?):
-  _buildDocsFTS(query):
-    strip FTS5 special chars + boolean operators + punctuation separators
-    remove STOP_WORDS (the, is, at, a, an, and, or, but, in, with, ...)
-    filter length >= 3
-    wrap remaining words: "word" joined with OR   ← natural language OR-mode
-    → '' if nothing left
-  SELECT d.*, bm25(fts_docs, 10.0, 2.0, 5.0, 1.0) AS bm25_score
-  FROM fts_docs JOIN doc_chunks
-  WHERE fts_docs MATCH ? [AND d.collection = ?]
-  ORDER BY bm25_score ASC LIMIT k*2
-  ← title×10, file_path×5, content×2, collection×1
-
+_searchVector: adaptive over-fetch ratio for collection filtering
+_searchBM25:
+  _buildDocsFTS(query): OR-mode, stop-word filtering, length >= 3
+  bm25(fts_docs, 10.0, 2.0, 5.0, 1.0)  ← title×10, content×2, file_path×5, collection×1
 
 _dedup(results, k):
-  keep only highest-scoring result per file_path
-  → prevents 4 chunks from same document filling top-k
-  sort by score DESC, slice to k
-
+  keep only highest-scoring result per filePath
+  prevents multiple chunks from same doc filling top-k
 
 _getDocContext(collection, filePath):
-  walk hierarchy upward: '/src/auth/middleware.ts' → '/src/auth' → '/src' → '/'
-  for each prefix:
-    SELECT context FROM path_contexts WHERE collection = ? AND path = ?
-  fallback: SELECT context FROM collections WHERE name = ?
-  → most specific context description found, or undefined
-
-
-_rerankResults(query, results):
-  if !reranker || results.length ≤ 1 → return as-is
-  dynamic import { rerank } from 'brainbank'
-  → rerank(query, results, reranker)
+  walk path hierarchy upward: /src/auth/middleware.ts → /src/auth → /src → /
+  SELECT context FROM path_contexts WHERE collection=? AND path=?
+  fallback: SELECT context FROM collections WHERE name=?
 ```
 
 ---
@@ -1876,126 +1423,86 @@ _rerankResults(query, results):
 
 ### 12.1 Database
 
+**File:** `src/db/database.ts` (71 lines)
+
 ```
-Database  [src/db/database.ts]
-wrapper over better-sqlite3
-
-constructor(dbPath):
-  fs.mkdirSync(dirname, { recursive: true })   ← auto-create parent dirs
+Database(dbPath):
+  fs.mkdirSync(dirname, { recursive: true })
   new BetterSqlite3(dbPath)
-  PRAGMA journal_mode = WAL        ← parallel reads, serialized writes
-  PRAGMA busy_timeout = 5000       ← wait up to 5s for write lock (vs SQLITE_BUSY)
-  PRAGMA synchronous = NORMAL      ← fsync on checkpoint, not every commit
-  PRAGMA foreign_keys = ON         ← enforce FK + CASCADE DELETE
-  createSchema(db)                 ← idempotent DDL (IF NOT EXISTS)
+  PRAGMA journal_mode = WAL
+  PRAGMA busy_timeout = 5000
+  PRAGMA synchronous = NORMAL
+  PRAGMA foreign_keys = ON
+  createSchema(db)
 
-transaction<T>(fn: () => T): T
-  db.transaction(fn)()             ← auto-commit on success, rollback on throw
-
-batch(sql, rows[][])
-  one transaction, one prepared stmt, run for each row array
-
-prepare(sql) → BetterSqlite3.Statement   ← cached internally by better-sqlite3
-exec(sql)    ← raw SQL, no result (DDL, PRAGMA)
+transaction<T>(fn: () => T): T    ← auto-commit/rollback
+batch(sql, rows[][])              ← one txn, one stmt, many rows
+prepare(sql) → Statement          ← cached by better-sqlite3
+exec(sql)                         ← raw DDL/PRAGMA
 close()
 ```
 
 ### 12.2 HNSWIndex
 
+**File:** `src/providers/vector/hnsw-index.ts` (153 lines)
+
 ```
 HNSWIndex(dims, maxElements=2_000_000, M=16, efConstruction=200, efSearch=50)
-  [src/providers/vector/hnsw-index.ts]
 
 init(): Promise<this>
   dynamic import 'hnswlib-node'
-  _createIndex():
-    HNSW = lib.default?.HierarchicalNSW ?? lib.HierarchicalNSW   ← CJS/ESM compat
-    new HNSW('cosine', dims)
-    initIndex(maxElements, M, efConstruction)
-    setEf(efSearch)
-    _ids = new Set()
-  returns this   ← chainable: await new HNSWIndex(384).init()
+  HNSW = lib.default?.HierarchicalNSW ?? lib.HierarchicalNSW  ← CJS/ESM compat
+  new HNSW('cosine', dims); initIndex(); setEf()
 
 add(vector, id):
-  if _ids.has(id) → return   (idempotent: duplicate IDs silently skipped)
+  if _ids.has(id) → return   (idempotent)
   if _ids.size >= maxElements → throw "HNSW index full"
   _index.addPoint(Array.from(vector), id)
-  _ids.add(id)
 
 remove(id):
-  if !_ids.has(id) → return   (safe no-op)
-  _index.markDelete(id)   ← soft delete (hnswlib feature, no memory freed)
+  if !_ids.has(id) → return
+  _index.markDelete(id)   ← soft delete
   _ids.delete(id)
 
 search(query, k):
-  if !_index || _ids.size === 0 → []
   actualK = min(k, _ids.size)
-  result = _index.searchKnn(Array.from(query), actualK)
-  → [{ id, score: 1 - result.distances[i] }]
-    ← cosine distance [0,2] → score [-1,1] with 1=identical
+  searchKnn(Array.from(query), actualK)
+  → [{ id, score: 1 - distances[i] }]
 
-save(path):
-  if _ids.size === 0 → skip (don't write empty index files)
-  _index.writeIndexSync(path)
-
+save(path):    writeIndexSync (skip if empty)
 tryLoad(path, expectedCount): boolean
-  if !existsSync(path) → false
-  _index.readIndexSync(path)
-  loadedCount = _index.getCurrentCount()
-  if loadedCount !== expectedCount:
-    this.reinit()   ← clear stale graph
-    return false    ← caller rebuilds from SQLite
-  _ids = new Set(_index.getIdsList())
-  _index.setEf(efSearch)   ← restore after load (hnswlib doesn't persist ef)
-  return true
+  readIndexSync → verify getCurrentCount() === expectedCount
+  stale → reinit() + return false
+  ok → _ids = Set(getIdsList()); setEf(); return true
 
-reinit():
-  if !_lib → throw "HNSW not initialized — call init() first"
-  _createIndex()   ← fresh empty index, same dims/params
-  ← called by: reembed service, failed tryLoad, force-init with mismatch
-
-size:        number → _ids.size
-maxElements: number → _maxElements
+reinit():     fresh empty index, same params
+size:         _ids.size
+maxElements:  _maxElements
 ```
 
 ### 12.3 HNSW Loader
 
+**File:** `src/providers/vector/hnsw-loader.ts` (86 lines)
+
 ```
-hnsw-loader.ts  [src/providers/vector/hnsw-loader.ts]
-Utilities for persisting and loading HNSW indexes to/from disk.
-Extracted from initializer.ts to keep vector I/O in the providers layer.
-
-hnswPath(dbPath, name): string
-  → join(dirname(dbPath), 'hnsw-{name}.index')
-  e.g. '.brainbank/brainbank.db' → '.brainbank/hnsw-code.index'
-
-countRows(db, table): number
-  → SELECT COUNT(*) as c FROM {table}
+hnswPath(dbPath, name) → join(dirname(dbPath), 'hnsw-{name}.index')
+countRows(db, table)   → SELECT COUNT(*) as c FROM {table}
 
 saveAllHnsw(dbPath, kvHnsw, sharedHnsw, privateHnsw):
-  try {
-    kvHnsw.save(hnswPath(dbPath, 'kv'))
-    for [name, { hnsw }] in sharedHnsw: hnsw.save(hnswPath(dbPath, name))
-    for [name, hnsw]   in privateHnsw: hnsw.save(hnswPath(dbPath, name))
-  } catch { /* non-fatal: next startup rebuilds from SQLite */ }
+  try/catch: non-fatal, next startup rebuilds from SQLite
 
 loadVectors(db, table, idCol, hnsw, cache):
-  SELECT {idCol}, embedding FROM {table}   ← iterate via .iterate()
-  for each row:
-    vec = new Float32Array(buf.buffer.slice(byteOffset, byteOffset + byteLength))
-    hnsw.add(vec, row[idCol])
-    cache.set(row[idCol], vec)
+  iterate SELECT {idCol}, embedding FROM {table}
+  Float32Array from Buffer (handle byteOffset)
+  hnsw.add(vec, id); cache.set(id, vec)
 
 loadVecCache(db, table, idCol, cache):
-  same as loadVectors but skips hnsw.add()
-  ← used when HNSW graph already loaded from .index file
-  ← only populates the Map<id, Float32Array> cache
+  same but skips hnsw.add()  ← HNSW already loaded from file
 ```
 
 ### 12.4 Embedding Providers
 
-All implement `EmbeddingProvider`:
-
+All implement:
 ```typescript
 interface EmbeddingProvider {
     readonly dims: number
@@ -2009,91 +1516,37 @@ interface EmbeddingProvider {
 LocalEmbedding  [src/providers/embeddings/local-embedding.ts]
   model:   Xenova/all-MiniLM-L6-v2 (quantized WASM, ~23MB)
   dims:    384
-  cache:   .model-cache/ (downloaded on first use)
-  offline: no API key, runs entirely in-process
-
-  _getPipeline() [lazy singleton, promise-deduped]:
-    if _pipeline → return it
-    if _pipelinePromise → await it (dedup concurrent callers)
-    _pipelinePromise = async () => {
-      { pipeline, env } = await import('@xenova/transformers')
-      env.cacheDir = '.model-cache'
-      pipeline('feature-extraction', modelName, { quantized: true })
-    }
-
-  embed(text):
-    pipe(text, { pooling:'mean', normalize:true }) → output.data
-
-  embedBatch(texts):
-    BATCH_SIZE = 32
-    for each batch: pipe(batch, ...) → output.data (flat Float32Array)
-    for j in batch: output.data.slice(j*dims, (j+1)*dims)
-    ← MUST slice, not view: pipeline may reuse the underlying buffer
-
+  cache:   .model-cache/
+  Lazy singleton pipeline, promise-deduped
+  embedBatch: BATCH_SIZE=32, output.data.slice() per item
 
 OpenAIEmbedding({ apiKey?, model='text-embedding-3-small', dims?, baseUrl?, timeout=30s })
   dims: 1536 (3-small) | 3072 (3-large) | 1536 (ada-002)
-  custom dims only supported on text-embedding-3-*
+  Custom dims only on text-embedding-3-*
+  MAX_BATCH=100, BATCH_DELAY_MS=100
+  Token-limit retry: batch>1 → retry individually at 8k chars; single → 6k, max 1 retry
 
-  embedBatch:
-    MAX_BATCH = 100, BATCH_DELAY_MS = 100
-    chunk input, 100ms pause between chunks
-    POST /v1/embeddings { model, input, dimensions? }
-    response: { data: [{embedding: number[], index}] }
-    sort by index → Float32Array[]
-
-  token-limit retry logic:
-    400 + "maximum context length" / "maximum input length":
-      batch > 1 → retry each item individually at slice(0, 8000)
-      single    → retry at slice(0, 6000), max 1 retry
-
-
-PerplexityEmbedding({ apiKey?, model='pplx-embed-v1-4b', dims?, baseUrl?, timeout=30s })
-  dims: 2560 (4b) | 1024 (0.6b)
-  Matryoshka: custom dims via body.dimensions
-
-  Response: base64-encoded signed int8 vectors
-  decodeBase64Int8(b64, expectedDims):
-    atob(b64) → binary string
-    Int8Array: charCode << 24 >> 24   ← sign-extend each byte
-    → Float32Array (cast int8 values, do not normalize)
-
+PerplexityEmbedding({ apiKey?, model='pplx-embed-v1-4b', dims?, ... })
+  dims: 2560 (4b) | 1024 (0.6b), Matryoshka support
+  decodeBase64Int8(b64, dims): atob → Int8Array → Float32Array
 
 PerplexityContextEmbedding({ apiKey?, model='pplx-embed-context-v1-4b', dims?, ... })
   dims: 2560 (4b) | 1024 (0.6b)
-  endpoint: POST /v1/contextualizedembeddings
-  KEY DIFFERENCE: input is string[][] (documents × chunks)
-    chunks in same "document" share context → better retrieval quality
+  Input: string[][] (documents × chunks) — chunks share context
+  embed(text) → [[text]], embedBatch(texts) → splitIntoDocuments (80k char/doc)
+  Response: nested { data: [{ data: [{ embedding }] }] } → flattenContextResponse
 
-  embed(text):    wraps as [[text]]   (single doc, single chunk)
-  embedBatch(texts):
-    splitIntoDocuments(texts):
-      MAX_CHARS_PER_DOC = 80_000 (~20k tokens at ~4 chars/token)
-      if adding text exceeds limit → push current doc, start new
-    for each sub-doc: _request([[...texts]])
-  Response: { data: [{ index, data: [{ index, embedding }] }] }
-  flattenContextResponse(): sort docs by index → sort chunks by index
-                             → flat Float32Array[] via decodeBase64Int8
+resolveEmbedding(key):  [src/providers/embeddings/resolve.ts]
+  'local' → LocalEmbedding, 'openai' → OpenAIEmbedding,
+  'perplexity' → PerplexityEmbedding, 'perplexity-context' → PerplexityContextEmbedding
 
-
-Provider resolution:  [src/providers/embeddings/resolve.ts]
-  resolveEmbedding(key):
-    'local'              → new LocalEmbedding()
-    'openai'             → new OpenAIEmbedding()
-    'perplexity'         → new PerplexityEmbedding()
-    'perplexity-context' → new PerplexityContextEmbedding()
-    default              → new LocalEmbedding()
-
-  providerKey(p: EmbeddingProvider): EmbeddingKey
-    p.constructor.name:
-      'OpenAIEmbedding'             → 'openai'
-      'PerplexityEmbedding'         → 'perplexity'
-      'PerplexityContextEmbedding'  → 'perplexity-context'
-      anything else                 → 'local'
-    ← stored in embedding_meta for auto-resolution on next startup
+providerKey(p):  [src/lib/provider-key.ts]
+  constructor.name → canonical key: 'local'|'openai'|'perplexity'|'perplexity-context'
 ```
 
 ### 12.5 Rerankers
+
+**File:** `src/providers/rerankers/qwen3-reranker.ts` (170 lines)
 
 ```typescript
 interface Reranker {
@@ -2104,29 +1557,19 @@ interface Reranker {
 
 ```
 Qwen3Reranker({ modelUri?, cacheDir?, contextSize=2048 })
-  [src/providers/rerankers/qwen3-reranker.ts]
-  model:   Qwen3-Reranker-0.6B-Q8_0 (~640MB GGUF, auto-downloaded from HuggingFace)
-  engine:  node-llama-cpp (optional peer dependency)
-  cache:   ~/.cache/brainbank/models/
+  model:  Qwen3-Reranker-0.6B-Q8_0 (~640MB GGUF, HuggingFace auto-download)
+  engine: node-llama-cpp (optional peer dep)
+  cache:  ~/.cache/brainbank/models/
 
   _ensureLoaded() [lazy, singleton, promise-deduped]:
-    getLlama() → llama engine
-    resolveModelFile(modelUri, cacheDir) → local path (downloads if needed)
-    llama.loadModel({ modelPath })
-    model.createRankingContext({ contextSize, flashAttention: true })
-      fallback without flashAttention if not supported by GPU
+    getLlama() → loadModel() → createRankingContext({ flashAttention: true })
+    fallback without flashAttention if unsupported
 
   rank(query, documents):
-    1. deduplicate: Set(documents) → uniqueTexts (score each unique text once)
-    2. truncate each doc to context budget:
-         queryTokens = model.tokenize(query).length
-         maxDocTokens = contextSize - 200 - queryTokens
-         if tokens > max: model.detokenize(tokens.slice(0, maxDocTokens))
-    3. context.rankAll(query, truncated) → scores[]
-    4. build Map<text, score> from uniqueTexts + scores
-    5. return scores in original document order (handles duplicates correctly)
-
-  close(): dispose context + dispose model
+    deduplicate identical texts → score each unique once
+    truncate to context budget: contextSize - 200 - queryTokens
+    context.rankAll(query, truncated) → scores[]
+    map back to original order
 ```
 
 ---
@@ -2135,152 +1578,109 @@ Qwen3Reranker({ modelUri?, cacheDir?, contextSize=2048 })
 
 ### 13.1 Watch Service
 
+**File:** `src/services/watch.ts` (222 lines)
+
 ```
-Watcher  [src/services/watch.ts]
-
-new Watcher(reindexFn, indexers: Map<string,Plugin>, repoPath, options)
+Watcher(reindexFn, indexers: Map<string,Plugin>, repoPath, options)
   { paths?, debounceMs=2000, onIndex?, onError? }
-         │
-         ├── _collectCustomPatterns():
-         │     for each isWatchable plugin in indexers.values():
-         │       _customPatterns.push({ indexer, patterns: plugin.watchPatterns() })
-         │
-         ├── _startWatching():
-         │     for each path in paths:
-         │       supportsRecursive = mac or win
-         │       fs.watch(path, { recursive }, (_event, filename) => {
-         │         if !active || !filename → skip
-         │         if !_shouldWatch(filename) → skip
-         │         _pending.add(filename)
-         │         clearTimeout + setTimeout(_processPending, debounceMs)
-         │       })
-         │
-         ├── _shouldWatch(filename):
-         │     parts = filename.split(path.sep)
-         │     any part in IGNORE_DIRS → false
-         │     basename in IGNORE_FILES → false
-         │     isSupported(filename) → true   (code file extension)
-         │     matchCustomPlugin(resolve(repoPath, filename)) → true
-         │     else → false
-         │
-         ├── _matchCustomPlugin(absPath):
-         │     rel = path.relative(repoPath, absPath)
-         │     for { indexer, patterns }:
-         │       _matchGlob(rel, pattern):
-         │         '**/ext' → filePath.endsWith(ext)
-         │         '*.ext'  → filePath.endsWith(ext)
-         │         else     → filePath === pattern
-         │     → Plugin | null
-         │
-         └── _processPending() [serialized via _flushing flag]:
-               files = [...pending]; pending.clear()
-               needsReindex = false
-               for each file:
-                 absPath = resolve(repoPath, file)
-                 customIndexer = _matchCustomPlugin(absPath)
-                 if customIndexer && isWatchable:
-                   handled = await customIndexer.onFileChange(absPath, detectEvent(absPath))
-                   detectEvent: try accessSync → 'update', catch → 'delete'
-                   if handled: onIndex(file, indexer.name); continue
-                 if isSupported(file):
-                   needsReindex = true
-                   onIndex(file, 'code')
-               if needsReindex: await reindexFn()
-               if pending.size > 0:
-                 timer = setTimeout(_processPending, debounceMs)
 
-Watcher.close()  → active=false, clearTimeout, close all fs.FSWatcher instances
-Watcher.active   → boolean (getter)
+  _collectCustomPatterns(): isWatchable plugins → { indexer, patterns }
+  _startWatching():
+    fs.watch(path, { recursive: mac/win }, (event, filename) => {
+      if !_shouldWatch(filename) → skip
+      _pending.add(filename)
+      clearTimeout + setTimeout(_processPending, debounceMs)
+    })
+
+  _shouldWatch(filename):
+    any path segment in IGNORE_DIRS → false
+    basename in IGNORE_FILES → false
+    isSupported(filename) → true
+    matchCustomPlugin → true
+
+  _processPending() [serialized via _flushing flag]:
+    for each file:
+      customIndexer = _matchCustomPlugin(absPath)
+      if custom + isWatchable: onFileChange(absPath, 'update'|'delete')
+      if isSupported(file): needsReindex = true
+    if needsReindex: await reindexFn()
+      catch → re-queue code files for retry
+
+  _matchGlob:
+    '**/ext' → endsWith(ext)
+    '*.ext'  → endsWith(ext)
+    else     → exact match
 ```
 
 ### 13.2 Reembed Engine
 
-**Pattern: Atomic Swap — old data untouched until all new vectors are ready.**
+**File:** `src/engine/reembed.ts` (219 lines)
+**Pattern:** Atomic Swap
 
 ```
 reembedAll(db, embedding, hnswMap, plugins, options?, persist?)
-  [src/engine/reembed.ts]
-         │
-         ├── collectTables(plugins):
-         │     for each isReembeddable plugin: byVectorTable.set(vectorTable, config)
-         │     CORE_TABLES (not plugin-owned, always included):
-         │       kv: kv_data → kv_vectors (fkColumn: data_id)
-         │           textBuilder: (r) => String(r.content)
-         │       memory: memory_patterns → memory_vectors (fkColumn: pattern_id)
-         │           textBuilder: (r) => "${task_type} ${task} ${approach}"
-         │     deduplicates by vectorTable (multi-repo plugins share same table)
-         │
-         ├── for each table:
-         │     exists? SELECT COUNT(*) FROM sqlite_master WHERE name=textTable → skip if 0
-         │     totalCount = SELECT COUNT(*) FROM textTable
-         │     if totalCount === 0 → skip
-         │
-         │     PHASE 1 — build new vectors in temp table (safe, old data untouched):
-         │       tempTable = '_reembed_{vectorTable}'
-         │       DROP TABLE IF EXISTS {tempTable}
-         │       CREATE TABLE {tempTable} AS SELECT * FROM {vectorTable} WHERE 0
-         │       for offset 0..total step batchSize:
-         │         SELECT * FROM textTable LIMIT batchSize OFFSET offset
-         │         texts = rows.map(r => table.textBuilder(r))
-         │         vectors = await embedding.embedBatch(texts)
-         │         TRANSACTION: INSERT INTO temp (fk, embedding) per item
-         │         onProgress(tableName, processed, total)
-         │       ← if embedBatch fails mid-batch: old data intact, temp partial
-         │
-         │     PHASE 2 — atomic swap:
-         │       TRANSACTION:
-         │         DELETE FROM {vectorTable}
-         │         INSERT INTO {vectorTable} SELECT * FROM temp
-         │       ← all-or-nothing: if fails, old data restored (SQLite txn)
-         │
-         │     finally: DROP TABLE IF EXISTS {tempTable}   ← always clean up
-         │
-         │     rebuildHnsw(db, table, entry.hnsw, entry.vecs):
-         │       vecs.clear(); hnsw.reinit()
-         │       SELECT {fkColumn} as id, embedding FROM {vectorTable}
-         │       for each row:
-         │         vec = new Float32Array from Buffer (handle byteOffset correctly)
-         │         hnsw.add(vec, id); vecs.set(id, vec)
-         │
-         ├── UPSERT embedding_meta: provider, dims, reembedded_at
-         │
-         └── if persist:
-               setEmbeddingMeta(db, embedding)   ← update provider_key too
-               saveAllHnsw(persist.dbPath, persist.kvHnsw, persist.sharedHnsw, new Map())
 
-returns ReembedResult: { counts: Record<string, number>, total: number }
-  counts keys: 'code', 'git', 'docs', 'kv', 'memory' (only tables with data)
+  collectTables(plugins):
+    for each isReembeddable plugin: plugin.reembedConfig()
+    CORE_TABLES (always included, not plugin-owned):
+      'kv':     kv_data → kv_vectors, textBuilder: String(r.content)
+      'memory': memory_patterns → memory_vectors, textBuilder: "{task_type} {task} {approach}"
+    deduplicates by vectorTable (multi-repo plugins share same table)
+
+  for each table:
+    skip if table doesn't exist or totalCount === 0
+
+    PHASE 1 — build new vectors in temp table (old data untouched):
+      tempTable = '_reembed_{vectorTable}'
+      CREATE TABLE temp AS SELECT * FROM vec WHERE 0
+      for offset 0..total step batchSize(50):
+        SELECT * FROM textTable LIMIT batchSize OFFSET offset
+        texts = rows.map(textBuilder)
+        vectors = await embedding.embedBatch(texts)
+        TRANSACTION: INSERT INTO temp per item
+      ← if embedBatch fails mid-batch: old data intact
+
+    PHASE 2 — atomic swap:
+      TRANSACTION:
+        DELETE FROM vectorTable
+        INSERT INTO vectorTable SELECT * FROM temp
+      ← all-or-nothing
+
+    finally: DROP TABLE IF EXISTS temp   ← always cleanup
+
+    rebuildHnsw(db, table, entry.hnsw, entry.vecs):
+      vecs.clear(); hnsw.reinit()
+      SELECT fk, embedding FROM vectorTable
+      hnsw.add(vec, id); vecs.set(id, vec)
+
+  setEmbeddingMeta(db, embedding)
+  saveAllHnsw(persist.dbPath, ...) if persist provided
+
+→ ReembedResult: { counts: Record<string, number>, total: number }
 ```
 
 ### 13.3 EmbeddingMeta
 
+**File:** `src/db/embedding-meta.ts` (74 lines)
+
 ```
 embedding_meta table (key/value):
   'provider'     → 'LocalEmbedding' | 'OpenAIEmbedding' | ...
-  'dims'         → '384' | '1536' | '2560' | ...
+  'dims'         → '384' | '1536' | '2560'
   'provider_key' → 'local' | 'openai' | 'perplexity' | 'perplexity-context'
   'indexed_at'   → ISO timestamp
 
 setEmbeddingMeta(db, embedding):
-  UPSERT all four keys using embedding.constructor.name and providerKey(embedding)
+  UPSERT all four keys
 
 getEmbeddingMeta(db): EmbeddingMeta | null
-  SELECT each key individually
-  return null if provider or dims row missing
+  SELECT each key; null if provider or dims missing
 
 detectProviderMismatch(db, embedding):
   meta = getEmbeddingMeta(db)
-  if !meta → null  (first run, no stored data)
-  currentName = embedding.constructor.name
-  mismatch = meta.dims !== embedding.dims || meta.provider !== currentName
-  → { mismatch: boolean, stored: 'LocalEmbedding/384', current: 'OpenAIEmbedding/1536' }
-
-Startup behavior (earlyInit):
-  mismatch + !force → db.close() + throw
-    "BrainBank: Embedding dimension mismatch (stored: X/384, current: Y/1536).
-     Run brain.reembed() to re-index with the new provider, or switch back."
-  mismatch + force  → skipVectorLoad = true
-    ← allows init with wrong dims for the reembed() flow
+  null → first run, no mismatch
+  mismatch = meta.dims !== embedding.dims || meta.provider !== constructor.name
+  → { mismatch: boolean, stored: "X/384", current: "Y/1536" }
 ```
 
 ---
@@ -2289,275 +1689,164 @@ Startup behavior (earlyInit):
 
 ### 14.1 IndexAPI
 
-```
-IndexAPI({ registry, gitDepth, emit })  [src/engine/index-api.ts]
+**File:** `src/engine/index-api.ts` (124 lines)
 
-index({ modules?, gitDepth?, forceReindex?, onProgress? })
-  want = new Set(modules ?? ['code', 'git', 'docs'])
+```
+IndexAPI({ registry, gitDepth, emit })
+
+index({ modules?, gitDepth?, forceReindex?, onProgress? }):
+  want = Set(modules ?? ['code', 'git', 'docs'])
 
   if want.has('code'):
-    for each mod in registry.allByType('code') that isIndexable:
-      label = mod.name === 'code' ? 'code' : mod.name
-      onProgress(label, 'Starting...')
-      r = await mod.index({ forceReindex, onProgress: (f,i,t) => onProgress(label, ...) })
-      accumulate result.code: indexed+=, skipped+=, chunks+=
+    for mod in registry.allByType('code').filter(isIndexable):
+      r = await mod.index({ forceReindex, onProgress })
+      accumulate codeAcc: indexed+=, skipped+=, chunks+=
 
   if want.has('git'):
-    for each mod in registry.allByType('git') that isIndexable:
-      r = await mod.index({ depth: gitDepth ?? config.gitDepth, onProgress: wrap })
-      accumulate result.git: indexed+=, skipped+=
+    for mod in registry.allByType('git').filter(isIndexable):
+      r = await mod.index({ depth, onProgress })
+      accumulate gitAcc
 
   if want.has('docs') && registry.has('docs'):
     docsPlugin = registry.get('docs')
-    if isDocsPlugin(docsPlugin):
-      result.docs = await docsPlugin.indexDocs({ onProgress: wrap })
+    if isDocsPlugin: docsResult = await docsPlugin.indexDocs(...)
 
-  for each custom plugin NOT in {'code','git','docs'} that isIndexable:
-    r = await mod.index({ onProgress: wrap })
-    result[mod.name] = r
+  for custom plugin NOT in {code,git,docs} that isIndexable:
+    extras[mod.name] = await mod.index(...)
 
   emit('indexed', result)
-  → { code?, git?, docs?, [customName]? }
 
-indexCode({ forceReindex?, onProgress? })
-  mods = registry.allByType('code').filter(isIndexable)
-  if !mods.length → throw "BrainBank: Indexer 'code' is not loaded. Add .use(code())"
-  accumulate → { indexed, skipped, chunks }
-
-indexGit({ depth?, onProgress? })
-  mods = registry.allByType('git').filter(isIndexable)
-  if !mods.length → throw "BrainBank: Indexer 'git' is not loaded. Add .use(git())"
-  accumulate → { indexed, skipped }
 ```
 
 ### 14.2 SearchAPI
 
+**File:** `src/engine/search-api.ts` (144 lines)
+
 ```
 SearchAPI({ search?, bm25?, registry, config, kvService, contextBuilder? })
-  [src/engine/search-api.ts]
 
-NOTE: SearchAPI is ALWAYS created even when search is undefined.
-      BrainBank can unconditionally delegate to it.
+NOTE: Always created (even if search === undefined).
+BrainBank unconditionally delegates to it.
 
-getContext(task, options?):
-  if !contextBuilder → return ''
-  → contextBuilder.build(task, options)
-
-search(query, options?):
-  lists = []
-  if search: lists.push(await search.search(query, options))
-  else if registry.has('docs'): lists.push(await _collectDocs(query, { k:8 }))
-  lists.push(...await _collectCustomPlugins(query, options))
-  if lists.length === 0 → []
-  if lists.length === 1 → lists[0]
-  → reciprocalRankFusion(lists)
-
-hybridSearch(query, options?):
-  [see §11.4 for full flow]
-
-searchBM25(query, options?):
-  → bm25?.search(query, options) ?? []
-
-rebuildFTS():
-  → bm25?.rebuild?.()
-
-_collectDocs(query, options?):
-  plugin = registry.firstByType(PLUGIN.DOCS)
-  if !plugin || !isSearchable(plugin) → []
-  → plugin.search(query, options)
-
-_collectCustomPlugins(query, options?):
-  builtinTypes = { 'code', 'git', 'docs' }
-  for each mod in registry.all NOT in builtinTypes that isSearchable:
-    hits = await mod.search(query, options)
-    if hits.length > 0: lists.push(hits)
-  → SearchResult[][]
-
-_collectKvCollections(query, sources: Record<string, number>):
-  reserved = { 'code', 'git', 'docs' }
-  for [name, k] in sources NOT in reserved:
-    hits = await kvService.collection(name).searchAsResults(query, k)
-    if hits.length > 0: lists.push(hits)
-  → SearchResult[][]
+getContext(task, options?) → contextBuilder?.build(task, options) ?? ''
+search(query, options?)   → vector search + custom plugins → RRF if multiple
+hybridSearch(query, opts?) → [see §11.4]
+searchBM25(query, opts?)   → bm25?.search(query, options) ?? []
+rebuildFTS()               → bm25?.rebuild?.()
 ```
 
 ### 14.3 SearchFactory
 
+**File:** `src/engine/search-factory.ts` (74 lines)
+
 ```
-createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw)
-  [src/engine/search-factory.ts]
-  → SearchAPI | undefined
-
-  codeMod = sharedHnsw.get(PLUGIN.CODE)   ← set by CodePlugin.initialize()
-  gitMod  = sharedHnsw.get(PLUGIN.GIT)    ← set by GitPlugin.initialize()
-  memPlugin = registry.firstByType(PLUGIN.MEMORY)
-  memMod    = memPlugin && isHnswPlugin(memPlugin) ? memPlugin : undefined
-
-  if !codeMod && !gitMod && !memMod → return undefined
-    ← no CompositeVectorSearch possible; SearchAPI returns undefined
-    ← BrainBank._searchAPI = undefined (docs-only mode still works via SearchAPI)
+createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw):
+  codeMod = sharedHnsw.get('code')
+  gitMod  = sharedHnsw.get('git')
+  memPlugin = registry.firstByType('memory')
+  memMod = isHnswPlugin(memPlugin) ? memPlugin : undefined
 
   code     = codeMod ? new CodeVectorSearch({ db, hnsw, vecs }) : undefined
   git      = gitMod  ? new GitVectorSearch({ db, hnsw }) : undefined
   patterns = memMod  ? new PatternVectorSearch({ db, hnsw, vecs }) : undefined
 
-  search = new CompositeVectorSearch({ code, git, patterns, embedding })
-  bm25   = new KeywordSearch(db)
+  hasAnyStrategy = codeMod || gitMod || memMod
+  search = hasAnyStrategy
+    ? new CompositeVectorSearch({ code, git, patterns, embedding })
+    : undefined
 
-  gitPlugin = registry.firstByType(PLUGIN.GIT)
-  coEdits   = isCoEditPlugin(gitPlugin) ? gitPlugin.coEdits : undefined
+  bm25 = new KeywordSearch(db)
+
+  gitPlugin = registry.firstByType('git')
+  coEdits = isCoEditPlugin(gitPlugin) ? gitPlugin.coEdits : undefined
   codeGraph = new SqlCodeGraphProvider(db)
-  docsSearch = async (query, opts?) => { ... }
+  docsSearch = (query, opts?) => registry.firstByType('docs')?.search(query, opts) ?? []
 
   contextBuilder = new ContextBuilder(search, coEdits, codeGraph, docsSearch)
 
-  return new SearchAPI({
-    search, bm25, registry, config, kvService, contextBuilder
-  })
+  return new SearchAPI({ search, bm25, registry, config, kvService, contextBuilder })
 ```
 
 ---
 
 ## 15. CLI Layer
 
-**Pattern: Command + Factory**
+**Files:** `src/cli/` — `index.ts`, `utils.ts`, `factory/`, `commands/`
 
 ### 15.1 CLI Factory — createBrain()
 
 ```
 createBrain(repoPath?)  [src/cli/factory/index.ts]
-         │
-         ├── rp = repoPath ?? getFlag('repo') ?? '.'
-         ├── config = await loadConfig()
-         │     searches .brainbank/ for: config.json, config.ts, config.js, config.mjs
-         │     JSON → JSON.parse; others → dynamic import (mod.default ?? mod)
-         │     cached in module-level _configCache (reset via resetConfigCache())
-         │
-         ├── folderPlugins = await discoverFolderPlugins()
-         │     reads .brainbank/plugins/*.ts|js|mjs (sorted)
-         │     for each file: dynamic import → must export default Plugin with .name
-         │     warns "⚠ {file}: must export a default Plugin" on bad exports
-         │     cached in _folderPluginsCache
-         │
-         ├── brainOpts = { repoPath: rp, ...(config.brainbank ?? {}) }
-         │   if config.maxFileSize: brainOpts.maxFileSize = ...
-         │
-         ├── setupProviders(brainOpts, config):
-         │     rerankerFlag = getFlag('reranker') ?? config.reranker
-         │       'qwen3' → brainOpts.reranker = new Qwen3Reranker()
-         │     embFlag = getFlag('embedding') ?? config.embedding ?? BRAINBANK_EMBEDDING env
-         │       if set → provider = await resolveEmbeddingKey(embFlag)
-         │                brainOpts.embeddingProvider = provider
-         │                brainOpts.embeddingDims = provider.dims
-         │
-         ├── brain = new BrainBank(brainOpts)
-         │
-         ├── builtins = config.plugins ?? ['code', 'git', 'docs']
-         ├── registerBuiltins(brain, rp, builtins, config):
-         │     resolvedRp = path.resolve(rp)
-         │     hasRootGit = existsSync(join(resolvedRp, '.git'))
-         │     gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp) : []
-         │       ← dirs not starting with '.' or 'node_modules' that have own .git
-         │
-         │     codeEmb = config.code?.embedding ? resolveEmbeddingKey(...) : undefined
-         │     gitEmb  = config.git?.embedding  ? ...
-         │     docsEmb = config.docs?.embedding ? ...
-         │     ignoreFlag = getFlag('ignore')
-         │     mergedIgnore = [...(config.code?.ignore ?? []), ...(cliIgnore)]
-         │
-         │     loadCodePlugin() ← try import('@brainbank/code'), null if not installed
-         │     loadGitPlugin()  ← try import('@brainbank/git'),  null if not installed
-         │     loadDocsPlugin() ← try import('@brainbank/docs'), null if not installed
-         │     warn "⚠ @brainbank/X not installed" if in builtins but null
-         │
-         │     if gitSubdirs.length > 0 (multi-repo mode):
-         │       log "Multi-repo: found N git repos: ..."
-         │       for each sub:
-         │         codeFactory({ repoPath:sub.path, name:'code:{sub.name}', embeddingProvider:codeEmb, ... })
-         │         gitFactory({ repoPath:sub.path, name:'git:{sub.name}', embeddingProvider:gitEmb, ... })
-         │     else (single repo):
-         │       codeFactory({ repoPath:rp, embeddingProvider:codeEmb, maxFileSize, ignore })
-         │       gitFactory({ embeddingProvider:gitEmb, depth, maxDiffBytes })
-         │     docsFactory({ embeddingProvider:docsEmb })
-         │
-         ├── for each folderPlugin: brain.use(plugin)
-         ├── for each config.indexers: brain.use(plugin)
-         │
-         └── return brain   ← NOT yet initialized, .use() still allowed
-
-registerConfigCollections(brain, config):
-  collections = config?.docs?.collections
-  if !collections → return
-  docsPlugin = brain.docs
-  if !docsPlugin?.addCollection → return
-  for each coll:
-    absPath = path.resolve(coll.path)
-    docsPlugin.addCollection({ name, path:absPath, pattern??'**/*.md', ignore, context })
-    try/catch: skip if already registered (INSERT OR REPLACE handles it)
+  rp = repoPath ?? getFlag('repo') ?? '.'
+  config = await loadConfig()   ← .brainbank/{config.json|.ts|.js|.mjs}
+  folderPlugins = await discoverFolderPlugins()  ← .brainbank/plugins/*.ts|js|mjs
+  brainOpts = { repoPath: rp, ...(config?.brainbank ?? {}) }
+  setupProviders(brainOpts, config):
+    --reranker qwen3 → Qwen3Reranker
+    --embedding | config.embedding | BRAINBANK_EMBEDDING → resolveEmbeddingKey
+  brain = new BrainBank(brainOpts)
+  builtins = config?.plugins ?? ['code', 'git', 'docs']
+  registerBuiltins(brain, rp, builtins, config):
+    multi-repo detection: detectGitSubdirs() if no root .git
+    per-plugin embedding: config.code.embedding, config.git.embedding, etc.
+    merge ignore: config.code.ignore + --ignore flag via picomatch
+    loadCodePlugin/loadGitPlugin/loadDocsPlugin (dynamic import, null if not installed)
+    multi-repo → code:{sub.name}, git:{sub.name} per subdirectory
+    single → code({ repoPath }), git(), docs()
+  for plugin in folderPlugins: brain.use(plugin)
+  for plugin in config?.indexers: brain.use(plugin)
+  return brain   ← NOT initialized, .use() still allowed
 ```
 
-**Config priority (highest to lowest):**
-
-```
-1. CLI flags:    --embedding openai, --reranker qwen3, --ignore "sdk/**"
-2. config.json:  .brainbank/config.json (or .ts/.js/.mjs)
-3. DB meta:      embedding_meta table → auto-resolve provider on restart
-4. Defaults:     local embedding, 384d, no reranker
-```
+**Config priority:** CLI flags > config.json > DB meta > defaults
 
 ### 15.2 Commands
 
-| Command | Handler | Description |
-|---------|---------|-------------|
-| `index [path]` | `cmdIndex` | Interactive: scan → checkbox prompt → index |
+| Command | Handler | Notes |
+|---------|---------|-------|
+| `index [path]` | `cmdIndex` | Interactive: scanRepo → checkbox prompt → index |
 | `collection add/list/remove` | `cmdCollection` | Manage doc collections via DocsPlugin |
-| `kv add/search/list/trim/clear` | `cmdKv` | KV store operations |
-| `docs [--collection name]` | `cmdDocs` | Index doc collections |
-| `dsearch <query>` | `cmdDocSearch` | Search docs only |
+| `kv add/search/list/trim/clear` | `cmdKv` | KV store CRUD |
+| `docs [--collection]` | `cmdDocs` | Index doc collections |
+| `dsearch <query>` | `cmdDocSearch` | Docs-only search |
 | `search <query>` | `cmdSearch` | Vector search |
-| `hsearch <query>` | `cmdHybridSearch` | Hybrid search (best quality) |
-| `ksearch <query>` | `cmdKeywordSearch` | BM25 keyword search |
-| `context <task>` | `cmdContext` | Get formatted LLM context |
-| `context add/list` | `cmdContext` | Manage path contexts |
-| `stats` | `cmdStats` | Show index statistics |
+| `hsearch <query>` | `cmdHybridSearch` | Hybrid (best quality) |
+| `ksearch <query>` | `cmdKeywordSearch` | BM25 keyword |
+| `context <task>` | `cmdContext` | Formatted LLM context |
+| `context add/list` | `cmdContext` | Path context management |
+| `stats` | `cmdStats` | Index statistics |
 | `reembed` | `cmdReembed` | Re-generate all vectors |
-| `watch` | `cmdWatch` | File watch + auto-reindex |
-| `serve` | `cmdServe` | Start MCP server (stdio) |
+| `watch` | `cmdWatch` | fs.watch auto-reindex |
+| `serve` | `cmdServe` | MCP server (imports @brainbank/mcp) |
 
 **Dynamic source flags in search commands:**
 
 ```
-parseSourceFlags():
-  any --<name> <number> flag is treated as a source filter:
-    --code 10    → sources.code = 10
-    --git 0      → sources.git = 0 (skip git)
-    --docs 5     → sources.docs = 5
-    --notes 10   → sources.notes = 10 (KV collection)
+Any --<name> <number> is treated as a source filter:
+  --code 10, --git 0, --docs 5, --notes 10 (KV collection)
+NON_SOURCE_FLAGS excluded: repo, depth, collection, pattern, etc.
+```
 
-NON_SOURCE_FLAGS (value flags, not source filters):
-  repo, depth, collection, pattern, context, name, keep,
-  reranker, only, docs-path, mode, limit, ignore, meta, k, yes, y, force, verbose
+**scan.ts** — lightweight repo scanner (no BrainBank init):
 
-
-scan.ts (no BrainBank init required):
-  scanRepo(repoPath) → ScanResult:
-    { repoPath, code: { total, byLanguage },
-      git: { commitCount, lastMessage, lastDate } | null,
-      docs: [{ name, path, fileCount }],
-      config: { exists, ignore?, plugins? },
-      db: { exists, sizeMB, lastModified? } | null,
-      gitSubdirs: [{ name }] }
-  Used by cmdIndex to render tree + checkbox prompt before any indexing
+```
+scanRepo(repoPath) → ScanResult:
+  { repoPath, code: { total, byLanguage },
+    git: { commitCount, lastMessage, lastDate } | null,
+    docs: [{ name, path, fileCount }],
+    config: { exists, ignore?, plugins? },
+    db: { exists, sizeMB, lastModified? },
+    gitSubdirs: [{ name }] }
 ```
 
 ---
 
 ## 16. SQLite Schema
 
-```
-SCHEMA_VERSION = 6  [src/db/schema.ts]
+**File:** `src/db/schema.ts` — `SCHEMA_VERSION = 6`
 
-━━━ CODE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+━━━ CODE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 indexed_files
   file_path TEXT PRIMARY KEY
@@ -2568,13 +1857,10 @@ code_chunks
   id INTEGER PRIMARY KEY AUTOINCREMENT
   file_path TEXT NOT NULL              ← idx_cc_file
   chunk_type TEXT                      ← 'file'|'function'|'class'|'method'|'interface'|'block'
-  name TEXT                            ← function/class name; NULL for generic blocks
-  start_line INTEGER
-  end_line INTEGER
-  content TEXT
-  language TEXT
-  file_hash TEXT
-  indexed_at INTEGER
+  name TEXT
+  start_line INTEGER, end_line INTEGER
+  content TEXT, language TEXT
+  file_hash TEXT, indexed_at INTEGER
 
 code_vectors
   chunk_id INTEGER PRIMARY KEY REFERENCES code_chunks(id) ON DELETE CASCADE
@@ -2583,85 +1869,67 @@ code_vectors
 code_imports
   file_path TEXT NOT NULL
   imports_path TEXT NOT NULL
-  PRIMARY KEY (file_path, imports_path)
-  ← idx_ci_imports on imports_path (reverse lookup: who imports X?)
+  PRIMARY KEY (file_path, imports_path)     ← idx_ci_imports on imports_path
 
 code_symbols
   id INTEGER PRIMARY KEY AUTOINCREMENT
-  file_path TEXT     ← idx_cs_file, idx_cs_name
-  name TEXT          ← 'ClassName.methodName' for methods
-  kind TEXT          ← 'function'|'class'|'method'|'variable'|'interface'
-  line INTEGER
+  file_path TEXT   ← idx_cs_file, idx_cs_name
+  name TEXT, kind TEXT, line INTEGER
   chunk_id INTEGER REFERENCES code_chunks(id) ON DELETE CASCADE
 
 code_refs
   chunk_id INTEGER REFERENCES code_chunks(id) ON DELETE CASCADE  ← idx_cr_chunk
   symbol_name TEXT  ← idx_cr_symbol
-  ← no UNIQUE: same chunk can call same symbol multiple times
 
-fts_code (FTS5 virtual, content='code_chunks', content_rowid='id')
+fts_code (FTS5, content='code_chunks', content_rowid='id')
   columns: file_path, name, content
-  tokenizer: porter unicode61
-  BM25 weights: file_path×5, name×3, content×1
-  triggers: trg_fts_code_insert (AFTER INSERT), trg_fts_code_delete (AFTER DELETE)
+  tokenize: 'porter unicode61'
+  triggers: trg_fts_code_insert, trg_fts_code_delete
 
 
-━━━ GIT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GIT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 git_commits
   id INTEGER PRIMARY KEY AUTOINCREMENT
-  hash TEXT UNIQUE NOT NULL  ← idx_gc_hash
-  short_hash TEXT
-  message TEXT
-  author TEXT
-  date TEXT
-  timestamp INTEGER   ← idx_gc_ts DESC (for recency queries)
-  files_json TEXT     ← JSON array of changed file paths
-  diff TEXT           ← truncated to maxDiffBytes; NULL if empty
-  additions INTEGER
-  deletions INTEGER
-  is_merge INTEGER    ← 0|1; merge commits excluded from vector + BM25 search
+  hash TEXT UNIQUE NOT NULL   ← idx_gc_hash
+  short_hash TEXT, message TEXT, author TEXT, date TEXT
+  timestamp INTEGER           ← idx_gc_ts DESC
+  files_json TEXT, diff TEXT
+  additions INTEGER, deletions INTEGER, is_merge INTEGER
 
 git_vectors
   commit_id INTEGER PRIMARY KEY REFERENCES git_commits(id) ON DELETE CASCADE
   embedding BLOB
 
 commit_files
-  commit_id INTEGER REFERENCES git_commits(id)  ← idx_cf_path
-  file_path TEXT
+  commit_id INTEGER REFERENCES git_commits(id)
+  file_path TEXT   ← idx_cf_path
 
 co_edits
-  file_a TEXT NOT NULL
-  file_b TEXT NOT NULL
+  file_a TEXT NOT NULL, file_b TEXT NOT NULL
   count INTEGER DEFAULT 1
-  PRIMARY KEY (file_a, file_b)
-  ← file_a < file_b always (lexicographic sort before insert)
+  PRIMARY KEY (file_a, file_b)   ← file_a < file_b always
 
 fts_commits (FTS5, content='git_commits', content_rowid='id')
   columns: message, author, diff
-  BM25 weights: message×5, author×2, diff×1
   triggers: trg_fts_commits_insert, trg_fts_commits_delete
 
 
-━━━ DOCUMENTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ DOCUMENTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 collections
   name TEXT PRIMARY KEY
-  path TEXT
-  pattern TEXT DEFAULT '**/*.md'
-  ignore_json TEXT DEFAULT '[]'
-  context TEXT
+  path TEXT, pattern TEXT DEFAULT '**/*.md'
+  ignore_json TEXT DEFAULT '[]', context TEXT
   created_at INTEGER
 
 doc_chunks
   id INTEGER PRIMARY KEY AUTOINCREMENT
   collection TEXT REFERENCES collections(name) ON DELETE CASCADE  ← idx_dc_collection
-  file_path TEXT   ← idx_dc_file
-  title TEXT
-  content TEXT
-  seq INTEGER      ← chunk sequence within file (0, 1, 2, ...)
-  pos INTEGER      ← character position in original document
-  content_hash TEXT  ← idx_dc_hash (incremental skip check)
+  file_path TEXT  ← idx_dc_file
+  title TEXT, content TEXT
+  seq INTEGER, pos INTEGER
+  content_hash TEXT  ← idx_dc_hash
   indexed_at INTEGER
 
 doc_vectors
@@ -2669,29 +1937,22 @@ doc_vectors
   embedding BLOB
 
 path_contexts
-  collection TEXT NOT NULL
-  path TEXT NOT NULL
-  context TEXT NOT NULL
+  collection TEXT NOT NULL, path TEXT NOT NULL, context TEXT NOT NULL
   PRIMARY KEY (collection, path)
 
 fts_docs (FTS5, content='doc_chunks', content_rowid='id')
   columns: title, content, file_path, collection
-  BM25 weights: title×10, file_path×5, content×2, collection×1
   triggers: trg_fts_docs_insert, trg_fts_docs_delete
 
 
-━━━ AGENT MEMORY (pattern learning) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ AGENT MEMORY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 memory_patterns
   id INTEGER PRIMARY KEY AUTOINCREMENT
-  task_type TEXT   ← idx_mp_type
-  task TEXT
-  approach TEXT
-  outcome TEXT
+  task_type TEXT  ← idx_mp_type
+  task TEXT, approach TEXT, outcome TEXT
   success_rate REAL  ← idx_mp_success
-  critique TEXT
-  tokens_used INTEGER
-  latency_ms INTEGER
+  critique TEXT, tokens_used INTEGER, latency_ms INTEGER
   created_at INTEGER  ← idx_mp_created
 
 memory_vectors
@@ -2700,17 +1961,14 @@ memory_vectors
 
 distilled_strategies
   task_type TEXT PRIMARY KEY
-  strategy TEXT
-  confidence REAL
-  updated_at INTEGER
+  strategy TEXT, confidence REAL, updated_at INTEGER
 
 fts_patterns (FTS5, content='memory_patterns', content_rowid='id')
   columns: task_type, task, approach, critique
-  BM25 weights: task_type×3, task×5, approach×5, critique×1
   triggers: trg_fts_patterns_insert, trg_fts_patterns_delete
 
 
-━━━ KV COLLECTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ KV COLLECTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 kv_data
   id INTEGER PRIMARY KEY AUTOINCREMENT
@@ -2718,7 +1976,7 @@ kv_data
   content TEXT
   meta_json TEXT DEFAULT '{}'
   tags_json TEXT DEFAULT '[]'
-  expires_at INTEGER NULL   ← NULL = no expiry; int = unix timestamp
+  expires_at INTEGER NULL   ← NULL = no expiry
   created_at INTEGER   ← idx_kv_created DESC
 
 kv_vectors
@@ -2727,27 +1985,22 @@ kv_vectors
 
 fts_kv (FTS5, content='kv_data', content_rowid='id')
   columns: content, collection
-  BM25 weights: content×5, collection×1
   triggers: trg_fts_kv_insert, trg_fts_kv_delete
 
 
-━━━ METADATA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ METADATA ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 embedding_meta
-  key TEXT PRIMARY KEY
-  value TEXT
-  ← stores: provider, dims, provider_key, indexed_at
+  key TEXT PRIMARY KEY, value TEXT
 
 schema_version
-  version INTEGER PRIMARY KEY  ← currently 6
-  applied_at INTEGER
+  version INTEGER PRIMARY KEY, applied_at INTEGER
 
 
-FTS5 trigger pattern (identical for all tables):
-  AFTER INSERT → INSERT INTO fts_X(rowid, col1, col2, ...) VALUES (new.id, ...)
+FTS5 trigger pattern (all tables):
+  AFTER INSERT → INSERT INTO fts_X(rowid, ...) VALUES (new.id, ...)
   AFTER DELETE → INSERT INTO fts_X(fts_X, rowid, ...) VALUES ('delete', old.id, ...)
-  ← content tables: external content mode; manual sync via triggers
-  ← no UPDATE trigger: indexers delete + re-insert on file change
+  ← no UPDATE trigger: indexers delete + re-insert on change
 ```
 
 ---
@@ -2769,63 +2022,35 @@ brain.search("auth middleware")   ← auto-triggers initialize()
     │               PHASE 1 (earlyInit)                 │
     │                                                   │
     │  new Database('.brainbank/brainbank.db')          │
-    │    WAL + FK + FTS5 triggers + all tables          │
-    │                                                   │
     │  resolveStartupEmbedding → openai (explicit)      │
-    │                                                   │
-    │  detectProviderMismatch:                          │
-    │    DB: { provider:'LocalEmbedding', dims:384 }    │
-    │    current: { OpenAIEmbedding, 1536 }             │
-    │    mismatch + !force → throw (assume matches here)│
-    │                                                   │
+    │  detectProviderMismatch → check stored vs current  │
     │  setEmbeddingMeta(db, openai)                     │
-    │                                                   │
     │  new HNSWIndex(1536, 2M).init() → kvHnsw          │
-    │  new KVService(db, openai, kvHnsw, new Map())     │
-    │  ← brain.collection() NOW WORKS                  │
+    │  new KVService(db, openai, kvHnsw, Map(), reranker)│
+    │  ← collection() NOW WORKS                        │
     └───────────────────────────────────────────────────┘
          │
     ┌────▼──────────────────────────────────────────────┐
     │               PHASE 2 (lateInit)                  │
     │                                                   │
-    │  Load KV:                                         │
-    │    tryLoad('hnsw-kv.index', count=45)             │
-    │      HIT → loadVecCache (populate Map only)       │
-    │      MISS → loadVectors (rebuild HNSW from DB)    │
-    │                                                   │
+    │  Load KV: tryLoad('hnsw-kv.index') → loadVecCache │
     │  buildPluginContext(...)                          │
     │                                                   │
     │  CodePlugin.initialize(ctx):                      │
     │    getOrCreateSharedHnsw('code') → isNew=true     │
-    │    tryLoad('hnsw-code.index', count=1200)         │
-    │      HIT → loadVecCache                           │
-    │    new CodeWalker(...)                            │
+    │    loadVectors('code_vectors', 'chunk_id', ...)   │
     │                                                   │
     │  GitPlugin.initialize(ctx):                       │
     │    getOrCreateSharedHnsw('git') → isNew=true      │
-    │    tryLoad('hnsw-git.index', count=500)           │
-    │    new GitIndexer + CoEditAnalyzer                │
+    │    loadVectors('git_vectors', 'commit_id', ...)   │
     │                                                   │
     │  DocsPlugin.initialize(ctx):                      │
     │    createHnsw(dims, 'doc') → PRIVATE HNSW         │
-    │    tryLoad('hnsw-doc.index', count=80)            │
-    │    new DocsIndexer + DocumentSearch               │
+    │    loadVectors('doc_vectors', 'chunk_id', ...)    │
     │                                                   │
-    │  saveAllHnsw():                                   │
-    │    write hnsw-kv.index, hnsw-code.index,          │
-    │    hnsw-git.index, hnsw-doc.index                 │
-    │                                                   │
-    │  createSearchAPI():                               │
-    │    codeMod = sharedHnsw.get('code')               │
-    │    gitMod  = sharedHnsw.get('git')                │
-    │    CodeVectorSearch + GitVectorSearch              │
-    │    → CompositeVectorSearch                        │
-    │    → KeywordSearch                                │
-    │    → ContextBuilder(search, coEdits, codeGraph)   │
-    │    → SearchAPI                                    │
-    │                                                   │
+    │  saveAllHnsw() → write all .index files           │
+    │  createSearchAPI() → SearchAPI                    │
     │  _initialized = true                              │
-    │  emit('initialized', { plugins: [code,git,docs] })│
     └───────────────────────────────────────────────────┘
 ```
 
@@ -2836,52 +2061,28 @@ brain.index({ modules: ['code', 'git'] })
          │
     ┌────▼──────────────────────────────────────────┐
     │  CODE                                         │
-    │                                               │
-    │  CodeWalker._walkRepo() → files               │
-    │                                               │
+    │  _walkRepo() → files (filter ignore/size/ext) │
     │  for each file:                               │
     │    FNV-1a(content) === indexed_files.hash?    │
-    │      YES → skipped++                          │
-    │      NO  → _indexFile(file)                   │
-    │              CodeChunker.chunk()              │
-    │              extractImports()                 │
-    │              build embeddingTexts             │
-    │              embedBatch() → vecs              │
-    │              extractSymbolsSafe()             │
-    │              TRANSACTION:                     │
-    │                DELETE old chunks + graph      │
-    │                INSERT code_chunks             │
-    │                INSERT code_vectors            │
-    │                hnsw.add() per chunk           │
-    │                INSERT code_imports            │
-    │                INSERT code_symbols            │
-    │                INSERT code_refs               │
-    │                UPSERT indexed_files           │
+    │      YES → skip                               │
+    │      NO  → CodeChunker.chunk()               │
+    │            extractImports()                   │
+    │            embedBatch()                       │
+    │            TRANSACTION:                       │
+    │              DELETE old + INSERT new           │
+    │              code_chunks + code_vectors        │
+    │              code_imports + code_symbols       │
+    │              code_refs + indexed_files         │
+    │            AFTER: hnsw.remove(old) + add(new) │
     └───────────────────────────────────────────────┘
          │
     ┌────▼──────────────────────────────────────────┐
     │  GIT                                          │
-    │                                               │
     │  git.log(500) → commits[]                     │
-    │                                               │
-    │  PHASE 1 (async git calls):                   │
-    │    check DB for each commit hash              │
-    │    skip if has_vector                         │
-    │    cleanup zombie (data, no vector)           │
-    │    git show --numstat + --unified=3           │
-    │    build embedding text                       │
-    │                                               │
+    │  PHASE 1: collect (async git calls per commit)│
     │  embedBatch(all new texts) → vecs             │
-    │                                               │
-    │  PHASE 2 (one transaction):                   │
-    │    INSERT git_commits                         │
-    │    INSERT commit_files per file               │
-    │    INSERT git_vectors                         │
-    │                                               │
-    │  PHASE 3:                                     │
-    │    hnsw.add() + vecCache.set() per commit     │
-    │    _computeCoEdits(newCommitIds)              │
-    │      pairs (a<b) → UPSERT co_edits count+1   │
+    │  PHASE 2: INSERT (one transaction)            │
+    │  PHASE 3: hnsw.add() + computeCoEdits()      │
     └───────────────────────────────────────────────┘
          │
     emit('indexed', { code: {...}, git: {...} })
@@ -2897,38 +2098,21 @@ brain.hybridSearch("authentication middleware", { sources: { code: 10, git: 5 } 
     ├──────────────────────┬───────────────────────────────┤
     ▼                      ▼                               ▼
 VectorSearch           BM25Search                   DocsPlugin
-.search(query)         .search(query)               .search(query)
-    │                      │                             │
 embedding.embed()     sanitizeFTS()              DocumentSearch
-    │                 FTS5 MATCH                  _searchVector
-HNSW.search()        normalizeBM25()             + _searchBM25
-SELECT chunks/          │                        RRF → _dedup
-commits                 │                             │
-    │               [kwResults]                  [docResults]
-[vecResults]
+HNSW.search()        FTS5 MATCH                  vector + BM25
+SELECT chunks/       normalizeBM25()             RRF → _dedup
+commits                  │                             │
+[vecResults]         [kwResults]                [docResults]
     │                   │                             │
-    └─────────────────── ────────────────────────────┘
+    └───────────────────┴─────────────────────────────┘
                         │
-          resultLists = [vec, bm25, docs]
-          + custom plugin lists (if any)
-          + KV collection lists (if --notes 5 etc)
+          + custom plugin lists + KV collection lists
                         │
-          reciprocalRankFusion(resultLists, k=60)
-          ┌─────────────────────────────────────┐
-          │  key = type-specific unique string  │
-          │  rrfScore += 1/(60 + rank + 1)      │
-          │  accumulate, keep best orig score   │
-          │  sort DESC, normalize to 0..1       │
-          └─────────────────────────────────────┘
+          reciprocalRankFusion(lists, k=60, maxResults=15)
                         │
-          if reranker:
-            rerank(query, fused, reranker)
-            position-aware: rrfWeight * score + (1-w) * rerankerScore
+          if reranker: rerank(query, fused, reranker)
                         │
-                        ▼
-          [{ type:'code', score:0.95, filePath:'src/auth.ts', ... },
-           { type:'commit', score:0.88, content:'add JWT middleware', ... },
-           { type:'document', score:0.82, filePath:'docs/auth.md', ... }]
+          [sorted SearchResult[]]
 ```
 
 ### 17.4 Collection Write + Read Flow
@@ -2936,137 +2120,51 @@ commits                 │                             │
 ```
 const errors = brain.collection('debug_errors')
 
-await errors.add('TypeError: null check missing in api.ts:42',
+await errors.add('TypeError: null check missing',
                  { tags: ['critical'], ttl: '7d' })
-         │
-         ├── embedding.embed(content) → vec           ← FIRST (before any DB writes)
-         ├── INSERT kv_data (expires_at = now + 7*86400s)
-         │     FTS trigger: INSERT INTO fts_kv(rowid, content, collection)
-         ├── INSERT kv_vectors (data_id, vecToBuffer(vec))
-         ├── kvHnsw.add(vec, id)    ← SHARED across ALL collections
-         └── kvVecs.set(id, vec)
-
+  ├── embedding.embed(content) → vec       ← FIRST
+  ├── INSERT kv_data (expires_at = now + 7d)
+  ├── INSERT kv_vectors
+  ├── kvHnsw.add(vec, id)
+  └── kvVecs.set(id, vec)
 
 results = await errors.search('null pointer', { mode:'hybrid', tags:['critical'] })
-         │
-         ├── _pruneExpired() → DELETE rows where expires_at <= now
-         │
-         ├── parallel:
-         │   _searchVector('null pointer', k=5, minScore=0):
-         │     embedding.embed('null pointer') → queryVec
-         │     _adaptiveSearchK(5):
-         │       totalSize=200 KV items / collectionCount=50 = ratio=4
-         │       searchK = min(5*4, 200) = 20
-         │     kvHnsw.search(queryVec, 20)
-         │     SELECT * FROM kv_data WHERE id IN (?) AND collection='debug_errors'
-         │
-         │   _searchBM25('null pointer', k=5, minScore=0):
-         │     sanitizeFTS → '"null" "pointer"'
-         │     SELECT d.* FROM fts_kv JOIN kv_data
-         │     WHERE MATCH ? AND collection='debug_errors'
-         │
-         ├── fuseRankedLists([vectorHits, bm25Hits])
-         ├── filter score >= 0.15
-         ├── slice to k=5
-         ├── if reranker: rerank results
-         └── _filterByTags(results, ['critical'])
+  ├── _pruneExpired()
+  ├── parallel: _searchVector + _searchBM25
+  ├── fuseRankedLists([vec, bm25])
+  ├── filter minScore + slice k
+  ├── if reranker: rerank
+  └── _filterByTags(tags: ['critical'])
 ```
 
 ### 17.5 Context Building Flow
 
 ```
-brain.getContext("add rate limiting to the authentication API")
-         │
-    SearchAPI.getContext(task, options)
-         │
-    ContextBuilder.build(task):
-         │
-         ├── CompositeVectorSearch.search(task, { sources: { code: 6, git: 5, memory: 4 } })
-         │     embedding.embed(task) → queryVec
-         │     CodeVectorSearch  + searchMMR → code_chunks rows
-         │     GitVectorSearch              → git_commits rows (no merge)
-         │     PatternVectorSearch + searchMMR → memory_patterns rows
-         │
-         ├── formatCodeResults(codeHits, parts, sqlCodeGraph):
-         │     "## Relevant Code\n"
-         │     group by file path
-         │     SqlCodeGraphProvider.getCallInfo(chunkId, name):
-         │       SELECT code_refs + JOIN code_chunks
-         │     "**function `validateToken` (L10-50)** — 87% match"
-         │     "*(calls: verify, sendError | called by: authenticate)*"
-         │     "```typescript\n...\n```"
-         │
-         ├── formatCodeGraph(codeHits, parts, sqlCodeGraph):
-         │     SqlCodeGraphProvider.expandImportGraph(hitFiles):
-         │       expandViaImportGraph(db, seedFiles):
-         │         2 hops: SELECT imports_path + SELECT importers by basename
-         │         clusterSiblings: 3+ hits same dir → include all siblings
-         │     SqlCodeGraphProvider.fetchBestChunks(discovered):
-         │       largest chunk per file (ORDER BY end_line - start_line DESC)
-         │     "## Related Code (Import Graph)\n..."
-         │
-         ├── formatGitResults(results, 5, parts):
-         │     "## Related Git History\n"
-         │     "**[abc1234]** feat: add JWT *(Jane, 2024-01-15, 88%)*"
-         │     diff snippet (+ and - lines, @@ headers, max 10 lines)
-         │
-         ├── formatCoEdits(affectedFiles, parts, coEdits):
-         │     CoEditAnalyzer.suggest('src/api.ts', 4)
-         │     "## Co-Edit Patterns\n"
-         │     "- **src/api.ts** → also changes: src/routes.ts (18x)"
-         │
-         ├── formatPatternResults(results, 4, parts):
-         │     "## Learned Patterns\n"
-         │     "**api** — 87% success, 94% match"
-         │
-         └── docsSearch(task, { k: 6 }) → formatDocuments(docs)
-               "## Relevant Documents\n\n"
-               "**[docs]** Auth Guide — _Main API docs_\n\n{chunk content}"
-         │
-         └── parts.join('\n')
-             → full markdown string for LLM system prompt injection
+brain.getContext("add rate limiting to the auth API")
+  │
+  ContextBuilder.build(task):
+    CompositeVectorSearch.search(task) → code + git + pattern results
+    formatCodeResults + getCallInfo (code_refs)
+    formatCodeGraph: expandImportGraph (2-hop) + fetchBestChunks
+    formatGitResults + diff snippets
+    formatCoEdits: CoEditAnalyzer.suggest()
+    formatPatternResults
+    docsSearch(task) → formatDocuments
+    → markdown for LLM system prompt
 ```
 
 ### 17.6 Reembed Flow
 
 ```
-brain.reembed()   (switch from Local 384d → OpenAI 1536d)
-         │
-    BrainBank.reembed(options)
-         │
-         ├── build hnswMap: { 'kv': kvService, 'code': sharedHnsw.get('code'),
-         │                    'git': sharedHnsw.get('git'), 'memory': memPlugin, ... }
-         │
-    reembedAll(db, openaiEmbedding, hnswMap, registry.all, options, persist)
-         │
-         ├── collectTables(plugins):
-         │     CodePlugin.reembedConfig() → code table
-         │     GitPlugin.reembedConfig()  → git table
-         │     DocsPlugin.reembedConfig() → docs table
-         │     CORE_TABLES: kv + memory (always included, not plugin-owned)
-         │
-         ├── for 'code' table (totalCount=1200):
-         │     CREATE TABLE _reembed_code_vectors AS SELECT * FROM code_vectors WHERE 0
-         │     for offset 0..1200 step 50:
-         │       SELECT * FROM code_chunks LIMIT 50 OFFSET offset
-         │       texts = rows.map(textBuilder)
-         │       openaiEmbedding.embedBatch(texts) → vecs (1536d!)
-         │       INSERT INTO _reembed_code_vectors (chunk_id, embedding)
-         │     TRANSACTION:
-         │       DELETE FROM code_vectors
-         │       INSERT INTO code_vectors SELECT * FROM _reembed_code_vectors
-         │     DROP TABLE _reembed_code_vectors
-         │     rebuildHnsw(db, table, codeHnsw, codeVecs):
-         │       codeVecs.clear(); codeHnsw.reinit()
-         │       SELECT chunk_id, embedding FROM code_vectors
-         │       codeHnsw.add(vec, id); codeVecs.set(id, vec)
-         │
-         ├── ... same for git, docs, kv, memory tables ...
-         │
-         └── setEmbeddingMeta(db, openaiEmbedding)
-             saveAllHnsw(dbPath, kvHnsw, sharedHnsw, new Map())
-
-→ { counts: { code:1200, git:500, docs:80, kv:45, memory:0 }, total:1825 }
+brain.reembed()   (switch Local 384d → OpenAI 1536d)
+  │
+  collectTables: code + git + docs + kv + memory
+  for each table:
+    CREATE temp → embedBatch in batches of 50 → INSERT temp
+    TRANSACTION: DELETE old + INSERT FROM temp  ← atomic swap
+    DROP temp
+    rebuildHnsw: reinit() + load from new BLOBs
+  setEmbeddingMeta + saveAllHnsw
 ```
 
 ---
@@ -3076,28 +2174,28 @@ brain.reembed()   (switch from Local 384d → OpenAI 1536d)
 | # | Pattern | Where used | What it does |
 |---|---------|-----------|-------------|
 | 1 | **Facade** | `BrainBank` | Single entry point hiding registry, init, plugins, search, index |
-| 2 | **Plugin / Extension Point** | `Plugin` + `PluginRegistry` + `PluginContext` | Add data sources without modifying core; auto-discovery via `.brainbank/plugins/` |
-| 3 | **Strategy** | `SearchStrategy` (Composite/Keyword); `EmbeddingProvider` | Interchangeable search backends and embedding models |
+| 2 | **Plugin / Extension Point** | `Plugin` + `PluginRegistry` + `PluginContext` | Add data sources without modifying core |
+| 3 | **Strategy** | `SearchStrategy`, `EmbeddingProvider` | Interchangeable search backends and embedding models |
 | 4 | **Registry + Prefix Matching** | `PluginRegistry` | `has('code')` matches `code`, `code:frontend`, `code:backend` |
-| 5 | **Two-Phase Construction** | `earlyInit()` / `lateInit()` | Phase 1 creates `KVService`+`kvHnsw` so `collection()` works when plugins call it during Phase 2 `initialize()` |
-| 6 | **Factory Method** | `code()`, `git()`, `docs()`, `patterns()`, `createBrain()` | Hide instantiation complexity; `createBrain()` composes the full runtime |
-| 7 | **Dependency Injection (Context Object)** | `PluginContext` | Plugins receive all deps through one context object; no imports from core |
-| 8 | **Repository** | `PatternStore`, `Collection`, `DocsIndexer` | Encapsulate all read/write for a domain entity behind a clean API |
-| 9 | **Observer / EventEmitter** | `BrainBank extends EventEmitter` | `initialized`, `indexed`, `reembedded`, `progress` events |
-| 10 | **Flyweight** | `_sharedHnsw` pool | `code:frontend` and `code:backend` share ONE HNSW + vecCache |
-| 11 | **Builder** | `ContextBuilder` | Incrementally assembles markdown from code, graph, git, co-edits, patterns, docs |
-| 12 | **Composite (Multi-Index)** | `CompositeVectorSearch` | Embeds query once, delegates to Code + Git + Pattern strategies, merges |
-| 13 | **Lazy Singleton + Promise Dedup** | `LocalEmbedding._getPipeline()`, `Qwen3Reranker._ensureLoaded()` | Expensive resources loaded on first use; concurrent callers await same promise |
-| 14 | **Memento / Persistence** | `HNSWIndex.save()` / `tryLoad()` | Graph persisted post-init; fast warm-up on next start with staleness check |
-| 15 | **Adapter** | Embedding providers | OpenAI `number[]`, Perplexity base64 int8, WASM flat Float32Array → unified `Promise<Float32Array>` |
-| 16 | **Guard / Precondition** | `_requireInit()` | Descriptive early errors before null-pointer crashes deep in stack |
-| 17 | **Template Method** | `plugin.initialize(ctx)` called by `lateInit()` | Initializer controls call sequence; each plugin fills in domain-specific logic |
-| 18 | **Atomic Swap** | `reembedTable()` | Build new vectors in temp table → TRANSACTION DELETE+INSERT; old data safe if embedding fails mid-way |
-| 19 | **Incremental Processing** | `CodeWalker`, `DocsIndexer`, `GitIndexer` | Content-hash skip; only changed/new content is re-embedded |
-| 20 | **Discriminated Union + Type Guards** | `SearchResult` union | `isCodeResult()`, `matchResult()` for exhaustive pattern matching |
-| 21 | **Pipeline / Chain** | Hybrid search → RRF → rerank → ContextBuilder | Each stage transforms the result set; composable and independently testable |
-| 22 | **LRU Pool** | `@brainbank/mcp` workspace pool | Up to 10 BrainBank instances; evict least-recently-used on overflow |
-| 23 | **Decorator** | `rerank()`, call graph annotations in ContextBuilder | Wraps search results with extra scoring/annotations post-retrieval |
+| 5 | **Two-Phase Construction** | `earlyInit()` / `lateInit()` | KVService ready before plugins call `ctx.collection()` |
+| 6 | **Factory Method** | `code()`, `git()`, `docs()`, `patterns()`, `createBrain()` | Hide instantiation complexity |
+| 7 | **Dependency Injection** | `PluginContext` | Plugins receive all deps through one context object |
+| 8 | **Repository** | `PatternStore`, `Collection`, `DocsIndexer` | Encapsulate read/write per domain entity |
+| 9 | **Observer / EventEmitter** | `BrainBank extends EventEmitter` | `initialized`, `indexed`, `reembedded`, `progress` |
+| 10 | **Flyweight** | `_sharedHnsw` pool | `code:frontend` + `code:backend` share ONE HNSW |
+| 11 | **Builder** | `ContextBuilder` | Incrementally assembles markdown from multiple sources |
+| 12 | **Composite** | `CompositeVectorSearch` | Embed once, delegate to Code + Git + Pattern strategies |
+| 13 | **Lazy Singleton + Promise Dedup** | `LocalEmbedding._getPipeline()`, `Qwen3Reranker._ensureLoaded()` | Expensive resources loaded on first use |
+| 14 | **Memento / Persistence** | `HNSWIndex.save()` / `tryLoad()` | Graph persisted post-init with staleness check |
+| 15 | **Adapter** | Embedding providers | OpenAI `number[]`, Perplexity base64 int8, WASM flat → unified `Float32Array` |
+| 16 | **Guard / Precondition** | `_requireInit()` | Descriptive errors before null-pointer crashes |
+| 17 | **Template Method** | `plugin.initialize(ctx)` | Initializer controls sequence; plugins fill in domain logic |
+| 18 | **Atomic Swap** | `reembedTable()` | Temp table → TRANSACTION DELETE+INSERT; old data safe on failure |
+| 19 | **Incremental Processing** | `CodeWalker`, `DocsIndexer`, `GitIndexer` | Content-hash skip; only changed content re-embedded |
+| 20 | **Discriminated Union** | `SearchResult` | `isCodeResult()`, `matchResult()` for exhaustive matching |
+| 21 | **Pipeline** | Hybrid search → RRF → rerank → Context | Composable, independently testable stages |
+| 22 | **LRU Pool** | `@brainbank/mcp` workspace pool | Up to 10 instances; evict least-recently-used |
+| 23 | **Decorator** | `rerank()`, call graph annotations | Extra scoring/annotations post-retrieval |
 
 ---
 
@@ -3119,26 +2217,23 @@ brain.reembed()   (switch from Local 384d → OpenAI 1536d)
           │code/git/docs  │   │   │                                        │
           └──────┬────────┘   │   │  CodePlugin                            │
                  │            │   │    └── CodeWalker                      │
-                 │            │   │          ├── CodeChunker               │
-           ┌─────▼──────┐     │   │          │     ├── tree-sitter         │
-           │ CodeWalker │     │   │          │     └── grammars.ts (20+)   │
-           │ GitIndexer │     │   │          ├── extractImports (regex)    │
-           │DocsIndexer │     │   │          └── extractSymbols/CallRefs   │
-           └─────┬──────┘     │   │                                        │
-                 │            │   │  GitPlugin                             │
-                 │            │   │    ├── GitIndexer (simple-git)         │
-          ┌──────▼────────────▼──┐│   └── CoEditAnalyzer                  │
+                 │            │   │          ├── CodeChunker (tree-sitter)  │
+           ┌─────▼──────┐     │   │          ├── extractImports (regex)    │
+           │ CodeWalker │     │   │          └── extractSymbols/CallRefs   │
+           │ GitIndexer │     │   │                                        │
+           │DocsIndexer │     │   │  GitPlugin                             │
+           └─────┬──────┘     │   │    ├── GitIndexer (simple-git)         │
+                 │            │   │    └── CoEditAnalyzer                  │
+          ┌──────▼────────────▼──┐│                                        │
+          │                      ││  DocsPlugin                            │
+          │   EmbeddingProvider  ││    ├── DocsIndexer (smart chunker)     │
+          │  (shared/per-plugin) ││    └── DocumentSearch                  │
           │                      ││                                        │
-          │   EmbeddingProvider  ││  DocsPlugin                            │
-          │  (shared/per-plugin) ││    ├── DocsIndexer (smart chunker)     │
-          │                      ││    └── DocumentSearch                  │
-          │  LocalEmbedding      ││                                        │
-          │  OpenAIEmbedding     ││                                        │
-          │  PerplexityEmb.      ││  @brainbank/memory                     │
-          │  PerplexityContext.. ││    ├── patterns() → PatternsPlugin     │
-          └──────────────────────┘│    │     ├── PatternStore              │
-                                  │    │     ├── Consolidator              │
-                                  │    │     └── PatternDistiller          │
+          │  LocalEmbedding      ││  @brainbank/memory                     │
+          │  OpenAIEmbedding     ││    ├── patterns() → PatternsPlugin     │
+          │  PerplexityEmb.      ││    │     ├── PatternStore              │
+          │  PerplexityContext.. ││    │     ├── Consolidator              │
+          └──────────────────────┘│    │     └── PatternDistiller          │
                                   │    ├── Memory (LLM pipeline)           │
                                   │    └── EntityStore (knowledge graph)   │
                                   └────────────────────────────────────────┘
@@ -3157,9 +2252,7 @@ brain.reembed()   (switch from Local 384d → OpenAI 1536d)
      │    ├── DocsPlugin.hnsw        (private, per-instance)            │
      │    └── PatternsPlugin.hnsw    (private, per-instance)            │
      │                                                                  │
-     │  hnsw-loader.ts:                                                 │
-     │    hnswPath, countRows, saveAllHnsw, loadVectors, loadVecCache   │
-     │                                                                  │
+     │  hnsw-loader.ts: hnswPath, loadVectors, loadVecCache, saveAll    │
      │  Qwen3Reranker ──── node-llama-cpp (optional peer dep)           │
      └──────────────────────────────────────────────────────────────────┘
 
@@ -3167,115 +2260,51 @@ brain.reembed()   (switch from Local 384d → OpenAI 1536d)
      ┌──────────────────────────────────────────────────────────────────┐
      │                       Search Layer                               │
      │                                                                  │
-     │  SearchFactory (createSearchAPI)                                  │
-     │    ├── sharedHnsw.get('code') → CodeVectorSearch (+ MMR)         │
-     │    ├── sharedHnsw.get('git')  → GitVectorSearch                  │
-     │    ├── registry.firstByType('memory') → PatternVectorSearch      │
-     │    └── CompositeVectorSearch(code, git, patterns, embedding)     │
-     │                                                                  │
-     │  KeywordSearch ──── FTS5 (SQLite BM25)                           │
-     │    ← sanitizeFTS: camelCase split + compound word expansion      │
-     │    ← normalizeBM25: sigmoid(abs) → 0..1                         │
-     │                                                                  │
-     │  reciprocalRankFusion ──── src/lib/rrf.ts                        │
-     │    ← fuseRankedLists: generic variant (no SearchResult needed)   │
-     │                                                                  │
-     │  rerank ──── src/lib/rerank.ts                                   │
-     │    ← position-aware: top 1-3 = 75% RRF, 10+ = 40% RRF           │
-     │                                                                  │
-     │  ContextBuilder                                                   │
-     │    ├── CompositeVectorSearch                                      │
-     │    ├── CoEditAnalyzer (from GitPlugin via CoEditPlugin interface) │
-     │    ├── SqlCodeGraphProvider (CodeGraphProvider interface)         │
-     │    │     ← code_refs + code_imports + code_chunks SQL            │
-     │    └── docsSearch: (query, opts) => DocsPlugin.search()          │
-     │                                                                  │
+     │  SearchFactory → CompositeVectorSearch(code, git, patterns)      │
+     │  KeywordSearch ──── FTS5 BM25 (sanitizeFTS + normalizeBM25)     │
+     │  reciprocalRankFusion + fuseRankedLists<T>                       │
+     │  rerank (position-aware blending)                                │
+     │  ContextBuilder → formatters + SqlCodeGraphProvider              │
      │  DocumentSearch (inside @brainbank/docs)                         │
-     │    ├── DocsPlugin.hnsw (private HNSW)                            │
-     │    ├── _searchVector: adaptive over-fetch ratio                  │
-     │    ├── _searchBM25: OR-mode FTS, stop-word filtering             │
-     │    └── _dedup: best chunk per file path                          │
      └──────────────────────────────────────────────────────────────────┘
 
 
      ┌──────────────────────────────────────────────────────────────────┐
      │                       Services                                   │
      │                                                                  │
-     │  KVService ──── kvHnsw (shared) + kvVecs + collection Map        │
-     │    └── Collection ──── kvHnsw + fts_kv + kv_data                 │
-     │          ├── add:    embed → INSERT → hnsw.add()                 │
-     │          ├── search: hybrid (fuseRankedLists) + tags + TTL prune │
-     │          └── remove: DB first → hnsw.remove() + vecs.delete()   │
-     │                                                                  │
-     │  reembedAll ──── EmbeddingProvider                               │
-     │    ← collectTables: plugins (ReembeddablePlugin) + core tables   │
-     │    ← atomic swap: temp table → TRANSACTION DELETE+INSERT         │
-     │    └── rebuildHnsw: hnsw.reinit() + loadVectors from new BLOBs  │
-     │                                                                  │
-     │  Watcher ──── fs.watch                                           │
-     │    ├── debounce + serialized flush                               │
-     │    ├── custom plugin routing: isWatchable → onFileChange()       │
-     │    └── built-in: isSupported → reindexFn()                       │
-     │                                                                  │
-     │  EmbeddingMeta ──── embedding_meta (SQLite key/value)            │
-     │    ← detectProviderMismatch → throw or skipVectorLoad            │
-     │    ← providerKey(): constructor.name → canonical key string      │
+     │  KVService → Collection (kvHnsw shared + fts_kv + kv_data)      │
+     │  reembedAll (atomic swap, per-table)                             │
+     │  Watcher (fs.watch + debounce + plugin routing)                  │
+     │  EmbeddingMeta (provider tracking + mismatch detection)          │
      └──────────────────────────────────────────────────────────────────┘
 
 
      ┌──────────────────────────────────────────────────────────────────┐
      │                         CLI                                      │
      │                                                                  │
-     │  createBrain()                                                    │
-     │    ├── loadConfig (.brainbank/config.json|ts|js|mjs)             │
-     │    ├── discoverFolderPlugins (.brainbank/plugins/)                │
-     │    ├── setupProviders (--embedding, --reranker flags + config)    │
-     │    ├── registerBuiltins:                                          │
-     │    │     detectGitSubdirs → multi-repo code:X / git:X plugins    │
-     │    │     per-plugin embeddingProvider override                    │
-     │    └── new BrainBank() + .use(code/git/docs)                    │
-     │                                                                  │
-     │  scan.ts:                                                         │
-     │    scanRepo() → ScanResult (no BrainBank init, pure fs/git)      │
-     │    used by cmdIndex for scan → prompt → index UX flow            │
-     │                                                                  │
-     │  Commands: index (interactive scan+prompt), search/hsearch/ksearch│
-     │    collection, kv, docs/dsearch, context, stats, reembed, watch  │
-     │    serve → @brainbank/mcp (stdio MCP server)                     │
+     │  createBrain(): loadConfig + discoverFolderPlugins +             │
+     │    setupProviders + registerBuiltins (multi-repo detection)      │
+     │  scan.ts: scanRepo() → ScanResult (no BrainBank init)           │
+     │  Commands: index, search/hsearch/ksearch, collection, kv,       │
+     │    docs/dsearch, context, stats, reembed, watch, serve, help     │
      └──────────────────────────────────────────────────────────────────┘
 
 
      ┌──────────────────────────────────────────────────────────────────┐
      │                     @brainbank/mcp                               │
      │                                                                  │
-     │  LRU pool: Map<repoPath, { brain, lastAccess }> max=10           │
+     │  LRU pool: Map<repoPath, { brain, lastAccess }> max=10          │
      │  6 tools: search, context, index, stats, history, collection     │
-     │  findRepoRoot: walk up from cwd looking for .git/               │
-     │  BRAINBANK_REPO / BRAINBANK_EMBEDDING / BRAINBANK_RERANKER envs  │
-     │  _sharedReranker: created once, shared across all pool entries   │
-     │  corruption recovery: delete DB files + retry with fresh instance│
+     │  findRepoRoot + corruption recovery + shared reranker            │
      └──────────────────────────────────────────────────────────────────┘
 
 
      ┌──────────────────────────────────────────────────────────────────┐
      │                  @brainbank/memory                               │
      │                                                                  │
-     │  Memory ──── LLMProvider ──── Collection ('memories')            │
-     │    ├── extract facts (+ entities/rels if EntityStore)            │
-     │    ├── dedup against existing: ADD / UPDATE / NONE               │
-     │    └── buildContext() → "## Memories\n- fact1\n..."              │
-     │                                                                  │
-     │  EntityStore ──── Collection ('entities')                        │
-     │               └── Collection ('relationships')                   │
-     │    ├── upsert: exact match → LLM entity resolution               │
-     │    ├── relate: source → relation → target                        │
-     │    ├── traverse: BFS multi-hop graph                             │
-     │    └── buildContext(): entities + relationships as markdown      │
-     │                                                                  │
-     │  patterns() plugin:                                               │
-     │    ├── PatternStore: memory_patterns + HNSW (private)            │
-     │    ├── Consolidator: prune (age+success) + dedup (cosine>0.95)   │
-     │    └── PatternDistiller: aggregate → distilled_strategies        │
+     │  Memory: extract facts → dedup (ADD/UPDATE/NONE) → store        │
+     │  EntityStore: upsert → LLM resolution → traverse → buildContext │
+     │  patterns(): PatternStore + Consolidator + PatternDistiller      │
      └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -3285,70 +2314,70 @@ brain.reembed()   (switch from Local 384d → OpenAI 1536d)
 
 ### Test Infrastructure
 
-- **Custom runner:** `test/run.ts` — discovers tests in `test/unit/` and
-  `test/integration/`, plus `packages/*/test/unit/` and `packages/*/test/integration/`
-- Tests export `{ name, tests }` — plain objects, no Jest/Vitest
-- **Hash-based embedding** (`hashEmbedding()`) in helpers — deterministic, unique
-  per text, normalized; used in all integration tests without model downloads
-- Unit tests: ~200, ~11s total
+- **Custom runner:** `test/run.ts` — discovers `test/{unit,integration}/` + `packages/*/test/{unit,integration}/`
+- Tests export `{ name, tests }` — plain objects with assert functions, no Jest/Vitest
+- **Hash-based embedding** (`hashEmbedding()`) — deterministic, unique per text, normalized; used in all integration tests without model downloads
+- **Mock embedding** (`mockEmbedding()`) — constant 0.1 vector, used in unit tests
 
 ### Unit Tests (`test/unit/`)
 
 | File | Coverage |
 |------|----------|
-| `query/rrf.test.ts` | RRF fusion: dedup across systems, multi-list boost, maxResults |
+| `query/rrf.test.ts` | RRF fusion, dedup, multi-list boost, maxResults |
 | `query/bm25.test.ts` | FTS5 sanitization, camelCase splitting, BM25 normalization |
-| `query/reranker.test.ts` | Position-aware score blending, Reranker interface |
+| `query/reranker.test.ts` | Position-aware blending, Reranker interface |
 | `core/brainbank.test.ts` | Facade lifecycle, .use() guard, index modules filter |
 | `core/collection.test.ts` | KV add/search/list/trim/clear, FTS trigger sync |
 | `core/schema.test.ts` | Database creation, WAL mode, schema version, transactions |
 | `core/config.test.ts` | resolveConfig() defaults and overrides |
 | `core/config-file.test.ts` | ProjectConfig type, registerConfigCollections() |
-| `core/reembed.test.ts` | Atomic swap, dim mismatch flow, HNSW rebuild correctness |
-| `core/tags-ttl.test.ts` | Tags AND-filter, TTL auto-prune, expires_at storage |
+| `core/reembed.test.ts` | Atomic swap, dim mismatch flow, HNSW rebuild |
+| `core/tags-ttl.test.ts` | Tags AND-filter, TTL auto-prune, expires_at |
 | `core/watch.test.ts` | fs.watch integration, custom plugin routing, debounce |
-| `vector/hnsw.test.ts` | HNSW add/search/remove/reinit/save/tryLoad cycle |
+| `vector/hnsw.test.ts` | HNSW add/search/remove/reinit/save/tryLoad |
 | `vector/mmr.test.ts` | MMR diversity selection, lambda extremes |
-| `embeddings/` | Provider factory, dim validation, fetch mocking, timeout |
+| `embeddings/*.test.ts` | Provider factory, dim validation, fetch mocking, timeout |
 
 ### Integration Tests (`test/integration/`)
 
 | File | Coverage |
 |------|----------|
-| `core/collections.test.ts` | Full KV pipeline: add → hybrid/keyword/vector → tag → TTL → trim |
+| `core/collections.test.ts` | Full KV pipeline: hybrid/keyword/vector + tags + TTL + trim |
 | `query/search.test.ts` | code+git+docs+memory → search + getContext + minScore |
-| `indexers/per-plugin-embedding.test.ts` | 3 different dims (64d/128d/256d), separate HNSW indices |
-| `memory/memory.test.ts` | Learn → search → consolidate → distill cycle |
+| `indexers/per-plugin-embedding.test.ts` | 3 dims (64d/128d/256d), separate HNSW indices |
+| `memory/memory.test.ts` | Learn → search → consolidate → distill |
 | `embeddings/real-model.test.ts` | LocalEmbedding semantic similarity, cross-encoder reranker |
-| `quality/retrieval-quality.test.ts` | Recall@5 and MRR threshold assertions (synthetic corpus) |
+| `quality/retrieval-quality.test.ts` | Recall@5/MRR threshold assertions (synthetic corpus) |
 
-### Package Integration Tests (`packages/*/test/integration/`)
+### Package Tests (`packages/*/test/`)
 
 | Package | Test | Coverage |
 |---------|------|----------|
-| `@brainbank/code` | `code.test.ts` | Index TS+Python → HNSW search → incremental skip → force reindex |
-| `@brainbank/code` | `chunker.test.ts` | NestJS class methods, Python class, content integrity, benchmark |
-| `@brainbank/git` | `git.test.ts` | Real git repo → commit indexing → co-edit analysis → fileHistory |
-| `@brainbank/docs` | `docs.test.ts` | Smart chunking → register → index → search → context → remove |
+| `@brainbank/code` | `code.test.ts` | Index TS+Python → HNSW → incremental skip → ignore patterns |
+| `@brainbank/code` | `chunker.test.ts` | AST: NestJS methods, Python class, content integrity |
+| `@brainbank/code` | `code-graph.test.ts` | code_imports, code_symbols, code_refs + cascade delete |
+| `@brainbank/code` | `import-extractor.test.ts` | Regex per language (TS/Python/Go/Rust/Java/CSS...) |
+| `@brainbank/code` | `symbol-extractor.test.ts` | AST symbol defs + call refs + builtin filtering |
+| `@brainbank/code` | `languages.test.ts` | Extension mapping, ignore rules |
+| `@brainbank/git` | `git.test.ts` | Real git repo → commits → co-edits → fileHistory |
+| `@brainbank/docs` | `docs.test.ts` | Smart chunking → register → index → search → context |
 | `@brainbank/memory` | `memory-entities.test.ts` | Real LLM: entity extraction + dedup + graph traversal |
 
-### Retrieval Quality Gate (`test/integration/quality/retrieval-quality.test.ts`)
+### Retrieval Quality Gate
 
-Self-contained regression test with a synthetic corpus (5 TypeScript files),
-6 golden queries, and threshold assertions. Uses `hashEmbedding()` — no model
-download, runs in ~0.2s. Measures:
+`test/integration/quality/retrieval-quality.test.ts` — synthetic corpus (5 TS files), 6 golden queries:
 
-- **Recall@5** — expected files appear in top-5 results (≥0.8 for exact queries)
-- **MRR** — mean reciprocal rank of first relevant result (≥0.4 overall)
-- Zero-recall guard: no exact query may return 0 relevant results
+- **Recall@5** ≥ 0.8 for exact queries
+- **MRR** ≥ 0.4 overall
+- Zero-recall guard: no exact query may return 0 results
 
 ### Commands
 
 ```
-npm test                                 # unit only (~200 tests, ~11s)
-npm run test:integration                 # unit + integration (downloads model, ~30s)
-npm test -- --filter <name>              # filter by test file or suite name
-npm test -- --verbose --filter reembed   # verbose output for debugging
+npm test                                 # unit only
+npm run test:integration                 # unit + integration
+npm test -- --filter <name>              # filter by name
+npm test -- --verbose --filter reembed   # verbose output
 ```
 
 ---
@@ -3363,30 +2392,20 @@ SQLite in WAL mode with `busy_timeout = 5000ms`:
 |--------|----------|
 | **Readers** | Unlimited concurrent, never blocked |
 | **Writers** | Single-writer serialized by WAL |
-| **busy_timeout** | Wait up to 5s for write lock before `SQLITE_BUSY` |
-| **synchronous** | NORMAL — fsync on WAL checkpoint, not every commit |
+| **busy_timeout** | Wait up to 5s for write lock before SQLITE_BUSY |
+| **synchronous** | NORMAL — fsync on checkpoint, not every commit |
 
 ### Why Single-Writer Works
 
 BrainBank is single-process by design:
 
 - **CLI:** one command at a time
-- **MCP:** requests handled sequentially per workspace instance
-- **Watch:** `_flushing` flag in Watcher prevents concurrent reindex calls
-- **Indexing:** writes batched in transactions (one lock acquisition per batch)
+- **MCP:** requests sequential per workspace instance
+- **Watch:** `_flushing` flag prevents concurrent reindex
+- **Indexing:** writes batched in transactions
 
 ### Known Limitations
 
-1. **Multi-process writes:** Two BrainBank instances on the same DB will contend.
-   `busy_timeout` mitigates but doesn't eliminate `SQLITE_BUSY`.
-2. **Long indexing blocks writers:** Large repos hold the write lock during
-   `brain.index()`. Reads remain unaffected (WAL mode).
-3. **No WAL checkpoint control:** SQLite auto-checkpoints at 1000 pages.
-
-### Scaling Path
-
-If single-file SQLite becomes a bottleneck:
-
-1. **Read replica** — second read-only connection for search while primary indexes
-2. **Sharding** — split DB per domain (code.db, git.db, kv.db)
-3. **External vector DB** — replace HNSW with Qdrant/Milvus; keep SQLite for metadata + FTS5
+1. **Multi-process writes:** Two BrainBank instances on same DB will contend
+2. **Long indexing blocks writers:** Large repos hold write lock during index
+3. **No WAL checkpoint control:** SQLite auto-checkpoints at 1000 pages

@@ -31,7 +31,7 @@ import type { SearchOptions } from './search/types.ts';
 import type {
     BrainBankConfig, ResolvedConfig, EmbeddingProvider,
     IndexResult, IndexStats, SearchResult, ICollection,
-    ContextOptions, CoEditSuggestion, ProgressCallback, StageProgressCallback,
+    ContextOptions, CoEditSuggestion, StageProgressCallback,
     DocumentCollection,
 } from './types.ts';
 
@@ -92,6 +92,11 @@ export class BrainBank extends EventEmitter {
     /** Typed access to the git plugin. Returns undefined if not loaded. */
     get git(): Plugin | undefined {
         return this._registry.firstByType(PLUGIN.GIT);
+    }
+
+    /** Typed access to the code plugin. Returns undefined if not loaded. */
+    get code(): Plugin | undefined {
+        return this._registry.firstByType(PLUGIN.CODE);
     }
 
     // ── Initialization ───────────────────────────────
@@ -196,17 +201,6 @@ export class BrainBank extends EventEmitter {
         return this._indexAPI!.index(options);
     }
 
-    /** Index only code files (all repos in multi-repo mode). */
-    async indexCode(options: { forceReindex?: boolean; onProgress?: ProgressCallback } = {}): Promise<IndexResult> {
-        await this.initialize();
-        return this._indexAPI!.indexCode(options);
-    }
-
-    /** Index only git history (all repos in multi-repo mode). */
-    async indexGit(options: { depth?: number; onProgress?: ProgressCallback } = {}): Promise<IndexResult> {
-        await this.initialize();
-        return this._indexAPI!.indexGit(options);
-    }
 
 
 

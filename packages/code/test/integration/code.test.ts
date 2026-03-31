@@ -141,7 +141,7 @@ tests['index: indexes TypeScript and Python files from nested dirs'] = async () 
         .use(code({ repoPath: tmpDir }));
     await brain.initialize();
 
-    const result = await brain.indexCode();
+    const result = await (brain.code as any).index();
     assert.ok(result.indexed >= 4, `indexed ${result.indexed} files (expected ≥4)`);
     assert.ok(result.chunks! > 0, `created ${result.chunks} code chunks`);
 };
@@ -161,14 +161,14 @@ tests['index: creates chunks with correct metadata (language, lines, type)'] = a
 };
 
 tests['index: skips unchanged files on second run'] = async () => {
-    const result = await brain.indexCode();
+    const result = await (brain.code as any).index();
 
     assert.equal(result.indexed, 0, 'nothing re-indexed');
     assert.ok(result.skipped >= 4, `skipped ${result.skipped} unchanged files`);
 };
 
 tests['index: force reindex re-processes all files'] = async () => {
-    const result = await brain.indexCode({ forceReindex: true });
+    const result = await (brain.code as any).index({ forceReindex: true });
 
     assert.ok(result.indexed >= 4, `force re-indexed ${result.indexed} files`);
 };
@@ -177,7 +177,7 @@ tests['index: detects changed file and re-indexes only it'] = async () => {
 
     // Modify one file
     fs.appendFileSync(path.join(tmpDir, 'src', 'auth.ts'), '\nexport const VERSION = "2.0";\n');
-    const result = await brain.indexCode();
+    const result = await (brain.code as any).index();
 
     assert.equal(result.indexed, 1, 'only changed file re-indexed');
     assert.ok(result.skipped >= 3, `skipped ${result.skipped} unchanged`);
@@ -261,7 +261,7 @@ tests['ignore: skips files matching custom ignore patterns'] = async () => {
     }));
     await ignoreBrain.initialize();
 
-    const result = await ignoreBrain.indexCode();
+    const result = await (ignoreBrain.code as any).index();
 
     // Only src/app.ts and src/utils.ts should be indexed (2 files)
     assert.equal(result.indexed, 2, `expected 2 indexed files, got ${result.indexed}`);

@@ -91,7 +91,7 @@ export const tests = {
         cleanup(db);
     },
 
-    async 'missing indexer throws clear error'(assert: any) {
+    async 'missing plugin returns undefined from accessor'(assert: any) {
         const db = makeDB();
         const brain = new BrainBank({
             dbPath: db,
@@ -100,13 +100,7 @@ export const tests = {
         });
         await brain.initialize();
 
-        let threw = false;
-        try { await brain.indexCode(); } catch (e: any) {
-            threw = true;
-            assert.includes(e.message, 'code');
-            assert.includes(e.message, 'not loaded');
-        }
-        assert.ok(threw, 'should throw for missing indexer');
+        assert.equal(brain.code, undefined, 'brain.code should be undefined when code plugin not loaded');
 
         brain.close();
         cleanup(db);

@@ -107,7 +107,7 @@ tests['setup: initializes with 3 different embedding dimensions'] = async () => 
 };
 
 tests['code: indexes with per-plugin 64d embedding'] = async () => {
-    const result = await brain.indexCode();
+    const result = await (brain.code as any).index();
 
     assert.ok(result.indexed >= 2, `indexed ${result.indexed} files (expected >=2)`);
     assert.ok(result.chunks! > 0, `created ${result.chunks} code chunks`);
@@ -122,7 +122,7 @@ tests['code: indexes with per-plugin 64d embedding'] = async () => {
 };
 
 tests['git: indexes with global 128d embedding'] = async () => {
-    const result = await brain.indexGit({ depth: 10 });
+    const result = await (brain.git as any).index({ depth: 10 });
 
     assert.ok(result.indexed >= 2, `indexed ${result.indexed} commits`);
 

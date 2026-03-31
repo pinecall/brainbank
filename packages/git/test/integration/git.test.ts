@@ -60,7 +60,7 @@ tests['index: indexes all commits from git history'] = async () => {
         .use(git({ repoPath: tmpDir }));
     await brain.initialize();
 
-    const result = await brain.indexGit({ depth: 50 });
+    const result = await (brain.git as any).index({ depth: 50 });
     assert.ok(result.indexed >= 5, `indexed ${result.indexed} commits (expected ≥5)`);
 };
 
@@ -92,7 +92,7 @@ tests['index: co-edits table exists'] = async () => {
 };
 
 tests['index: skips already indexed commits'] = async () => {
-    const result = await brain.indexGit({ depth: 50 });
+    const result = await (brain.git as any).index({ depth: 50 });
 
     assert.equal(result.indexed, 0, 'no new commits');
     assert.ok(result.skipped >= 5, `skipped ${result.skipped} existing`);
