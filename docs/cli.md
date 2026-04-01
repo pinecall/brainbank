@@ -28,7 +28,7 @@ BrainBank can be used entirely from the command line — no config file needed.
 
 ### Phase 1: Scan
 
-Scans the repo and shows a summary tree — code files by language, git commits, docs collections, config status, and DB state:
+Scans the repo without initializing BrainBank and shows a summary tree — code files by language, git commits, docs collections, config status, and DB state:
 
 ```
 ━━━ BrainBank Scan ━━━
@@ -54,7 +54,7 @@ Scans the repo and shows a summary tree — code files by language, git commits,
 
 ### Phase 2: Select
 
-Interactive checkboxes to choose which modules to index:
+Interactive checkboxes (via `@inquirer/prompts`) to choose which modules to index. Modules with no content are shown as disabled:
 
 ```
   Select modules to index:
@@ -63,11 +63,11 @@ Interactive checkboxes to choose which modules to index:
   ◉ Docs  — 2 collections (23 files)
 ```
 
-If no `.brainbank/config.json` exists, BrainBank offers to generate one from your selection (including embedding provider choice).
+If no `.brainbank/config.json` exists, BrainBank offers to generate one from your selection (including embedding provider choice: `perplexity-context`, `perplexity`, `openai`, or `local`).
 
 ### Phase 3: Index
 
-Runs the selected modules, showing progress:
+Runs the selected modules with live progress output:
 
 ```
 ━━━ Indexing: code, git, docs ━━━
@@ -75,7 +75,6 @@ Runs the selected modules, showing progress:
 
   Code: 342 indexed, 0 skipped, 891 chunks
   Git:  500 indexed, 704 skipped
-  Docs: [docs] 18 indexed, 0 skipped, 45 chunks
 ```
 
 ### Flags
@@ -92,7 +91,6 @@ brainbank index [path] --ignore "sdk/**,vendor/**"  # Custom ignore patterns
 ```
 
 > **Multi-repo:** If `[path]` contains multiple Git subdirectories (no root `.git/`), BrainBank auto-detects them and indexes all into one shared DB. See [Multi-Repo](multi-repo.md).
-
 
 ---
 
@@ -119,7 +117,9 @@ brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only
 brainbank hsearch "bug" --notes 5 --git 3            # custom plugin + git
 ```
 
-Any `--<name> <number>` flag not in the known non-source flags (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--only`, `--docs-path`, `--mode`, `--limit`, `--ignore`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter.
+Any `--<name> <number>` flag not in the known non-source list (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--only`, `--docs`, `--mode`, `--limit`, `--ignore`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter. Source names that don't match a registered plugin are routed to KV collections.
+
+Results are filtered to a minimum score of 70% and capped at 20 results in the CLI output.
 
 ---
 
@@ -129,8 +129,8 @@ Get formatted markdown context for a task, ready for system prompt injection:
 
 ```bash
 brainbank context <task>                    # Get formatted context for a task
-brainbank context add <col> <path> <desc>   # Add context metadata
-brainbank context list                      # List context metadata
+brainbank context add <col> <path> <desc>   # Add context metadata for a path
+brainbank context list                      # List all context metadata entries
 ```
 
 ---
@@ -142,9 +142,9 @@ Dynamic collections for storing any data — agent memories, decisions, error lo
 ```bash
 brainbank kv add <coll> <content>           # Add item to a collection
 brainbank kv search <coll> <query>          # Search a collection
-brainbank kv list [coll]                    # List collections or items
-brainbank kv trim <coll> --keep <n>         # Keep only N most recent
-brainbank kv clear <coll>                   # Clear all items
+brainbank kv list [coll]                    # List collections or items in a collection
+brainbank kv trim <coll> --keep <n>         # Keep only N most recent items
+brainbank kv clear <coll>                   # Clear all items in a collection
 ```
 
 ### Examples
@@ -161,8 +161,8 @@ brainbank kv search decisions "caching" --mode keyword
 
 # Lifecycle management
 brainbank kv trim decisions --keep 50       # keep 50 most recent
-brainbank kv list                           # list all collections
-brainbank kv list decisions                 # list items in a collection
+brainbank kv list                           # list all collection names + counts
+brainbank kv list decisions                 # list items (--limit <n>, default 20)
 ```
 
 ---
@@ -172,10 +172,19 @@ brainbank kv list decisions                 # list items in a collection
 Register and manage folders of documents:
 
 ```bash
-brainbank collection add <path> --name docs # Register a document folder
-brainbank collection list                   # List registered collections
-brainbank collection remove <name>          # Remove a collection
-brainbank docs [--collection <name>]        # Index document collections
+brainbank collection add <path> --name <name>  # Register a document folder
+brainbank collection add <path> --name <name> --pattern "**/*.md" --ignore "drafts/**" --context "desc"
+brainbank collection list                       # List registered collections
+brainbank collection remove <name>              # Remove a collection
+brainbank docs [--collection <name>]            # Index document collections
+```
+
+### dsearch
+
+```bash
+brainbank dsearch <query>
+brainbank dsearch <query> --collection wiki     # Filter to specific collection
+brainbank dsearch <query> --k 10               # Max results (default: 8)
 ```
 
 ---
@@ -195,10 +204,9 @@ Output:
   Watching /path/to/repo for changes...
   14:30:02 ✓ code: src/api.ts
   14:30:05 ✓ code: src/routes.ts
-  14:30:08 ✓ csv: data/metrics.csv       ← custom plugin
 ```
 
-> Watch mode monitors **code files** by default. Custom plugins that implement `watchPatterns()` and `onFileChange()` are automatically picked up. Git history and document collections must be re-indexed explicitly with `brainbank index` / `brainbank docs`.
+Watch mode uses a 2-second debounce. It monitors code files (supported extensions) plus any files matching custom plugin `watchPatterns()`. Git history and document collections must be re-indexed explicitly with `brainbank index` / `brainbank docs`.
 
 ---
 
@@ -206,8 +214,8 @@ Output:
 
 ```bash
 brainbank stats                             # Show index statistics
-brainbank reembed                           # Re-embed all vectors (provider switch)
-brainbank serve                             # Start MCP server (stdio)
+brainbank reembed                           # Re-embed all vectors (after provider switch)
+brainbank serve                             # Start MCP server (stdio, requires @brainbank/mcp)
 ```
 
 ---
@@ -216,14 +224,14 @@ brainbank serve                             # Start MCP server (stdio)
 
 | Option | Description |
 |--------|-------------|
-| `--repo <path>` | Repository path |
+| `--repo <path>` | Repository path (default: `.`) |
 | `--force` | Force re-index everything |
-| `--depth <n>` | Git commit depth |
+| `--depth <n>` | Git commit depth (default: 500) |
 | `--<source> <n>` | Source filter (e.g. `--code 10 --git 0`) |
 | `--ignore <globs>` | Glob patterns to exclude (comma-separated) |
 | `--collection <name>` | Target collection |
-| `--pattern <glob>` | File pattern for docs |
+| `--pattern <glob>` | File pattern for docs (default: `**/*.md`) |
 | `--context <desc>` | Context description |
-| `--reranker <name>` | Reranker (`qwen3` or `none`) |
+| `--reranker <name>` | Reranker (`qwen3`) |
 | `--embedding <key>` | Embedding provider (`local`, `openai`, `perplexity`, `perplexity-context`) |
-| `--yes` / `-y` | Skip interactive prompts |
+| `--yes` / `--y` | Skip interactive prompts (auto-select all available) |

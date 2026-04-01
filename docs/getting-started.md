@@ -9,7 +9,7 @@ npm i -g brainbank                                         # core framework + CL
 npm i -g @brainbank/code @brainbank/git @brainbank/docs    # plugins you need
 ```
 
-`brainbank` is the core framework with the CLI. Plugins are separate `@brainbank/*` packages — install only what you need. Each plugin has `brainbank` as a peer dependency.
+`brainbank` is the core framework with the CLI. Plugins are separate `@brainbank/*` packages — install only what you need. Each plugin declares `brainbank` as a peer dependency.
 
 ### Tree-Sitter Grammars
 
@@ -31,7 +31,7 @@ BrainBank auto-detects installed grammars at runtime. Missing grammars fall back
 | | Swift / Lua / Bash / Elixir / CSS |
 
 <details>
-<summary>Install all 16 remaining grammars at once</summary>
+<summary>Install all remaining grammars at once</summary>
 
 ```bash
 npm i -g tree-sitter-go tree-sitter-rust tree-sitter-c tree-sitter-cpp \
@@ -47,10 +47,10 @@ npm i -g tree-sitter-go tree-sitter-rust tree-sitter-c tree-sitter-cpp \
 ## Quick Start (CLI)
 
 ```bash
-brainbank index .                          # index code + git history
+brainbank index .                          # interactive: scan → select → index
 brainbank hsearch "authentication"         # hybrid search (best quality)
 brainbank search "auth middleware"         # vector search
-brainbank ksearch "TypeError"             # keyword search (BM25)
+brainbank ksearch "TypeError"             # keyword search (BM25, instant)
 ```
 
 Store and retrieve agent knowledge:
@@ -75,13 +75,14 @@ const brain = new BrainBank({ repoPath: '.' })
   .use(code())
   .use(git());
 
-await brain.index();  // auto-initializes, incremental — only processes changes
+// Auto-initializes; incremental — only processes changes
+await brain.index();
 
-// Search across everything
+// Hybrid search across everything
 const results = await brain.hybridSearch('authentication middleware');
-console.log(results.map(r => `${r.filePath}:L${r.metadata?.startLine} (${r.score.toFixed(2)})`));
+console.log(results.map(r => `[${r.type}] ${r.filePath ?? r.content.slice(0, 60)}`));
 
-// Store agent knowledge
+// Store agent knowledge in a KV collection
 const log = brain.collection('decisions');
 await log.add(
   'Switched from bcrypt to argon2id for password hashing. ' +
@@ -91,6 +92,7 @@ await log.add(
 
 // Recall later
 const hits = await log.search('password hashing decision');
+console.log(hits.map(h => h.content));
 
 brain.close();
 ```
@@ -106,7 +108,7 @@ cd ~/my-project
 brainbank index .
 ```
 
-BrainBank scans your repo first, then shows an interactive prompt:
+BrainBank scans your repo first, then shows a summary and interactive module selection:
 
 ```
 ━━━ BrainBank Scan ━━━
@@ -132,10 +134,11 @@ Select what to index and the results appear:
 
 ```
 ━━━ Indexing: code, git ━━━
-  Code: 342 indexed, 891 chunks
-  Git:  500 indexed
-  Co-edit pairs: 423
+  Code: 342 indexed, 0 skipped, 891 chunks
+  Git:  500 indexed, 0 skipped
 ```
+
+If no `.brainbank/config.json` exists, BrainBank offers to generate one from your selection (including embedding provider choice).
 
 > Use `--yes` to skip the interactive prompt and auto-select all available modules.
 
@@ -154,6 +157,19 @@ brainbank context "add rate limiting to the API"
 ```
 
 Returns markdown with relevant code, import graphs, git history, and co-edit patterns — ready for system prompt injection.
+
+---
+
+## BrainBank Config Resolution
+
+On startup BrainBank resolves the embedding provider in this order:
+
+1. `embeddingProvider` passed to constructor (highest priority)
+2. `--embedding` CLI flag
+3. `embedding` key in `.brainbank/config.json`
+4. `BRAINBANK_EMBEDDING` environment variable
+5. `provider_key` stored in the database from a previous run
+6. Local WASM model (default, free, offline)
 
 ---
 

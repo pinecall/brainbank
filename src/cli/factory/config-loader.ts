@@ -53,11 +53,11 @@ const NOT_LOADED = Symbol('not-loaded');
 let _configCache: ProjectConfig | null | typeof NOT_LOADED = NOT_LOADED;
 
 /** Load .brainbank/config.json (or .ts fallback) if present. */
-export async function loadConfig(): Promise<ProjectConfig | null> {
+export async function loadConfig(repoPath?: string): Promise<ProjectConfig | null> {
     if (_configCache !== NOT_LOADED) return _configCache;
 
-    const repoPath = getFlag('repo') ?? '.';
-    const brainbankDir = path.resolve(repoPath, '.brainbank');
+    const rp = repoPath ?? getFlag('repo') ?? '.';
+    const brainbankDir = path.resolve(rp, '.brainbank');
 
     for (const name of CONFIG_NAMES) {
         const configPath = path.join(brainbankDir, name);
@@ -84,8 +84,8 @@ export async function loadConfig(): Promise<ProjectConfig | null> {
 }
 
 /** Get the loaded config (for use by commands). */
-export async function getConfig(): Promise<ProjectConfig | null> {
-    return loadConfig();
+export async function getConfig(repoPath?: string): Promise<ProjectConfig | null> {
+    return loadConfig(repoPath);
 }
 
 /** Reset config cache. Useful for tests. */

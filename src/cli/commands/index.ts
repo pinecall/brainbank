@@ -64,9 +64,10 @@ export async function cmdIndex(): Promise<void> {
     console.log(c.bold(`\n━━━ Indexing: ${modules.join(', ')} ━━━`));
 
     const brain = await createBrain(repoPath);
+    await brain.initialize();
 
-    const config = await getConfig();
-    await registerConfigCollections(brain, config);
+    const config = await getConfig(repoPath);
+    await registerConfigCollections(brain, repoPath, config);
 
     if (docsPath) {
         const absDocsPath = path.resolve(docsPath);

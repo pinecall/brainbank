@@ -98,7 +98,7 @@ export async function registerBuiltins(
 }
 
 /** Register doc collections from config. Call after brain.initialize(). */
-export async function registerConfigCollections(brain: BrainBank, config: ProjectConfig | null): Promise<void> {
+export async function registerConfigCollections(brain: BrainBank, rp: string, config: ProjectConfig | null): Promise<void> {
     const collections = config?.docs?.collections;
     if (!collections?.length) return;
 
@@ -106,8 +106,9 @@ export async function registerConfigCollections(brain: BrainBank, config: Projec
     const rawPlugin = brain.plugin('docs');
     if (!rawPlugin || !isDocsPlugin(rawPlugin)) return;
 
+    const repoPath = path.resolve(rp);
     for (const coll of collections) {
-        const absPath = path.resolve(coll.path);
+        const absPath = path.resolve(repoPath, coll.path);
         try {
             await rawPlugin.addCollection({
                 name: coll.name, path: absPath,

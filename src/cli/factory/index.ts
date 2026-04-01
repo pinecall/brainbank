@@ -26,7 +26,7 @@ export function resetFactoryCache(): void {
 /** Create a BrainBank with built-in + discovered + config plugins. */
 export async function createBrain(repoPath?: string): Promise<BrainBank> {
     const rp = repoPath ?? getFlag('repo') ?? '.';
-    const config = await loadConfig();
+    const config = await loadConfig(rp);
     const folderPlugins = await discoverFolderPlugins();
 
     const brainOpts: Partial<BrainBankConfig> & Record<string, unknown> = { repoPath: rp, ...(config?.brainbank ?? {}) };

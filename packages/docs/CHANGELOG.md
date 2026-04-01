@@ -4,10 +4,24 @@ All notable changes to `@brainbank/docs` will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING: search pipeline alignment** — DocsPlugin now implements `VectorSearchPlugin`, `BM25SearchPlugin`, and `ContextFormatterPlugin`, matching Code and Git plugin pattern. Docs results now flow through `CompositeVectorSearch` + `CompositeBM25Search` → central RRF instead of entering pre-fused via the `SearchablePlugin` catch-all path
+- Switched from private HNSW (`createHnsw()`) to shared HNSW (`getOrCreateSharedHnsw('docs')`) — docs vectors now load once and participate in the standard search pipeline
+- `searchBM25()` uses core `sanitizeFTS()` instead of a custom FTS query builder
+
 ### Added
+- `DocsVectorSearch` class — pure HNSW vector search for doc_chunks (no internal RRF)
+- `createVectorSearch()` — VectorSearchPlugin implementation exposing `DocsVectorSearch`
+- `searchBM25()` / `rebuildFTS()` — BM25SearchPlugin implementation (docs now appear in keyword-only searches)
+- `formatContext()` — ContextFormatterPlugin with document-specific formatting for LLM context
 - Own schema creation via `MigratablePlugin` — `collections`, `doc_chunks`, `doc_vectors`, `path_contexts`, `fts_docs` tables are now created by the docs plugin, not core
-- `ContextFormatterPlugin` implementation — document result formatting for LLM context
-- Moved `docs-context-formatter.ts` from core into package
+
+### Fixed
+- **Double-RRF scoring bug** — docs results no longer get RRF'd internally before entering the outer RRF. Scores are now comparable with code and git results
+- **Missing keyword search** — docs were completely excluded from `brain.searchBM25()` because the plugin didn't implement `BM25SearchPlugin`
+- **Missing context formatting** — docs results in `brain.getContext()` were rendered as generic bullet points instead of having domain-specific markdown formatting
+- Eliminated all `db: any` types in `DocumentSearch` and `DocumentSearchDeps`
+- Replaced all `as any` casts in `document-search.ts` with properly typed row interfaces
 
 ### Added
 - `index()` method — implements `IndexablePlugin` so docs participates in generic `brain.index()` pipeline

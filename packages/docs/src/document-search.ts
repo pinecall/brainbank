@@ -10,7 +10,7 @@ import { reciprocalRankFusion, normalizeBM25 } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 
 export interface DocumentSearchDeps {
-    db: any;
+    db: { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown; } };
     embedding: EmbeddingProvider;
     hnsw: HNSWIndex;
     vecCache: Map<number, Float32Array>;
@@ -50,14 +50,16 @@ export class DocumentSearch {
         // Map fused results back to doc SearchResults
         const allById = new Map<number, SearchResult>();
         for (const h of [...vecHits, ...bm25Hits]) {
-            const id = (h.metadata as any)?.chunkId;
+            const meta = h.metadata as Record<string, unknown> | undefined;
+            const id = meta?.chunkId as number | undefined;
             if (id != null) allById.set(id, h);
         }
 
         const results: SearchResult[] = [];
         for (const r of fused) {
-            const chunkId = (r.metadata as any)?.chunkId;
-            const original = allById.get(chunkId);
+            const meta = r.metadata as Record<string, unknown> | undefined;
+            const chunkId = meta?.chunkId as number | undefined;
+            const original = chunkId != null ? allById.get(chunkId) : undefined;
             if (!original) continue;
             const merged = { ...original, score: r.score };
             if (merged.score >= minScore) results.push(merged);
@@ -96,12 +98,14 @@ export class DocumentSearch {
 
         let searchK = k;
         if (collection && this._d.hnsw.size > 0) {
-            const collectionCount = (this._d.db.prepare(
+            const collectionRow = this._d.db.prepare(
                 'SELECT COUNT(*) as c FROM doc_chunks WHERE collection = ?'
-            ).get(collection) as any)?.c ?? 0;
-            const totalChunks = (this._d.db.prepare(
+            ).get(collection) as { c: number } | undefined;
+            const collectionCount = collectionRow?.c ?? 0;
+            const totalRow = this._d.db.prepare(
                 'SELECT COUNT(*) as c FROM doc_chunks'
-            ).get() as any)?.c ?? 1;
+            ).get() as { c: number } | undefined;
+            const totalChunks = totalRow?.c ?? 1;
             const ratio = collectionCount > 0
                 ? Math.max(3, Math.min(50, Math.ceil(totalChunks / collectionCount)))
                 : 3;
@@ -113,7 +117,7 @@ export class DocumentSearch {
 
         for (const hit of hits) {
             if (minScore && hit.score < minScore) continue;
-            const chunk = this._d.db.prepare('SELECT * FROM doc_chunks WHERE id = ?').get(hit.id) as any;
+            const chunk = this._d.db.prepare('SELECT * FROM doc_chunks WHERE id = ?').get(hit.id) as { id: number; collection: string; file_path: string; title: string; content: string; seq: number } | undefined;
             if (!chunk) continue;
             if (collection && chunk.collection !== collection) continue;
 
@@ -144,7 +148,7 @@ export class DocumentSearch {
 
         try {
             const collectionFilter = collection ? 'AND d.collection = ?' : '';
-            const params: any[] = [ftsQuery];
+            const params: unknown[] = [ftsQuery];
             if (collection) params.push(collection);
             params.push(k * 2);
 
@@ -155,7 +159,7 @@ export class DocumentSearch {
                 WHERE fts_docs MATCH ? ${collectionFilter}
                 ORDER BY bm25_score ASC
                 LIMIT ?
-            `).all(...params) as any[];
+            `).all(...params) as { id: number; collection: string; file_path: string; title: string; content: string; seq: number; bm25_score: number }[];
 
             return rows
                 .map(r => ({
@@ -208,13 +212,13 @@ export class DocumentSearch {
             const checkPath = i === 0 ? '/' : '/' + parts.slice(0, i).join('/');
             const ctx = this._d.db.prepare(
                 'SELECT context FROM path_contexts WHERE collection = ? AND path = ?'
-            ).get(collection, checkPath) as any;
+            ).get(collection, checkPath) as { context: string } | undefined;
             if (ctx) return ctx.context;
         }
 
         const coll = this._d.db.prepare(
             'SELECT context FROM collections WHERE name = ?'
-        ).get(collection) as any;
+        ).get(collection) as { context: string | null } | undefined;
         return coll?.context ?? undefined;
     }
 }

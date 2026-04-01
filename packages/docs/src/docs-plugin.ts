@@ -12,14 +12,20 @@
 
 import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult, ReembedTable, IndexResult } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
-import { runPluginMigrations } from 'brainbank';
+import { runPluginMigrations, sanitizeFTS, normalizeBM25 } from 'brainbank';
 
 import * as path from 'node:path';
 import { DocsIndexer } from './docs-indexer.js';
+import { DocsVectorSearch } from './docs-vector-search.js';
 import { DocumentSearch } from './document-search.js';
 import { DOCS_SCHEMA_VERSION, DOCS_MIGRATIONS } from './docs-schema.js';
 
 type Database = PluginContext['db'];
+
+/** Check if an error is an FTS5 query syntax error (expected, safe to ignore). */
+function isFTSError(e: unknown): boolean {
+    return e instanceof Error && /fts5|syntax error|parse error/i.test(e.message);
+}
 
 class DocsPlugin implements Plugin {
     readonly name = 'docs';
@@ -36,8 +42,15 @@ class DocsPlugin implements Plugin {
         runPluginMigrations(ctx.db.db, 'docs', DOCS_SCHEMA_VERSION, DOCS_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
-        this.hnsw = await ctx.createHnsw(undefined, embedding.dims, 'doc');
-        ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
+        // Use shared HNSW so docs participates in CompositeVectorSearch
+        const shared = await ctx.getOrCreateSharedHnsw('docs', undefined, embedding.dims);
+        this.hnsw = shared.hnsw;
+        this.vecCache = shared.vecCache;
+
+        if (shared.isNew) {
+            ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
+        }
+
         this.indexer = new DocsIndexer(ctx.db, embedding, this.hnsw, this.vecCache);
         this._search = new DocumentSearch({
             db: ctx.db,
@@ -129,9 +142,85 @@ class DocsPlugin implements Plugin {
         return results;
     }
 
+    /** VectorSearchPlugin — create domain vector search strategy for CompositeVectorSearch. */
+    createVectorSearch(): DocsVectorSearch {
+        return new DocsVectorSearch({
+            db: this._db,
+            hnsw: this.hnsw,
+        });
+    }
 
+    /** BM25SearchPlugin — FTS5 keyword search across doc chunks. */
+    searchBM25(query: string, k: number, minScore?: number): SearchResult[] {
+        const ftsQuery = this._buildDocsFTS(query);
+        if (!ftsQuery) return [];
 
-    /** Search documents using hybrid search (vector + BM25 → RRF). */
+        const threshold = minScore ?? 0;
+
+        try {
+            const rows = this._db.prepare(`
+                SELECT d.*, bm25(fts_docs, 10.0, 2.0, 5.0, 1.0) AS bm25_score
+                FROM fts_docs f
+                JOIN doc_chunks d ON d.id = f.rowid
+                WHERE fts_docs MATCH ?
+                ORDER BY bm25_score ASC
+                LIMIT ?
+            `).all(ftsQuery, k * 2) as (Record<string, unknown> & { bm25_score: number })[];
+
+            return rows
+                .map(r => ({
+                    type: 'document' as const,
+                    score: normalizeBM25(r.bm25_score),
+                    filePath: r.file_path as string,
+                    content: r.content as string,
+                    context: this._getDocContext(r.collection as string, r.file_path as string),
+                    metadata: {
+                        collection: r.collection as string,
+                        title: r.title as string,
+                        seq: r.seq as number,
+                        chunkId: r.id as number,
+                        searchType: 'bm25',
+                    },
+                }))
+                .filter(r => r.score >= threshold)
+                .slice(0, k);
+        } catch (e) {
+            if (!isFTSError(e)) throw e;
+            return [];
+        }
+    }
+
+    /** Rebuild the FTS5 index from the content table. */
+    rebuildFTS(): void {
+        try {
+            this._db.prepare("INSERT INTO fts_docs(fts_docs) VALUES('rebuild')").run();
+        } catch { /* non-fatal */ }
+    }
+
+    /** ContextFormatterPlugin — format document results for LLM context. */
+    formatContext(results: SearchResult[], parts: string[]): void {
+        const docHits = results.filter(r => r.type === 'document');
+        if (docHits.length === 0) return;
+
+        parts.push('## Documents\n');
+        for (const r of docHits) {
+            const meta = r.metadata as Record<string, unknown> | undefined;
+            const title = meta?.title as string | undefined;
+            const collection = meta?.collection as string | undefined;
+
+            const header = title
+                ? `**${title}** (${collection ?? 'docs'})`
+                : `${r.filePath ?? 'document'} (${collection ?? 'docs'})`;
+
+            parts.push(`### ${header}`);
+            parts.push(`Score: ${Math.round(r.score * 100)}%`);
+            parts.push('');
+            parts.push(r.content);
+            parts.push('');
+        }
+    }
+
+    /** SearchablePlugin — direct hybrid search with per-collection filtering. */
     async search(query: string, options?: {
         collection?: string;
         k?: number;
@@ -180,6 +269,30 @@ class DocsPlugin implements Plugin {
             chunks: (this._db.prepare('SELECT COUNT(*) as c FROM doc_chunks').get() as { c: number }).c,
             hnswSize: this.hnsw.size,
         };
+    }
+
+    /** Build OR-mode FTS5 query for natural language doc search. */
+    private _buildDocsFTS(query: string): string {
+        const fts = sanitizeFTS(query);
+        if (!fts) return '';
+        return fts;
+    }
+
+    /** Resolve context for a document (checks path_contexts tree → collection context). */
+    private _getDocContext(collection: string, filePath: string): string | undefined {
+        const parts = filePath.split('/');
+        for (let i = parts.length; i >= 0; i--) {
+            const checkPath = i === 0 ? '/' : '/' + parts.slice(0, i).join('/');
+            const ctx = this._db.prepare(
+                'SELECT context FROM path_contexts WHERE collection = ? AND path = ?'
+            ).get(collection, checkPath) as { context: string } | undefined;
+            if (ctx) return ctx.context;
+        }
+
+        const coll = this._db.prepare(
+            'SELECT context FROM collections WHERE name = ?'
+        ).get(collection) as { context: string | null } | undefined;
+        return coll?.context ?? undefined;
     }
 }
 

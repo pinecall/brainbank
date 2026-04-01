@@ -91,7 +91,7 @@ export const tests = {
             },
         };
 
-        await registerConfigCollections(brain, config);
+        await registerConfigCollections(brain, '.', config);
 
         const collections = (brain.plugin('docs') as any)!.listCollections();
         assert.equal(collections.length, 1);
@@ -111,7 +111,7 @@ export const tests = {
         }).use(docs());
         await brain.initialize();
 
-        await registerConfigCollections(brain, null);
+        await registerConfigCollections(brain, '.', null);
         const collections = (brain.plugin('docs') as any)!.listCollections();
         assert.equal(collections.length, 0);
 
@@ -142,7 +142,7 @@ export const tests = {
             },
         };
 
-        await registerConfigCollections(brain, config);
+        await registerConfigCollections(brain, '.', config);
 
         const collections = (brain.plugin('docs') as any)!.listCollections();
         assert.equal(collections.length, 2);
