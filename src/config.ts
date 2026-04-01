@@ -41,6 +41,7 @@ export function resolveConfig(partial: BrainBankConfig = {}): ResolvedConfig {
         maxElements:       partial.maxElements       ?? DEFAULTS.maxElements,
         embeddingProvider: partial.embeddingProvider,
         reranker: partial.reranker,
+        webhookPort: partial.webhookPort,
     };
 }
 

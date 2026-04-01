@@ -1,22 +1,24 @@
 /**
  * BrainBank — Watch Mode Tests
  *
- * Tests real fs.watch with temp files to verify:
- * - Custom indexer onFileChange is called on matching files
- * - Built-in code re-index is triggered for supported files
- * - Glob matching routes to the correct indexer
- * - Watcher close stops watching
+ * Tests the plugin-driven Watcher:
+ * - Plugin watch() is called for each WatchablePlugin
+ * - onEvent triggers plugin re-indexing (index or indexItems)
+ * - Per-plugin debounce from watchConfig()
+ * - close() stops all handles
+ * - onIndex callback receives (sourceId, pluginName)
+ * - Error in one plugin doesn't crash others
+ * - Debounce batches multiple rapid events
  */
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { Watcher } from '../../../src/services/watch.ts';
-import type { Plugin, WatchablePlugin } from '../../../src/plugin.ts';
+import type { Plugin, WatchablePlugin, IndexablePlugin } from '../../../src/plugin.ts';
+import type { WatchEvent, WatchEventHandler, WatchHandle, WatchConfig } from '../../../src/types.ts';
 
 export const name = 'Watch Mode';
 
 /** Wait for a condition to be true, with timeout. */
-function waitFor(conditionFn: () => boolean, timeoutMs = 5000, intervalMs = 100): Promise<boolean> {
+function waitFor(conditionFn: () => boolean, timeoutMs = 5000, intervalMs = 50): Promise<boolean> {
     return new Promise((resolve) => {
         const start = Date.now();
         const check = () => {
@@ -28,219 +30,240 @@ function waitFor(conditionFn: () => boolean, timeoutMs = 5000, intervalMs = 100)
     });
 }
 
-/** Create a temp directory for watch tests. */
-function tmpWatchDir(label: string): string {
-    const dir = `/tmp/brainbank-watch-${label}-${Date.now()}`;
-    fs.mkdirSync(dir, { recursive: true });
-    return dir;
+/** Helper: create a minimal WatchablePlugin that fires events via its stored handler. */
+function createWatchablePlugin(
+    pluginName: string,
+    opts: {
+        watchConfig?: WatchConfig;
+        indexFn?: () => Promise<{ indexed: number; skipped: number }>;
+        indexItemsFn?: (ids: string[]) => Promise<{ indexed: number; skipped: number }>;
+        watchThrows?: boolean;
+    } = {},
+): WatchablePlugin & IndexablePlugin & { _fire: (event: WatchEvent) => void; _handle: { active: boolean } } {
+    let storedHandler: WatchEventHandler | null = null;
+    const handle = { active: true };
+
+    return {
+        name: pluginName,
+        async initialize() {},
+        _fire(event: WatchEvent) { storedHandler?.(event); },
+        _handle: handle,
+
+        watch(onEvent: WatchEventHandler): WatchHandle {
+            if (opts.watchThrows) throw new Error(`Plugin ${pluginName} failed to start`);
+            storedHandler = onEvent;
+            return {
+                async stop() { handle.active = false; storedHandler = null; },
+                get active() { return handle.active; },
+            };
+        },
+        watchConfig() { return opts.watchConfig ?? {}; },
+
+        async index() {
+            if (opts.indexFn) return opts.indexFn();
+            return { indexed: 1, skipped: 0 };
+        },
+        indexItems: opts.indexItemsFn
+            ? async (ids: string[]) => opts.indexItemsFn!(ids)
+            : undefined,
+    };
 }
 
-export const tests = {
-    async 'custom indexer onFileChange is called for matching patterns'(assert: any) {
-        const dir = tmpWatchDir('custom');
-        const indexedFiles: string[] = [];
 
-        // Custom indexer that watches .csv files
-        const csvPlugin: WatchablePlugin = {
-            name: 'csv',
-            async initialize() {},
-            watchPatterns() { return ['**/*.csv']; },
-            async onFileChange(filePath: string, event: 'create' | 'update' | 'delete') {
-                indexedFiles.push(filePath);
-                return true;
-            },
+export const tests = {
+    async 'plugin watch() is called for each WatchablePlugin'(assert: { (cond: unknown, msg?: string): void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
+        let watchCalled = false;
+        const plugin = createWatchablePlugin('test-plugin');
+
+        // Wrap to detect the call
+        const origWatch = plugin.watch.bind(plugin);
+        plugin.watch = (onEvent: WatchEventHandler) => {
+            watchCalled = true;
+            return origWatch(onEvent);
         };
 
-        const indexers = new Map<string, Plugin>([['csv', csvPlugin]]);
-        let reindexCalled = false;
-
-        const watcher = new Watcher(
-            async () => { reindexCalled = true; },
-            indexers,
-            dir,
-            { paths: [dir], debounceMs: 300 },
-        );
-
-        // Create a .csv file — should trigger custom indexer
-        const csvPath = path.join(dir, 'data.csv');
-        fs.writeFileSync(csvPath, 'name,value\nfoo,42');
-
-        // Wait for debounce to fire
-        const customFired = await waitFor(() => indexedFiles.length > 0, 3000);
-
-        assert(customFired, 'custom indexer should have been called');
-        assert(indexedFiles[0].endsWith('data.csv'), 'should have indexed data.csv');
-        assert(!reindexCalled, 'built-in reindex should NOT have been called (custom handled it)');
-
-        watcher.close();
-        fs.rmSync(dir, { recursive: true, force: true });
+        const watcher = new Watcher(async () => {}, [plugin as Plugin]);
+        assert(watchCalled, 'watch() should have been called on the plugin');
+        await watcher.close();
     },
 
-    async 'built-in reindex triggers for supported code files'(assert: any) {
-        const dir = tmpWatchDir('code');
-        let reindexCount = 0;
+    async 'onEvent triggers plugin.index() for re-indexing'(assert: { (cond: unknown, msg?: string): void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
+        let indexCalled = 0;
+        const plugin = createWatchablePlugin('code', {
+            watchConfig: { debounceMs: 0 },
+            indexFn: async () => { indexCalled++; return { indexed: 1, skipped: 0 }; },
+        });
 
-        const watcher = new Watcher(
-            async () => { reindexCount++; },
-            new Map(),
-            dir,
-            { paths: [dir], debounceMs: 300 },
-        );
+        const watcher = new Watcher(async () => {}, [plugin as Plugin], { debounceMs: 0 });
 
-        // Create a .ts file — should trigger built-in reindex
-        const tsPath = path.join(dir, 'hello.ts');
-        fs.writeFileSync(tsPath, 'export const x = 1;');
+        plugin._fire({ type: 'update', sourceId: 'src/foo.ts', sourceName: 'file' });
 
-        const triggered = await waitFor(() => reindexCount > 0, 3000);
-        assert(triggered, 'reindex should have been called for .ts file');
-        assert(reindexCount >= 1, 'reindex called at least once');
+        const triggered = await waitFor(() => indexCalled > 0, 2000);
+        assert(triggered, 'plugin.index() should have been called');
+        assert.equal(indexCalled, 1, 'index called exactly once');
 
-        watcher.close();
-        fs.rmSync(dir, { recursive: true, force: true });
+        await watcher.close();
     },
 
-    async 'ignored directories and files are skipped'(assert: any) {
-        const dir = tmpWatchDir('ignored');
-        let reindexCount = 0;
+    async 'indexItems called when available instead of full index'(assert: { (cond: unknown, msg?: string): void; ok: (cond: unknown, msg?: string) => void; deepEqual: (a: unknown, b: unknown, msg?: string) => void }) {
+        const indexedIds: string[][] = [];
+        let fullIndexCalled = false;
 
-        const watcher = new Watcher(
-            async () => { reindexCount++; },
-            new Map(),
-            dir,
-            { paths: [dir], debounceMs: 300 },
-        );
+        const plugin = createWatchablePlugin('code', {
+            watchConfig: { debounceMs: 0 },
+            indexFn: async () => { fullIndexCalled = true; return { indexed: 1, skipped: 0 }; },
+            indexItemsFn: async (ids) => { indexedIds.push(ids); return { indexed: ids.length, skipped: 0 }; },
+        });
 
-        // Create file inside node_modules — should be ignored
-        const nmDir = path.join(dir, 'node_modules', 'pkg');
-        fs.mkdirSync(nmDir, { recursive: true });
-        fs.writeFileSync(path.join(nmDir, 'index.ts'), 'export const x = 1;');
+        const watcher = new Watcher(async () => {}, [plugin as Plugin], { debounceMs: 0 });
 
-        // Create a lockfile — should be ignored
-        fs.writeFileSync(path.join(dir, 'package-lock.json'), '{}');
+        plugin._fire({ type: 'update', sourceId: 'src/bar.ts', sourceName: 'file' });
 
-        // Wait and check nothing was triggered
-        await new Promise(r => setTimeout(r, 1000));
-        assert.equal(reindexCount, 0, 'should NOT reindex ignored files');
+        const triggered = await waitFor(() => indexedIds.length > 0, 2000);
+        assert.ok(triggered, 'indexItems should have been called');
+        assert.deepEqual(indexedIds[0], ['src/bar.ts'], 'should receive the sourceId');
+        assert(!fullIndexCalled, 'full index() should NOT have been called');
 
-        watcher.close();
-        fs.rmSync(dir, { recursive: true, force: true });
+        await watcher.close();
     },
 
-    async 'debounce batches multiple rapid changes'(assert: any) {
-        const dir = tmpWatchDir('debounce');
-        let reindexCount = 0;
+    async 'per-plugin debounce batches events'(assert: { (cond: unknown, msg?: string): void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
+        let indexCallCount = 0;
+        const plugin = createWatchablePlugin('code', {
+            watchConfig: { debounceMs: 300 },
+            indexFn: async () => { indexCallCount++; return { indexed: 1, skipped: 0 }; },
+        });
 
-        const watcher = new Watcher(
-            async () => { reindexCount++; },
-            new Map(),
-            dir,
-            { paths: [dir], debounceMs: 500 },
-        );
+        const watcher = new Watcher(async () => {}, [plugin as Plugin]);
 
-        // Rapidly create 5 files
+        // Fire 5 rapid events — should batch into 1 flush
         for (let i = 0; i < 5; i++) {
-            fs.writeFileSync(path.join(dir, `file${i}.ts`), `export const x = ${i};`);
+            plugin._fire({ type: 'update', sourceId: `file${i}.ts`, sourceName: 'file' });
         }
 
-        // Wait for single debounced flush
-        const triggered = await waitFor(() => reindexCount > 0, 3000);
-        assert(triggered, 'reindex should have been called');
-        // Should batch into 1 call (or very few), not 5
-        assert(reindexCount <= 2, `should batch changes (got ${reindexCount} calls)`);
+        const triggered = await waitFor(() => indexCallCount > 0, 2000);
+        assert(triggered, 'index should have been called');
+        assert.equal(indexCallCount, 1, `should batch into 1 call (got ${indexCallCount})`);
 
-        watcher.close();
-        fs.rmSync(dir, { recursive: true, force: true });
+        await watcher.close();
     },
 
-    async 'watcher.close() stops watching'(assert: any) {
-        const dir = tmpWatchDir('close');
-        let reindexCount = 0;
+    async 'close() stops all handles and sets active=false'(assert: { (cond: unknown, msg?: string): void }) {
+        const plugin = createWatchablePlugin('code');
 
-        const watcher = new Watcher(
-            async () => { reindexCount++; },
-            new Map(),
-            dir,
-            { paths: [dir], debounceMs: 300 },
-        );
+        const watcher = new Watcher(async () => {}, [plugin as Plugin]);
+        assert(watcher.active, 'watcher should be active initially');
 
-        // Close immediately
-        watcher.close();
+        await watcher.close();
         assert(!watcher.active, 'watcher should not be active after close');
-
-        // Create a file — should NOT trigger anything
-        fs.writeFileSync(path.join(dir, 'after-close.ts'), 'export const x = 1;');
-        await new Promise(r => setTimeout(r, 800));
-        assert.equal(reindexCount, 0, 'should NOT reindex after close');
-
-        fs.rmSync(dir, { recursive: true, force: true });
+        assert(!plugin._handle.active, 'plugin handle should not be active after close');
     },
 
-    async 'onIndex callback receives file and indexer name'(assert: any) {
-        const dir = tmpWatchDir('callback');
-        const events: { file: string; indexer: string }[] = [];
+    async 'onIndex callback receives sourceId and pluginName'(assert: { (cond: unknown, msg?: string): void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
+        const events: { sourceId: string; pluginName: string }[] = [];
+        const plugin = createWatchablePlugin('my-plugin', {
+            watchConfig: { debounceMs: 0 },
+        });
 
         const watcher = new Watcher(
             async () => {},
-            new Map(),
-            dir,
+            [plugin as Plugin],
             {
-                paths: [dir],
-                debounceMs: 300,
-                onIndex: (file: string, indexer: string) => events.push({ file, indexer }),
+                debounceMs: 0,
+                onIndex: (sourceId, pluginName) => events.push({ sourceId, pluginName }),
             },
         );
 
-        // Create a .py file
-        fs.writeFileSync(path.join(dir, 'script.py'), 'print("hello")');
+        plugin._fire({ type: 'create', sourceId: 'pr/123', sourceName: 'github:pr' });
 
-        const gotCallback = await waitFor(() => events.length > 0, 3000);
+        const gotCallback = await waitFor(() => events.length > 0, 2000);
         assert(gotCallback, 'onIndex callback should have been called');
-        assert(events[0].indexer === 'code', 'indexer should be "code"');
-        assert(events[0].file.includes('script.py'), 'file should contain script.py');
+        assert.equal(events[0].pluginName, 'my-plugin', 'pluginName should match');
+        assert.equal(events[0].sourceId, 'pr/123', 'sourceId should match');
 
-        watcher.close();
-        fs.rmSync(dir, { recursive: true, force: true });
+        await watcher.close();
     },
 
-    async 'custom indexer re-indexes updated file content'(assert: any) {
-        const dir = tmpWatchDir('reindex');
-        const indexed: { path: string; event: string }[] = [];
+    async 'error in one plugin watch() does not crash others'(assert: { (cond: unknown, msg?: string): void }) {
+        const errors: string[] = [];
 
-        const customPlugin: WatchablePlugin = {
-            name: 'json-data',
+        const failingPlugin = createWatchablePlugin('failing', { watchThrows: true });
+        const goodPlugin = createWatchablePlugin('good');
+
+        const watcher = new Watcher(
+            async () => {},
+            [failingPlugin as Plugin, goodPlugin as Plugin],
+            { onError: (err) => errors.push(err.message) },
+        );
+
+        assert(errors.length > 0, 'should have captured the error from failing plugin');
+        assert(goodPlugin._handle.active, 'good plugin should still be active');
+        assert(watcher.active, 'watcher should still be active');
+
+        await watcher.close();
+    },
+
+    async 'non-watchable plugins are silently skipped'(assert: { (cond: unknown, msg?: string): void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
+        // A plain Plugin with no watch() method
+        const plainPlugin: Plugin = {
+            name: 'plain',
             async initialize() {},
-            watchPatterns() { return ['**/*.json']; },
-            async onFileChange(filePath: string, event: 'create' | 'update' | 'delete') {
-                indexed.push({ path: filePath, event });
-                return true;
-            },
         };
 
-        const indexers = new Map<string, Plugin>([['json-data', customPlugin]]);
+        const watchablePlugin = createWatchablePlugin('watchable', {
+            watchConfig: { debounceMs: 0 },
+        });
 
+        const events: string[] = [];
         const watcher = new Watcher(
             async () => {},
-            indexers,
-            dir,
-            { paths: [dir], debounceMs: 300 },
+            [plainPlugin, watchablePlugin as Plugin],
+            {
+                debounceMs: 0,
+                onIndex: (sourceId) => events.push(sourceId),
+            },
         );
 
-        // Create file
-        const jsonPath = path.join(dir, 'config.json');
-        fs.writeFileSync(jsonPath, '{"version": 1}');
+        watchablePlugin._fire({ type: 'update', sourceId: 'test.ts', sourceName: 'file' });
 
-        const created = await waitFor(() => indexed.length > 0, 3000);
-        assert(created, 'should detect file creation');
+        const triggered = await waitFor(() => events.length > 0, 2000);
+        assert(triggered, 'watchable plugin should still work');
+        assert.equal(events[0], 'test.ts', 'should receive event from watchable plugin');
 
-        // Update file
-        indexed.length = 0;
-        fs.writeFileSync(jsonPath, '{"version": 2}');
+        await watcher.close();
+    },
 
-        const updated = await waitFor(() => indexed.length > 0, 3000);
-        assert(updated, 'should detect file update');
-        assert(indexed[0].event === 'update', 'event should be "update"');
+    async 'global reindexFn used when plugin is watchable but not indexable'(assert: { (cond: unknown, msg?: string): void }) {
+        let globalReindexCalled = false;
 
-        watcher.close();
-        fs.rmSync(dir, { recursive: true, force: true });
+        // A WatchablePlugin that is NOT IndexablePlugin (no index method)
+        // Use a ref object so TypeScript doesn't narrow the handler to `never`
+        const ref: { handler: WatchEventHandler | null } = { handler: null };
+        const plugin: WatchablePlugin = {
+            name: 'notifier',
+            async initialize() {},
+            watch(onEvent) {
+                ref.handler = onEvent;
+                return {
+                    async stop() { ref.handler = null; },
+                    get active() { return ref.handler !== null; },
+                };
+            },
+            watchConfig() { return { debounceMs: 0 }; },
+        };
+
+        const watcher = new Watcher(
+            async () => { globalReindexCalled = true; },
+            [plugin as Plugin],
+            { debounceMs: 0 },
+        );
+
+        // Fire an event via the stored handler
+        ref.handler?.({ type: 'sync', sourceId: 'webhook', sourceName: 'external' });
+
+        const triggered = await waitFor(() => globalReindexCalled, 2000);
+        assert(triggered, 'global reindexFn should have been called as fallback');
+
+        await watcher.close();
     },
 };

@@ -73,8 +73,14 @@ export class CsvPlugin implements Plugin {
     async searchCsv(query: string, k = 5) { return this.search(query, { k }); }
     csvStats() { return { rows: this.ctx.collection('csv_data').count() }; }
 
-    watchPatterns() { return ['**/*.csv']; }
-    async onFileChange() { await this.index(); return true; }
+    watch(onEvent) {
+      // Plugin drives its own watching (fs.watch for .csv files)
+      const watcher = require('fs').watch('.', { recursive: true }, (_e, f) => {
+        if (f?.endsWith('.csv')) onEvent({ type: 'update', sourceId: f, sourceName: 'file' });
+      });
+      let active = true;
+      return { async stop() { watcher.close(); active = false; }, get active() { return active; } };
+    }
 }
 
 export function csv(opts?: CsvPluginOptions): Plugin {

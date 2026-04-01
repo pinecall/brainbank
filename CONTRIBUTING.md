@@ -27,16 +27,15 @@ npm test -- --verbose           # Show assertion details
 src/
 ├── brainbank.ts       Main orchestrator (facade)
 ├── types.ts           All shared types and interfaces
-├── config/            Defaults, resolver
+├── plugin.ts          Plugin interfaces + capability type guards
+├── config.ts          Defaults + resolver
+├── constants.ts       PLUGIN / HNSW typed constants
 ├── db/                SQLite schema, database wrapper
 ├── lib/               Pure functions: math, rrf, fts
 ├── providers/         Embeddings (local, OpenAI, Perplexity), vector (HNSW), rerankers
 ├── search/            Search strategies: vector, keyword, context-builder
-├── domain/            Core primitives: collection, memory
-├── indexers/          Plugins: code, git, docs + base interface
-├── services/          Reembed, watch
-├── bootstrap/         (reserved for future system wiring)
-├── api/               Use cases: search-api, index-api
+├── services/          KV, watch, webhook-server, plugin-registry
+├── engine/            Use cases: search-api, index-api, reembed
 └── cli/               CLI commands and factory
 ```
 
@@ -47,18 +46,26 @@ See [docs/architecture.md](docs/architecture.md) for the complete architecture r
 Implement the `Plugin` interface:
 
 ```typescript
-import type { Plugin, PluginContext } from 'brainbank';
+import type { Plugin, PluginContext, WatchablePlugin, WatchEventHandler, WatchHandle } from 'brainbank';
 
-function myPlugin(): Plugin {
+function myPlugin(): Plugin & WatchablePlugin {
   return {
     name: 'my-plugin',
     async initialize(ctx) {
       // ctx.db, ctx.embedding, ctx.collection() available
     },
-    watchPatterns() { return ['**/*.csv']; },
-    async onFileChange(path, event) {
-      // Handle file changes in watch mode
-      return true;
+    watch(onEvent: WatchEventHandler): WatchHandle {
+      // Plugin drives its own watching
+      const watcher = require('fs').watch('.', { recursive: true }, (_event: string, filename: string) => {
+        if (filename?.endsWith('.csv')) {
+          onEvent({ type: 'update', sourceId: filename, sourceName: 'file' });
+        }
+      });
+      let active = true;
+      return {
+        async stop() { watcher.close(); active = false; },
+        get active() { return active; },
+      };
     },
   };
 }

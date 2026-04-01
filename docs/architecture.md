@@ -122,7 +122,8 @@ brainbank/
 │   │
 │   ├── db/
 │   │   ├── database.ts                ← better-sqlite3 wrapper (WAL, FK, transactions)
-│   │   ├── schema.ts                  ← Core-only DDL: KV tables, embedding_meta, plugin_versions
+│   │   ├── schema.ts                  ← Core-only DDL: KV tables, embedding_meta, plugin_versions, index_state
+│   │   ├── index-state.ts             ← Cross-process version tracking (bumpVersion, getVersions)
 │   │   ├── migrations.ts              ← Plugin migration system (runPluginMigrations)
 │   │   ├── embedding-meta.ts          ← Track/detect/compare embedding provider in DB
 │   │   └── rows.ts                    ← TypeScript interfaces for core DB row types
@@ -133,12 +134,14 @@ brainbank/
 │   │   │   ├── openai-embedding.ts    ← OpenAI API (1536d / 3072d)
 │   │   │   ├── perplexity-embedding.ts ← Perplexity standard (2560d, base64 int8)
 │   │   │   ├── perplexity-context-embedding.ts ← Contextualized (2560d, best quality)
-│   │   │   └── resolve.ts             ← resolveEmbedding(key) + providerKey(provider)
+│   │   │   ├── resolve.ts             ← resolveEmbedding(key) + providerKey(provider)
+│   │   │   ├── embedding-worker.ts    ← EmbeddingWorkerProxy (offloads to worker_threads)
+│   │   │   └── embedding-worker-thread.ts ← Worker script: zero-copy ArrayBuffer transfer
 │   │   ├── rerankers/
 │   │   │   └── qwen3-reranker.ts      ← Qwen3 cross-encoder via node-llama-cpp
 │   │   └── vector/
 │   │       ├── hnsw-index.ts          ← HNSWIndex: hnswlib-node wrapper
-│   │       └── hnsw-loader.ts         ← hnswPath, loadVectors, loadVecCache, saveAllHnsw
+│   │       └── hnsw-loader.ts         ← hnswPath, loadVectors, loadVecCache, saveAllHnsw, reloadHnsw
 │   │
 │   ├── search/
 │   │   ├── types.ts                   ← SearchStrategy, DomainVectorSearch, SearchOptions
@@ -153,7 +156,8 @@ brainbank/
 │   │   ├── collection.ts              ← Collection: KV store (hybrid search, tags, TTL)
 │   │   ├── kv-service.ts              ← KVService: owns shared kvHnsw + kvVecs + collection map
 │   │   ├── plugin-registry.ts         ← PluginRegistry: registration + type-prefix lookup
-│   │   └── watch.ts                   ← Watcher: fs.watch with debounce + plugin routing
+│   │   ├── watch.ts                   ← Watcher: plugin-driven watching + debounce
+│   │   └── webhook-server.ts          ← WebhookServer: optional HTTP for push plugins
 │   │
 │   ├── lib/
 │   │   ├── fts.ts                     ← sanitizeFTS, normalizeBM25, escapeLike
@@ -161,7 +165,8 @@ brainbank/
 │   │   ├── math.ts                    ← cosineSimilarity, normalize, vecToBuffer
 │   │   ├── provider-key.ts            ← providerKey(): EmbeddingProvider → canonical key
 │   │   ├── rerank.ts                  ← Position-aware score blending
-│   │   └── rrf.ts                     ← reciprocalRankFusion + fuseRankedLists<T>
+│   │   ├── rrf.ts                     ← reciprocalRankFusion + fuseRankedLists<T>
+│   │   └── write-lock.ts             ← Advisory file lock (O_EXCL, stale PID detection)
 │   │
 │   └── cli/
 │       ├── index.ts                   ← CLI dispatcher
@@ -271,9 +276,10 @@ no business logic itself.
 │  _indexDeps:    IndexDeps | undefined    indexing orchestration        │
 │  _kvService:    KVService | undefined    KV infra (hnsw, vecs, map)    │
 │  _sharedHnsw:   Map<string, {hnsw, vecCache}>  'code' / 'git' pool   │
+│  _loadedVersions: Map<string, number>    snapshot of index_state vers  │
 │  _initialized:  boolean                  init guard flag               │
 │  _initPromise:  Promise<void> | null     dedup concurrent inits        │
-│  _watcher:      Watcher | undefined      fs.watch handle               │
+│  _watcher:      Watcher | undefined      plugin-driven watch handle    │
 │                                                                        │
 │  PUBLIC API                                                            │
 │  ─────────────────────────────────────────────────────────────────    │
@@ -287,9 +293,11 @@ no business logic itself.
 │  .hybridSearch(query, opts)  vector + BM25 → RRF → optional rerank    │
 │  .searchBM25(query, opts)  keyword-only search                         │
 │  .getContext(task, opts)    formatted markdown for LLM system prompt    │
+│  .ensureFresh()            hot-reload stale HNSW if another process    │
+│                            bumped versions in index_state              │
 │  .rebuildFTS()             rebuild FTS5 indices                        │
 │  .reembed(opts)            re-generate all vectors (provider switch)   │
-│  .watch(opts)              start fs.watch auto-reindex                 │
+│  .watch(opts)              start plugin-driven auto-reindex              │
 │  .stats()                  stats from all loaded plugins               │
 │  .has(name)                check if plugin loaded (prefix-match)       │
 │  .plugin<T>(name)          typed plugin access, undefined if missing   │
@@ -316,6 +324,9 @@ no business logic itself.
 Methods that call await this.initialize() (auto-init, transparent):
   index, search, hybridSearch, searchBM25, getContext, reembed
 
+Methods that call ensureFresh() (hot-reload stale HNSW before query):
+  search, hybridSearch, searchBM25, getContext
+
 Methods that call _requireInit() (throw if not initialized):
   rebuildFTS, watch, stats
   listCollectionNames, deleteCollection
@@ -341,6 +352,7 @@ _db?.close()
 _initialized = false
 _kvService?.clear()
 _sharedHnsw.clear()
+_loadedVersions.clear()
 _kvService = undefined
 _searchAPI = undefined
 _indexDeps = undefined
@@ -398,9 +410,13 @@ BrainBank._runInitialize({ force? })
 ├── 7. Persist HNSW Indices
 │     saveAllHnsw(dbPath, kvHnsw, sharedHnsw, privateHnsw)
 │
-└── 8. Build SearchAPI + IndexDeps
+├── 8. Snapshot Index Versions
+│     _loadedVersions = getVersions(db)
+│     ← used by ensureFresh() to detect stale HNSW
+│
+└── 9. Build SearchAPI + IndexDeps
       createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw)
-      _indexDeps = { registry, emit }
+      _indexDeps = { registry, emit, db, dbPath, sharedHnsw, kvHnsw }
       _initialized = true
 ```
 
@@ -494,13 +510,16 @@ Plugin  (base — every plugin must implement)
 
 IndexablePlugin extends Plugin
 │  index(options?: IndexOptions): Promise<IndexResult>
+│  indexItems?(ids: string[]): Promise<IndexResult>  ← optional granular re-index
 
 SearchablePlugin extends Plugin
 │  search(query: string, options?: Record<string, unknown>): Promise<SearchResult[]>
 
 WatchablePlugin extends Plugin
-│  onFileChange(filePath, event: 'create'|'update'|'delete'): Promise<boolean>
-│  watchPatterns(): string[]
+│  watch(onEvent: WatchEventHandler): WatchHandle
+│  watchConfig?(): WatchConfig
+│  ← plugin drives its own watching (fs.watch, polling, webhook, etc.)
+│  ← core only coordinates handles and triggers re-indexing
 
 VectorSearchPlugin extends Plugin
 │  createVectorSearch(): DomainVectorSearch | undefined
@@ -537,7 +556,7 @@ DocsPlugin extends SearchablePlugin
 ```typescript
 isIndexable(p)              → typeof p.index === 'function'
 isSearchable(p)             → typeof p.search === 'function'
-isWatchable(p)              → typeof p.onFileChange + watchPatterns
+isWatchable(p)              → typeof p.watch === 'function'
 isDocsPlugin(p)             → typeof p.addCollection + listCollections
 isCoEditPlugin(p)           → 'coEdits' in p && typeof suggest === 'function'
 isReembeddable(p)           → typeof p.reembedConfig === 'function'
@@ -1149,14 +1168,20 @@ size / maxElements
 
 ### 11.3 HNSW Loader
 
-**File:** `src/providers/vector/hnsw-loader.ts` (86 lines)
+**File:** `src/providers/vector/hnsw-loader.ts`
 
 ```
 hnswPath(dbPath, name) → join(dirname(dbPath), 'hnsw-{name}.index')
+lockDir(dbPath)        → dirname(dbPath)
 countRows(db, table)   → SELECT COUNT(*)
 
 saveAllHnsw(dbPath, kvHnsw, sharedHnsw, privateHnsw):
+  async — wraps save in withLock(lockDir, 'hnsw', ...)
   try/catch: non-fatal, next startup rebuilds from SQLite
+
+reloadHnsw(db, dbPath, name, hnsw, vecCache, vectorTable, idCol):
+  reinit HNSW index + repopulate from SQLite + try disk load
+  used by ensureFresh() when a stale index is detected
 
 loadVectors(db, table, idCol, hnsw, cache):
   iterate rows → Float32Array from Buffer → hnsw.add + cache.set
@@ -1216,22 +1241,55 @@ Qwen3Reranker({ modelUri?, cacheDir?, contextSize=2048 })
 
 ### 12.1 Watch Service
 
-**File:** `src/services/watch.ts` (220 lines)
+**File:** `src/services/watch.ts`
+**Pattern:** Plugin-driven watching with per-plugin debounce
+
+The core does NOT do `fs.watch` or know about file patterns. Each
+plugin drives its own watching via the `WatchablePlugin` interface.
 
 ```
-Watcher(reindexFn, indexers: Map<string,Plugin>, repoPath, options)
-  { paths?, debounceMs=2000, onIndex?, onError? }
+Watcher(reindexFn, plugins: Plugin[], options)
+  { debounceMs=2000, onIndex?, onError? }
 
-  _collectCustomPatterns(): isWatchable plugins → { indexer, patterns }
   _startWatching():
-    fs.watch(path, { recursive: mac/win }, callback)
-    filter: IGNORE_DIRS, IGNORE_FILES, isSupported, custom patterns
-    debounce → _processPending()
+    for each WatchablePlugin:
+      handle = plugin.watch(onEvent)    ← plugin controls how
+      collect handle for cleanup
 
-  _processPending() [serialized via _flushing flag]:
-    custom plugin: onFileChange(absPath, event)
-    code files: await reindexFn() (full re-index)
-    catch → re-queue for retry
+  _onEvent(plugin, event: WatchEvent):
+    resolve debounce: plugin.watchConfig()?.debounceMs > global
+    batch events → _flush()
+
+  _flush(batch):
+    if plugin.indexItems: indexItems([ids])   ← granular
+    else if plugin.index: index()             ← full re-index
+    else: reindexFn()                         ← global fallback
+
+  close(): handle.stop() on all handles
+```
+
+**WatchEvent** — generalized beyond files:
+```
+{ type: 'create'|'update'|'delete'|'sync',
+  sourceId: string,     ← file path, PR#123, PROJ-456
+  sourceName: string,   ← 'file', 'github:pr', 'jira:card'
+  payload?: unknown }   ← raw data to avoid re-fetch
+```
+
+### 12.1.1 WebhookServer
+
+**File:** `src/services/webhook-server.ts`
+**Pattern:** Optional shared HTTP server for push-based plugins
+
+Opt-in via `new BrainBank({ webhookPort: 4242 })`.
+Plugins register routes: `ctx.webhookServer?.register('jira', '/jira/hook', handler)`.
+
+```
+WebhookServer
+  listen(port)
+  register(pluginName, path, handler)
+  unregister(pluginName)
+  close()
 ```
 
 ### 12.2 Reembed Engine
@@ -1284,13 +1342,14 @@ detectProviderMismatch(db, embedding):
 
 ### 13.1 IndexAPI
 
-**File:** `src/engine/index-api.ts` (62 lines)
+**File:** `src/engine/index-api.ts`
 
 Plugin-agnostic indexing orchestrator. Uses `isIndexable()` type guard
-to discover which plugins can index.
+to discover which plugins can index. Bumps `index_state` version and
+persists HNSW after each plugin completes.
 
 ```
-runIndex(deps: { registry, emit }, options):
+runIndex(deps: IndexDeps, options):
   want = Set(options.modules) or null (all)
 
   for mod in registry.all:
@@ -1299,8 +1358,12 @@ runIndex(deps: { registry, emit }, options):
     if !isIndexable(mod) → skip
     r = await mod.index({ forceReindex, onProgress, ...pluginOptions })
     results[baseType] = mergeResult(accumulator, r)
+    bumpVersion(db, baseType)    ← signals other processes
+    saveAllHnsw(dbPath, ...)     ← persists for hot-reload
 
   emit('indexed', results)
+
+IndexDeps { registry, emit, db, dbPath, sharedHnsw, kvHnsw }
 ```
 
 **`mergeResult`** accumulates across multi-repo instances:
@@ -1385,7 +1448,7 @@ createBrain(repoPath?)  [src/cli/factory/index.ts]
 | `context add/list` | `cmdContext` | Path context management |
 | `stats` | `cmdStats` | Index statistics |
 | `reembed` | `cmdReembed` | Re-generate all vectors |
-| `watch` | `cmdWatch` | fs.watch auto-reindex |
+| `watch` | `cmdWatch` | Plugin-driven auto-reindex |
 | `serve` | `cmdServe` | MCP server (imports @brainbank/mcp) |
 
 **Dynamic source flags in search commands:**
@@ -1400,7 +1463,7 @@ NON_SOURCE_FLAGS excluded: repo, depth, collection, pattern, etc.
 
 ## 15. SQLite Schema
 
-### Core Schema (`src/db/schema.ts` — SCHEMA_VERSION = 7)
+### Core Schema (`src/db/schema.ts` — SCHEMA_VERSION = 8)
 
 Core creates ONLY infrastructure tables. All domain tables are created
 by plugins via `runPluginMigrations()`.
@@ -1437,6 +1500,15 @@ schema_version
 plugin_versions
   plugin_name TEXT PRIMARY KEY
   version INTEGER, applied_at INTEGER
+
+
+━━━ CORE: MULTI-PROCESS COORDINATION (schema v8) ━━━━━━━━━━━━━━━━━━━━━
+
+index_state
+  name TEXT PRIMARY KEY         ← 'code', 'git', 'docs', 'kv'
+  version INTEGER DEFAULT 0     ← monotonic, bumped after indexing
+  writer_pid INTEGER            ← PID of last writing process
+  updated_at INTEGER            ← unixepoch() of last bump
 ```
 
 ### Plugin Schemas (created by migrations during initialize())
@@ -1790,7 +1862,8 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
      │                                                                  │
      │  KVService → Collection (kvHnsw shared + fts_kv + kv_data)       │
      │  reembedAll (atomic swap, per-table)                             │
-     │  Watcher (fs.watch + debounce + plugin routing)                  │
+     │  Watcher (plugin-driven watching + debounce + re-index)          │
+     │  WebhookServer (optional HTTP for push-based plugins)            │
      │  EmbeddingMeta (provider tracking + mismatch detection)          │
      └──────────────────────────────────────────────────────────────────┘
 
@@ -1850,7 +1923,7 @@ npm test -- --verbose --filter reembed   # verbose output
 
 ## 20. Concurrency & WAL Strategy
 
-### Current Model
+### SQLite WAL Model
 
 SQLite in WAL mode with `busy_timeout = 5000ms`:
 
@@ -1861,21 +1934,78 @@ SQLite in WAL mode with `busy_timeout = 5000ms`:
 | **busy_timeout** | Wait up to 5s for write lock before SQLITE_BUSY |
 | **synchronous** | NORMAL — fsync on checkpoint, not every commit |
 
-### Why Single-Writer Works
+### Multi-Process Coordination
 
-BrainBank is single-process by design:
+Multiple BrainBank processes (CLI `index`, MCP server, `watch`) can safely
+coexist against the same SQLite database. The coordination mechanism has
+four components:
 
-- **CLI:** one command at a time
-- **MCP:** requests sequential per workspace instance
-- **Watch:** `_flushing` flag prevents concurrent reindex
-- **Indexing:** writes batched in transactions
+#### 1. SQLite Versioning (`index_state` table)
+
+Each HNSW index name (`code`, `git`, `docs`, `kv`) gets a monotonic version
+counter. After indexing, `bumpVersion(db, name)` increments the counter.
+Other processes detect staleness by comparing their in-memory snapshot
+against the DB.
+
+```
+┌──────────┐  bumpVersion('code')  ┌──────────────┐
+│ Process A │ ───────────────────► │ index_state  │
+│ (indexer) │                      │ code: v=3    │
+└──────────┘                      └──────┬───────┘
+                                         │ getVersions()
+┌──────────┐  stale! v_loaded=2 < v_db=3 │
+│ Process B │ ◄──────────────────────────┘
+│ (MCP srv) │ → reloadHnsw('code')
+└──────────┘
+```
+
+**Cost:** `getVersions()` is a single `SELECT` (~5μs). Called lazily
+before every search operation via `ensureFresh()`.
+
+#### 2. Advisory File Lock (`write-lock.ts`)
+
+HNSW `.index` files are written via `saveAllHnsw()`, which wraps all
+I/O in `withLock(lockDir, 'hnsw', fn)`. The lock uses `O_CREAT | O_EXCL`
+for atomic creation. If the lock holder is dead (PID check via
+`process.kill(pid, 0)`), the stale lock is stolen automatically.
+
+```
+acquireLock(dir, name): O_EXCL create → retry with exponential backoff
+releaseLock(dir, name): unlink lock file
+withLock(dir, name, fn): acquire → fn() → release (guaranteed via finally)
+```
+
+#### 3. Hot-Reload (`ensureFresh()`)
+
+Called implicitly before `search()`, `hybridSearch()`, `searchBM25()`,
+and `getContext()`. Compares `_loadedVersions` Map against
+`getVersions(db)`. For each stale index:
+
+1. If a `ReembeddablePlugin` owns the index → discovers `vectorTable` + `idCol`
+2. Calls `reloadHnsw(db, dbPath, name, hnsw, vecCache, table, col)`
+3. Updates `_loadedVersions` to the new version
+
+KV index staleness is handled directly (always `kv_vectors` / `data_id`).
+
+#### 4. MCP Pool Invalidation
+
+`@brainbank/mcp` maintains a pool of `BrainBank` instances (LRU, max 10).
+On each tool request, the server calls `brain.ensureFresh()` to detect
+whether another process has indexed since the pool entry was created.
+This replaces the previous fragile `hnswSize === 0` check.
+
+#### 5. Worker Thread Embedding
+
+`EmbeddingWorkerProxy` offloads `embed()`/`embedBatch()` to a
+`worker_threads.Worker`, preventing embedding computation from blocking
+the main event loop (critical for MCP servers handling concurrent requests).
+Vectors are transferred via `Transferable` `ArrayBuffer` for zero-copy.
 
 ### Known Limitations
 
-1. **Multi-process writes:** Two BrainBank instances on same DB will contend
-2. **Long indexing blocks writers:** Large repos hold write lock during index
-3. **No WAL checkpoint control:** SQLite auto-checkpoints at 1000 pages
-</edit>
+1. **Long indexing blocks writers:** Large repos hold SQLite write lock during index tx
+2. **No WAL checkpoint control:** SQLite auto-checkpoints at 1000 pages
+3. **HNSW rebuild on cold start:** If `.index` file is missing, full rebuild from SQLite
 
 The document has been completely rewritten from scratch. Here's a summary of what changed vs the stale version:
 

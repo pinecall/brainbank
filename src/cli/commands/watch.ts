@@ -13,9 +13,9 @@ export async function cmdWatch(): Promise<void> {
 
     const watcher = brain.watch({
         debounceMs: 2000,
-        onIndex: (file: string, indexer: string) => {
+        onIndex: (sourceId: string, pluginName: string) => {
             const ts = new Date().toLocaleTimeString();
-            console.log(`  ${c.dim(ts)} ${c.green('✓')} ${c.cyan(indexer)}: ${file}`);
+            console.log(`  ${c.dim(ts)} ${c.green('✓')} ${c.cyan(pluginName)}: ${sourceId}`);
         },
         onError: (err: Error) => {
             console.error(`  ${c.red('✗')} ${err.message}`);

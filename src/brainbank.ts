@@ -9,6 +9,11 @@
  * Initialization is inline — no indirection layers.
  * All heavy logic lives in those modules; BrainBank owns state,
  * guards (`_requireInit` / `initialize`), and public API shape.
+ *
+ * Multi-process coordination:
+ *   - `ensureFresh()` detects stale HNSW indices via `index_state` table
+ *   - Hot-reloads from disk when another process updated the index
+ *   - Called implicitly before every search operation
  */
 
 import type { ReembedResult, ReembedOptions } from './engine/reembed.ts';
@@ -27,16 +32,19 @@ import { resolveConfig } from './config.ts';
 import { HNSW } from './constants.ts';
 import { Database } from './db/database.ts';
 import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from './db/embedding-meta.ts';
+import { getVersions } from './db/index-state.ts';
 import { runIndex } from './engine/index-api.ts';
 import { reembedAll } from './engine/reembed.ts';
 import { SearchAPI, createSearchAPI } from './engine/search-api.ts';
+import { isReembeddable } from './plugin.ts';
 
 import { resolveEmbedding } from './providers/embeddings/resolve.ts';
 import { HNSWIndex } from './providers/vector/hnsw-index.ts';
-import { hnswPath, countRows, saveAllHnsw, loadVectors, loadVecCache } from './providers/vector/hnsw-loader.ts';
+import { hnswPath, countRows, saveAllHnsw, loadVectors, loadVecCache, reloadHnsw } from './providers/vector/hnsw-loader.ts';
 import { KVService } from './services/kv-service.ts';
 import { PluginRegistry } from './services/plugin-registry.ts';
 import { Watcher } from './services/watch.ts';
+import { WebhookServer } from './services/webhook-server.ts';
 
 
 export class BrainBank extends EventEmitter {
@@ -50,7 +58,9 @@ export class BrainBank extends EventEmitter {
     private _initialized = false;
     private _initPromise: Promise<void> | null = null;
     private _watcher?: Watcher;
+    private _webhookServer?: WebhookServer;
     private _sharedHnsw = new Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>();
+    private _loadedVersions = new Map<string, number>();
 
     constructor(config: BrainBankConfig = {}) {
         super();
@@ -127,7 +137,8 @@ export class BrainBank extends EventEmitter {
 
     /** Close database and release all resources. Synchronous. */
     close(): void {
-        this._watcher?.close();
+        void this._watcher?.close();
+        this._webhookServer?.close();
         for (const plugin of this._registry.all) plugin.close?.();
 
         const reranker = this._config.reranker as { close?: () => void } | undefined;
@@ -138,9 +149,11 @@ export class BrainBank extends EventEmitter {
         this._initialized = false;
         this._kvService?.clear();
         this._sharedHnsw.clear();
+        this._loadedVersions.clear();
         this._kvService = undefined;
         this._searchAPI = undefined;
         this._indexDeps = undefined;
+        this._webhookServer = undefined;
         this._registry.clear();
     }
 
@@ -185,11 +198,31 @@ export class BrainBank extends EventEmitter {
     }
 
     /**
+     * Detect stale HNSW indices and hot-reload from disk.
+     * Called implicitly before every search operation.
+     * Cost: one SQLite SELECT (~5μs on WAL mode).
+     */
+    async ensureFresh(): Promise<void> {
+        if (!this._initialized) return;
+
+        const dbVersions = getVersions(this._db);
+        for (const [name, dbVersion] of dbVersions) {
+            const loaded = this._loadedVersions.get(name) ?? 0;
+            if (dbVersion <= loaded) continue;
+
+            this.emit('progress', `Hot-reload: ${name} version ${loaded} → ${dbVersion}`);
+            this._reloadIndex(name);
+            this._loadedVersions.set(name, dbVersion);
+        }
+    }
+
+    /**
      * Semantic search across all loaded modules.
      * Scope via `sources: { code: 10, git: 0 }`.
      */
     async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         await this.initialize();
+        await this.ensureFresh();
         return this._searchAPI?.search(query, options) ?? [];
     }
 
@@ -199,18 +232,21 @@ export class BrainBank extends EventEmitter {
      */
     async hybridSearch(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         await this.initialize();
+        await this.ensureFresh();
         return this._searchAPI?.hybridSearch(query, options) ?? [];
     }
 
     /** BM25 keyword search only (no embeddings needed). */
     async searchBM25(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         await this.initialize();
+        await this.ensureFresh();
         return this._searchAPI?.searchBM25(query, options) ?? [];
     }
 
     /** Build formatted context block for LLM system prompt injection. Auto-initializes. */
     async getContext(task: string, options: ContextOptions = {}): Promise<string> {
         await this.initialize();
+        await this.ensureFresh();
         return this._searchAPI?.getContext(task, options) ?? '';
     }
 
@@ -235,14 +271,13 @@ export class BrainBank extends EventEmitter {
         return result;
     }
 
-    /** Start watching for file changes and auto-re-index. */
+    /** Start watching for changes and auto-re-index. */
     watch(options: WatchOptions = {}): Watcher {
         this._requireInit('watch');
-        this._watcher?.close();
+        void this._watcher?.close();
         this._watcher = new Watcher(
             async () => { await this.index(); },
-            this._registry.raw,
-            this._config.repoPath,
+            this._registry.all,
             options,
         );
         return this._watcher;
@@ -332,16 +367,29 @@ export class BrainBank extends EventEmitter {
             await mod.initialize(ctx);
         }
 
-        saveAllHnsw(this._config.dbPath, kvHnsw, this._sharedHnsw, privateHnsw);
+        // Start webhook server if configured (after plugins so they can register routes)
+        if (this._config.webhookPort) {
+            this._webhookServer = new WebhookServer();
+            this._webhookServer.listen(this._config.webhookPort);
+        }
+
+        await saveAllHnsw(this._config.dbPath, kvHnsw, this._sharedHnsw, privateHnsw);
 
         this._searchAPI = createSearchAPI(
             this._db, this._embedding, this._config,
             this._registry, this._kvService, this._sharedHnsw,
         );
         this._indexDeps = {
+            db: this._db,
+            dbPath: this._config.dbPath,
+            sharedHnsw: this._sharedHnsw,
+            kvHnsw,
             registry: this._registry,
             emit: (e, d) => this.emit(e, d),
         };
+
+        // Snapshot current versions for staleness detection
+        this._loadedVersions = getVersions(this._db);
 
         this._initialized = true;
         this.emit('initialized', { plugins: this.plugins });
@@ -435,7 +483,51 @@ export class BrainBank extends EventEmitter {
             },
 
             collection: (name) => this._kvService!.collection(name),
+
+            webhookServer: this._webhookServer,
         };
+    }
+
+    /**
+     * Reload a single HNSW index by name.
+     * Discovers the vector table via ReembeddablePlugin capability.
+     * KV is handled directly since it's core-owned.
+     */
+    private _reloadIndex(name: string): void {
+        // KV HNSW — core-owned, known table
+        if (name === HNSW.KV && this._kvService) {
+            reloadHnsw({
+                dbPath: this._config.dbPath,
+                db: this._db,
+                name,
+                hnsw: this._kvService.hnsw,
+                vecCache: this._kvService.vecs,
+                vectorTable: 'kv_vectors',
+                idCol: 'data_id',
+            });
+            return;
+        }
+
+        // Shared HNSW — discover table from ReembeddablePlugin
+        const shared = this._sharedHnsw.get(name);
+        if (!shared) return;
+
+        for (const mod of this._registry.all) {
+            if (!isReembeddable(mod)) continue;
+            const cfg = mod.reembedConfig();
+            if (cfg.name !== name) continue;
+
+            reloadHnsw({
+                dbPath: this._config.dbPath,
+                db: this._db,
+                name,
+                hnsw: shared.hnsw,
+                vecCache: shared.vecCache,
+                vectorTable: cfg.vectorTable,
+                idCol: cfg.fkColumn,
+            });
+            return;
+        }
     }
 
     /** Guard: throw descriptive error if not initialized. */

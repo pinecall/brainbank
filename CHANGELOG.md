@@ -5,6 +5,37 @@ All notable changes to BrainBank will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Breaking Changes
+- **`WatchablePlugin` interface replaced** — old `watchPatterns(): string[]` + `onFileChange(path, event): Promise<boolean>` removed. New contract: `watch(onEvent: WatchEventHandler): WatchHandle` + optional `watchConfig(): WatchConfig`. Plugins now drive their own watching
+- **`WatchOptions` simplified** — removed `paths` option (plugins handle their own paths). Callback renamed `onIndex(sourceId, pluginName)` (was `onIndex(file, indexer)`)
+- **`Watcher` constructor changed** — accepts `Plugin[]` instead of `Map<string, Plugin>` + `repoPath`
+
+### Added
+- **Plugin-driven watch system** — plugins drive their own watching (fs.watch, API polling, webhooks). Core only coordinates handles, debounce, and re-indexing
+- **`WatchEvent`** type — generalized event beyond files (`sourceId`, `sourceName`, `payload`)
+- **`WatchHandle`** type — lifecycle control for plugin watchers (`stop()`, `active`)
+- **`WatchConfig`** type — optional per-plugin hints (`debounceMs`, `batchSize`, `priority`)
+- **`WatchEventHandler`** type — callback signature for plugin event reporting
+- **`WebhookServer`** — optional shared HTTP server for push-based watch plugins. Opt-in via `new BrainBank({ webhookPort })`. Plugins register routes via `ctx.webhookServer?.register()`
+- **`IndexablePlugin.indexItems?(ids)`** — optional granular re-indexing by item ID. Watcher uses this when available, falls back to full `index()`
+- **`webhookPort`** config option — added to `BrainBankConfig` and `ResolvedConfig`
+- **`webhookServer`** on `PluginContext` — available to plugins during initialization
+- **Multi-process coordination** — cross-process HNSW staleness detection, hot-reload, and file locking
+  - `index_state` table (schema v7→8) — monotonic version counter per HNSW index, tracks `writer_pid` and `updated_at`
+  - `bumpVersion()`, `getVersions()`, `getVersion()` helpers in `src/db/index-state.ts`
+  - `acquireLock()`, `releaseLock()`, `withLock()` advisory file lock in `src/lib/write-lock.ts` — uses `O_EXCL` atomic creation with exponential backoff and stale lock detection (dead PID auto-steal)
+  - `BrainBank.ensureFresh()` — compares DB versions with in-memory snapshot, hot-reloads stale HNSW indices from disk. Called implicitly before `search()`, `hybridSearch()`, `searchBM25()`, `getContext()`
+  - `reloadHnsw()` in `hnsw-loader.ts` — reinitializes a single HNSW index + vector cache from disk/SQLite
+  - `EmbeddingWorkerProxy` — drop-in `EmbeddingProvider` that offloads embedding to a `worker_threads.Worker`, keeping the main event loop free for search requests
+  - `embedding-worker-thread.ts` — worker script with zero-copy `ArrayBuffer` transfer
+  - New exports from `brainbank` barrel: `bumpVersion`, `getVersions`, `getVersion`, `acquireLock`, `releaseLock`, `withLock`, `EmbeddingWorkerProxy`
+
+### Changed
+- **`saveAllHnsw()` is now async** — wrapped with `withLock()` for cross-process file locking. Returns `Promise<boolean>` instead of `boolean`
+- **`IndexDeps` expanded** — now includes `db`, `dbPath`, `sharedHnsw`, `kvHnsw` for version bumping and HNSW persistence after indexing
+- **`index-api.ts` bumps version** — calls `bumpVersion(db, baseType)` after each plugin completes indexing, then saves HNSW with file lock
+- **MCP pool invalidation** — replaced fragile `hnswSize === 0` heuristic with `brain.ensureFresh()` on every pool hit. Cleaned up `any` types in pool code
+- **Schema version 7→8** — added `index_state` table
 
 ### Breaking Changes
 - **`ProjectConfig.plugins`** — type changed from `('code' | 'git' | 'docs')[]` to `string[]`. Config files remain compatible

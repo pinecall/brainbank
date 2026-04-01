@@ -64,6 +64,8 @@ export interface BrainBankConfig {
     embeddingProvider?: EmbeddingProvider;
     /** Optional reranker for improved search quality */
     reranker?: Reranker;
+    /** Port for optional webhook server (enables push-based watch plugins). */
+    webhookPort?: number;
 }
 
 export interface ResolvedConfig {
@@ -79,6 +81,7 @@ export interface ResolvedConfig {
     maxElements: number;
     embeddingProvider?: EmbeddingProvider;
     reranker?: Reranker;
+    webhookPort?: number;
 }
 
 
@@ -371,4 +374,38 @@ export interface IndexResult {
 export interface CoEditSuggestion {
     file: string;
     count: number;
+}
+
+
+/** Generalized watch event — works for files, APIs, webhooks. */
+export interface WatchEvent {
+    /** Event type. 'sync' is for batch/poll sources that don't distinguish CRUD. */
+    type: 'create' | 'update' | 'delete' | 'sync';
+    /** Unique ID of the changed item (file path, PR#123, PROJ-456, etc.). */
+    sourceId: string;
+    /** Source descriptor (e.g. 'file', 'github:pr', 'jira:card'). */
+    sourceName: string;
+    /** Optional raw payload to avoid re-fetching. */
+    payload?: unknown;
+}
+
+/** Callback that plugins invoke when they detect a change. */
+export type WatchEventHandler = (event: WatchEvent) => void;
+
+/** Lifecycle handle returned by WatchablePlugin.watch(). */
+export interface WatchHandle {
+    /** Stop watching and release resources. */
+    stop(): Promise<void>;
+    /** Whether the watcher is still active. */
+    readonly active: boolean;
+}
+
+/** Optional hints from plugin to core — debounce, batching, priority. */
+export interface WatchConfig {
+    /** Debounce interval in ms. 0 = process immediately. Default: inherited from WatchOptions. */
+    debounceMs?: number;
+    /** Max events to batch before triggering re-index. Default: unlimited. */
+    batchSize?: number;
+    /** Processing priority. Default: 'realtime'. */
+    priority?: 'realtime' | 'background';
 }

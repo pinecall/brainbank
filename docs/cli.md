@@ -17,7 +17,7 @@ BrainBank can be used entirely from the command line — no config file needed.
 | [`docs`](#document-collections) | Index document collections |
 | [`stats`](#utility) | Show index statistics |
 | [`reembed`](#utility) | Re-embed all vectors |
-| [`watch`](#watch-mode) | Auto re-index on file changes |
+| [`watch`](#watch-mode) | Auto re-index on changes (plugin-driven) |
 | [`serve`](#utility) | Start MCP server (stdio) |
 
 ---
@@ -191,7 +191,7 @@ brainbank dsearch <query> --k 10               # Max results (default: 8)
 
 ## Watch Mode
 
-Auto-re-index code files when they change:
+Auto-re-index when plugins detect changes:
 
 ```bash
 brainbank watch
@@ -206,7 +206,7 @@ Output:
   14:30:05 ✓ code: src/routes.ts
 ```
 
-Watch mode uses a 2-second debounce. It monitors code files (supported extensions) plus any files matching custom plugin `watchPatterns()`. Git history and document collections must be re-indexed explicitly with `brainbank index` / `brainbank docs`.
+Watch mode delegates watching to each plugin. Plugins that implement `WatchablePlugin` drive their own watching (e.g. `fs.watch` for file-based plugins, API polling, or webhooks). The core applies per-plugin debounce (default: 2 seconds) and coordinates re-indexing.
 
 ---
 

@@ -17,9 +17,11 @@ import type { Database } from './db/database.ts';
 import type { Migration } from './db/migrations.ts';
 import type { HNSWIndex } from './providers/vector/hnsw-index.ts';
 import type { DomainVectorSearch } from './search/types.ts';
+import type { WebhookServer } from './services/webhook-server.ts';
 import type {
     EmbeddingProvider, SearchResult, IndexResult, ProgressCallback,
     ResolvedConfig, DocumentCollection, ICollection,
+    WatchEventHandler, WatchHandle, WatchConfig,
 } from './types.ts';
 
 // Provided to each plugin during initialization.
@@ -47,6 +49,8 @@ export interface PluginContext {
     getOrCreateSharedHnsw(type: string, maxElements?: number, dims?: number): Promise<{ hnsw: HNSWIndex; vecCache: Map<number, Float32Array>; isNew: boolean }>;
     /** Get or create a dynamic collection. */
     collection(name: string): ICollection;
+    /** Optional webhook server for push-based watch plugins. undefined if not configured. */
+    webhookServer?: WebhookServer;
 }
 
 // Minimal contract: name + initialize. All capabilities are expressed
@@ -76,6 +80,8 @@ export interface IndexOptions {
 /** Plugins that can scan and index content (code, git). */
 export interface IndexablePlugin extends Plugin {
     index(options?: IndexOptions): Promise<IndexResult>;
+    /** Incremental: re-index only specific items by ID. Falls back to index() if not implemented. */
+    indexItems?(ids: string[]): Promise<IndexResult>;
 }
 
 /** Plugins that can search indexed content (docs). */
@@ -83,10 +89,12 @@ export interface SearchablePlugin extends Plugin {
     search(query: string, options?: Record<string, unknown>): Promise<SearchResult[]>;
 }
 
-/** Plugins that support file watch mode. */
+/** Plugins that can watch their own data source for changes. */
 export interface WatchablePlugin extends Plugin {
-    onFileChange(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
-    watchPatterns(): string[];
+    /** Start watching. Plugin controls how (fs.watch, polling, webhook, etc.). */
+    watch(onEvent: WatchEventHandler): WatchHandle;
+    /** Optional hints for the core (debounce, batching, priority). */
+    watchConfig?(): WatchConfig;
 }
 
 
@@ -100,10 +108,9 @@ export function isSearchable(i: Plugin): i is SearchablePlugin {
     return typeof (i as SearchablePlugin).search === 'function';
 }
 
-/** Check if a plugin supports file watch mode. */
+/** Check if a plugin can watch its own data source. */
 export function isWatchable(i: Plugin): i is WatchablePlugin {
-    return typeof (i as WatchablePlugin).onFileChange === 'function'
-        && typeof (i as WatchablePlugin).watchPatterns === 'function';
+    return typeof (i as WatchablePlugin).watch === 'function';
 }
 
 /** Path-specific context metadata for document collections. */

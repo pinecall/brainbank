@@ -169,7 +169,7 @@ Uses FNV-1a content hashing — only re-indexes files that actually changed. Old
 | `ContextFormatterPlugin` | Formats code results + import graph for `brain.getContext()` |
 | `MigratablePlugin` | Owns its schema — `code_chunks`, `code_vectors`, `indexed_files`, `code_imports`, `code_symbols`, `code_refs`, `fts_code` |
 | `ReembeddablePlugin` | Participates in `brain.reembed()` |
-| `WatchablePlugin` | Auto-re-indexes on file changes via `brain.watch()` |
+| `WatchablePlugin` | Plugin-driven watching via `watch(onEvent)` for code files |
 
 ## Supported Languages
 

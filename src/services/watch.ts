@@ -1,218 +1,179 @@
 /**
  * BrainBank — Watcher
  *
- * Auto-indexes on file changes using fs.watch.
- * Works with built-in indexers (code, git, docs) and custom indexers.
+ * Thin coordinator for plugin-driven watching. The core does NOT do fs.watch
+ * or know about file patterns — each plugin drives its own watching.
  *
- * Built-in behavior:
- *   - Code files → re-indexes changed file
- *   - Doc files  → re-indexes changed collection
+ * Responsibilities:
+ *   1. Call `plugin.watch(onEvent)` for each WatchablePlugin
+ *   2. Collect the WatchHandle instances returned
+ *   3. Apply per-plugin debounce from `plugin.watchConfig()`
+ *   4. On event: call `plugin.indexItems([id])` or `plugin.index()` for re-indexing
+ *   5. Call `handle.stop()` on `close()`
  *
- * Custom indexers:
- *   - Implement `onFileChange(path, event)` to handle changes
- *   - Implement `watchPatterns()` to specify which files to watch
- *
- * Usage:
- *   const watcher = brain.watch({ paths: ['.'] });
+ *   const watcher = brain.watch({ debounceMs: 2000 });
  *   watcher.close(); // stop watching
  */
 
 import type { Plugin } from '@/plugin.ts';
+import type { WatchEvent, WatchHandle } from '@/types.ts';
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { isSupported, isIgnoredDir, isIgnoredFile } from '@/lib/languages.ts';
-import { isWatchable } from '@/plugin.ts';
+import { isIndexable, isWatchable } from '@/plugin.ts';
 
 
 export interface WatchOptions {
-    /** Paths to watch. Default: [config.repoPath] */
-    paths?: string[];
-    /** Debounce interval in ms. Default: 2000 */
+    /** Default debounce for plugins that don't specify watchConfig. Default: 2000 */
     debounceMs?: number;
-    /** Called when a file is re-indexed. */
-    onIndex?: (filePath: string, indexer: string) => void;
+    /** Called when a source triggers re-indexing. */
+    onIndex?: (sourceId: string, pluginName: string) => void;
     /** Called on errors. */
     onError?: (error: Error) => void;
 }
 
 
-/** File watcher that auto-re-indexes on changes. */
+/** Pending event batch for a single plugin. */
+interface PluginBatch {
+    plugin: Plugin;
+    handle: WatchHandle;
+    events: WatchEvent[];
+    timer: ReturnType<typeof setTimeout> | null;
+    flushing: boolean;
+}
+
+
+/** Plugin-driven watcher that coordinates re-indexing across all WatchablePlugins. */
 export class Watcher {
     private _active = true;
-    private _watchers: fs.FSWatcher[] = [];
-    private _pending = new Set<string>();
-    private _timer: ReturnType<typeof setTimeout> | null = null;
-    private _flushing = false;
-    private _customPatterns: { indexer: Plugin; patterns: string[] }[] = [];
+    private _batches = new Map<string, PluginBatch>();
+    private _reindexFn: () => Promise<void>;
+    private _options: WatchOptions;
 
     constructor(
-        private _reindexFn: () => Promise<void>,
-        private _indexers: Map<string, Plugin>,
-        private _repoPath: string,
-        private _options: WatchOptions = {},
+        reindexFn: () => Promise<void>,
+        plugins: Plugin[],
+        options: WatchOptions = {},
     ) {
-        this._collectCustomPatterns();
-        this._startWatching();
+        this._reindexFn = reindexFn;
+        this._options = options;
+        this._startWatching(plugins);
     }
 
     /** Whether the watcher is active. */
     get active(): boolean { return this._active; }
 
-    /** Stop watching. */
-    close(): void {
+    /** Stop all plugin watchers. */
+    async close(): Promise<void> {
         this._active = false;
-        if (this._timer) clearTimeout(this._timer);
-        for (const w of this._watchers) w.close();
-        this._watchers.length = 0;
-    }
 
-
-    /** Collect custom watch patterns from indexers. */
-    private _collectCustomPatterns(): void {
-        for (const indexer of this._indexers.values()) {
-            if (isWatchable(indexer)) {
-                this._customPatterns.push({
-                    indexer,
-                    patterns: indexer.watchPatterns(),
-                });
-            }
-        }
-    }
-
-    /** Check if a file matches any custom indexer pattern. */
-    private _matchCustomPlugin(filePath: string): Plugin | null {
-        const rel = path.relative(this._repoPath, filePath);
-        for (const { indexer, patterns } of this._customPatterns) {
-            for (const pattern of patterns) {
-                if (this._matchGlob(rel, pattern)) return indexer;
-            }
-        }
-        return null;
-    }
-
-    /** Simple glob matching (supports **, *, and extension matching). */
-    private _matchGlob(filePath: string, pattern: string): boolean {
-        if (pattern.startsWith('**/')) {
-            const suffix = pattern.slice(3);
-            const ext = suffix.startsWith('*.') ? suffix.slice(1) : null;
-            if (ext) return filePath.endsWith(ext);
-            return path.basename(filePath) === suffix;
-        }
-        if (pattern.startsWith('*.')) {
-            return filePath.endsWith(pattern.slice(1));
-        }
-        return filePath === pattern;
-    }
-
-    /** Process pending file changes (serialized — no concurrent flushes). */
-    private async _processPending(): Promise<void> {
-        if (this._flushing || this._pending.size === 0) return;
-        this._flushing = true;
-
-        const { onIndex, onError, debounceMs = 2000 } = this._options;
-
-        try {
-            const files = [...this._pending];
-            this._pending.clear();
-
-            let needsReindex = false;
-            const codeFiles: string[] = [];
-
-            for (const filePath of files) {
-                const absPath = path.resolve(this._repoPath, filePath);
-
-                const customIndexer = this._matchCustomPlugin(absPath);
-                if (customIndexer && isWatchable(customIndexer)) {
-                    try {
-                        const handled = await customIndexer.onFileChange(absPath, this._detectEvent(absPath));
-                        if (handled) {
-                            onIndex?.(filePath, customIndexer.name);
-                            continue;
-                        }
-                    } catch (err) {
-                        onError?.(err instanceof Error ? err : new Error(String(err)));
-                    }
-                }
-
-                if (isSupported(filePath)) {
-                    needsReindex = true;
-                    codeFiles.push(filePath);
-                    onIndex?.(filePath, 'code');
-                }
-            }
-
-            if (needsReindex) {
-                try {
-                    await this._reindexFn();
-                } catch (err) {
-                    // Re-queue code files so they retry on the next debounce
-                    for (const f of codeFiles) this._pending.add(f);
-                    onError?.(err instanceof Error ? err : new Error(String(err)));
-                }
-            }
-        } finally {
-            this._flushing = false;
-            if (this._pending.size > 0) {
-                this._timer = setTimeout(() => this._processPending(), debounceMs);
-            }
-        }
-    }
-
-    /** Detect whether a file still exists (update vs delete). */
-    private _detectEvent(filePath: string): 'create' | 'update' | 'delete' {
-        try {
-            fs.accessSync(filePath);
-            return 'update';
-        } catch {
-            return 'delete';
-        }
-    }
-
-    /** Determine if a file should trigger re-indexing. */
-    private _shouldWatch(filename: string): boolean {
-        if (!filename) return false;
-        const parts = filename.split(path.sep);
-
-        for (const part of parts) {
-            if (isIgnoredDir(part)) return false;
-        }
-        if (isIgnoredFile(path.basename(filename))) return false;
-        if (isSupported(filename)) return true;
-        if (this._matchCustomPlugin(path.resolve(this._repoPath, filename))) return true;
-
-        return false;
-    }
-
-    /** Set up file system watchers. */
-    private _startWatching(): void {
-        const {
-            paths = [this._repoPath],
-            debounceMs = 2000,
-            onError,
-        } = this._options;
-
-        for (const watchPath of paths) {
-            const resolved = path.resolve(watchPath);
+        for (const batch of this._batches.values()) {
+            if (batch.timer) clearTimeout(batch.timer);
             try {
-                const supportsRecursive = process.platform === 'darwin' || process.platform === 'win32';
-                const watcher = fs.watch(resolved, { recursive: supportsRecursive }, (_event, filename) => {
-                    if (!this._active || !filename) return;
-                    if (!this._shouldWatch(filename)) return;
-
-                    this._pending.add(filename);
-
-                    if (this._timer) clearTimeout(this._timer);
-                    this._timer = setTimeout(() => this._processPending(), debounceMs);
-                });
-
-                watcher.on('error', (err) => {
-                    onError?.(err instanceof Error ? err : new Error(String(err)));
-                });
-
-                this._watchers.push(watcher);
+                await batch.handle.stop();
             } catch (err) {
-                onError?.(err instanceof Error ? err : new Error(String(err)));
+                this._options.onError?.(err instanceof Error ? err : new Error(String(err)));
+            }
+        }
+        this._batches.clear();
+    }
+
+
+    /** Start watching for each WatchablePlugin. */
+    private _startWatching(plugins: Plugin[]): void {
+        for (const plugin of plugins) {
+            if (!isWatchable(plugin)) continue;
+
+            try {
+                const handle = plugin.watch((event) => this._onEvent(plugin, event));
+
+                this._batches.set(plugin.name, {
+                    plugin,
+                    handle,
+                    events: [],
+                    timer: null,
+                    flushing: false,
+                });
+            } catch (err) {
+                // One plugin failing to start doesn't block others
+                this._options.onError?.(err instanceof Error ? err : new Error(String(err)));
+            }
+        }
+    }
+
+    /** Handle an incoming event from a plugin. */
+    private _onEvent(plugin: Plugin, event: WatchEvent): void {
+        if (!this._active) return;
+
+        const batch = this._batches.get(plugin.name);
+        if (!batch) return;
+
+        batch.events.push(event);
+
+        // Resolve debounce: plugin config > global options > 2000ms default
+        const pluginDebounce = isWatchable(plugin)
+            ? plugin.watchConfig?.()?.debounceMs
+            : undefined;
+        const debounceMs = pluginDebounce ?? this._options.debounceMs ?? 2000;
+
+        // Check batch size limit
+        const batchSize = isWatchable(plugin)
+            ? plugin.watchConfig?.()?.batchSize
+            : undefined;
+
+        const shouldFlushNow = debounceMs === 0
+            || (batchSize !== undefined && batch.events.length >= batchSize);
+
+        if (shouldFlushNow) {
+            if (batch.timer) clearTimeout(batch.timer);
+            batch.timer = null;
+            void this._flush(batch);
+            return;
+        }
+
+        // Debounce: reset timer on each new event
+        if (batch.timer) clearTimeout(batch.timer);
+        batch.timer = setTimeout(() => void this._flush(batch), debounceMs);
+    }
+
+    /** Flush pending events for a plugin — trigger re-indexing. */
+    private async _flush(batch: PluginBatch): Promise<void> {
+        if (batch.flushing || batch.events.length === 0) return;
+        batch.flushing = true;
+
+        const { onIndex, onError } = this._options;
+
+        try {
+            const events = [...batch.events];
+            batch.events.length = 0;
+
+            const ids = events.map(e => e.sourceId);
+
+            // Try granular re-index first, fall back to full re-index
+            if (isIndexable(batch.plugin) && batch.plugin.indexItems) {
+                await batch.plugin.indexItems(ids);
+                for (const id of ids) {
+                    onIndex?.(id, batch.plugin.name);
+                }
+            } else if (isIndexable(batch.plugin)) {
+                await batch.plugin.index();
+                for (const id of ids) {
+                    onIndex?.(id, batch.plugin.name);
+                }
+            } else {
+                // Plugin is watchable but not indexable — use global re-index
+                await this._reindexFn();
+                for (const id of ids) {
+                    onIndex?.(id, batch.plugin.name);
+                }
+            }
+        } catch (err) {
+            onError?.(err instanceof Error ? err : new Error(String(err)));
+        } finally {
+            batch.flushing = false;
+
+            // If new events arrived during flush, schedule another flush
+            if (batch.events.length > 0 && this._active) {
+                const debounceMs = this._options.debounceMs ?? 2000;
+                batch.timer = setTimeout(() => void this._flush(batch), debounceMs);
             }
         }
     }

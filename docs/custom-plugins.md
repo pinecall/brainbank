@@ -28,7 +28,7 @@ await brain.initialize();
 2. await brain.initialize()   →  plugin.initialize(ctx) called
 3. brain.index()              →  plugin.index() called  (if IndexablePlugin)
 4. brain.search()             →  plugin.search() called (if SearchablePlugin)
-5. brain.watch()              →  plugin.onFileChange()  (if WatchablePlugin)
+5. brain.watch()              →  plugin.watch(onEvent)  (if WatchablePlugin)
 6. brain.close()              →  plugin.close()         (cleanup)
 ```
 
@@ -86,13 +86,15 @@ interface SearchablePlugin extends Plugin {
 
 ### WatchablePlugin
 
-Auto-re-index on file changes:
+Plugin drives its own watching (fs.watch, polling, webhooks). Core only coordinates handles and triggers re-indexing:
 
 ```typescript
 interface WatchablePlugin extends Plugin {
-  onFileChange(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
-  watchPatterns(): string[];  // glob patterns like ['**/*.csv']
+  watch(onEvent: WatchEventHandler): WatchHandle;
+  watchConfig?(): WatchConfig;  // debounceMs, batchSize, priority
 }
+// WatchEvent: { type, sourceId, sourceName, payload? }
+// WatchHandle: { stop(): Promise<void>, active: boolean }
 ```
 
 ### VectorSearchPlugin
@@ -208,13 +210,14 @@ const results = await brain.hybridSearch('meeting notes about auth');
 
 ## Watch Mode Integration
 
-Hook into `brain.watch()` to auto-re-index when files change:
+Hook into `brain.watch()` — your plugin drives its own watching:
 
 ```typescript
-import type { Plugin, PluginContext, WatchablePlugin } from 'brainbank';
+import type { Plugin, PluginContext, WatchablePlugin, WatchEventHandler, WatchHandle } from 'brainbank';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-function csvPlugin(): Plugin & WatchablePlugin {
+function csvPlugin(dir: string): Plugin & WatchablePlugin {
   let ctx: PluginContext;
 
   return {
@@ -224,26 +227,26 @@ function csvPlugin(): Plugin & WatchablePlugin {
       ctx = context;
     },
 
-    watchPatterns() {
-      return ['**/*.csv', '**/*.tsv'];
+    watch(onEvent: WatchEventHandler): WatchHandle {
+      // Plugin controls HOW to watch — fs.watch, polling, webhook, etc.
+      const watcher = fs.watch(dir, { recursive: true }, (event, filename) => {
+        if (!filename?.endsWith('.csv')) return;
+        onEvent({
+          type: event === 'rename' ? 'create' : 'update',
+          sourceId: path.join(dir, filename),
+          sourceName: 'file',
+        });
+      });
+
+      let active = true;
+      return {
+        async stop() { watcher.close(); active = false; },
+        get active() { return active; },
+      };
     },
 
-    async onFileChange(filePath: string, event: 'create' | 'update' | 'delete') {
-      const col = ctx.collection('csv_data');
-
-      // Remove old data for this file
-      const existing = col.list({ limit: 1000 }).filter(
-        i => i.metadata.file === filePath
-      );
-      for (const item of existing) col.remove(item.id);
-
-      // Re-add if file still exists
-      if (event !== 'delete') {
-        const data = fs.readFileSync(filePath, 'utf-8');
-        await col.add(data, { tags: ['csv'], metadata: { file: filePath } });
-      }
-
-      return true;
+    watchConfig() {
+      return { debounceMs: 500 };  // batch rapid saves
     },
   };
 }

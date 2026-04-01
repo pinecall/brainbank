@@ -56,7 +56,7 @@ const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384
 2. await brain.initialize()   →  plugin.initialize(ctx) called
 3. brain.index()              →  plugin.index() called  (if IndexablePlugin)
 4. brain.search()             →  results from VectorSearchPlugin / SearchablePlugin
-5. brain.watch()              →  plugin.onFileChange()  (if WatchablePlugin)
+5. brain.watch()              →  plugin.watch(onEvent)  (if WatchablePlugin)
 6. brain.close()              →  plugin.close()         (cleanup)
 ```
 
@@ -70,7 +70,7 @@ Plugins implement zero or more capability interfaces discovered at runtime via t
 |-----------|-----------|--------|-------------|
 | `IndexablePlugin` | `isIndexable()` | `index(options?)` | Participates in `brain.index()` |
 | `SearchablePlugin` | `isSearchable()` | `search(query, options?)` | Results merged via RRF in `brain.hybridSearch()` |
-| `WatchablePlugin` | `isWatchable()` | `watchPatterns()` + `onFileChange()` | Auto-re-index on file changes |
+| `WatchablePlugin` | `isWatchable()` | `watch(onEvent)` + `watchConfig?()` | Plugin drives its own watching, core coordinates re-indexing |
 | `VectorSearchPlugin` | `isVectorSearchPlugin()` | `createVectorSearch()` | Provides domain-specific vector strategy for CompositeVectorSearch |
 | `ContextFormatterPlugin` | `isContextFormatterPlugin()` | `formatContext(results, parts)` | Contributes sections to `brain.getContext()` output |
 | `BM25SearchPlugin` | `isBM25SearchPlugin()` | `searchBM25(query, k)` | Provides FTS5 keyword search for CompositeBM25Search |

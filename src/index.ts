@@ -60,6 +60,7 @@ export type {
     ProgressCallback, StageProgressCallback,
     CoEditSuggestion,
     DocumentCollection, DocChunk,
+    WatchEvent, WatchEventHandler, WatchHandle, WatchConfig,
 } from './types.ts';
 export {
     isCodeResult, isCommitResult, isDocumentResult,
@@ -75,8 +76,12 @@ export { PerplexityEmbedding } from './providers/embeddings/perplexity-embedding
 export type { PerplexityEmbeddingOptions } from './providers/embeddings/perplexity-embedding.ts';
 export { PerplexityContextEmbedding } from './providers/embeddings/perplexity-context-embedding.ts';
 export type { PerplexityContextEmbeddingOptions } from './providers/embeddings/perplexity-context-embedding.ts';
+export { EmbeddingWorkerProxy } from './providers/embeddings/embedding-worker.ts';
 export type { ReembedResult, ReembedOptions } from './engine/reembed.ts';
-export type { WatchOptions, Watcher } from './services/watch.ts';
+export type { WatchOptions } from './services/watch.ts';
+export { Watcher } from './services/watch.ts';
+export { WebhookServer } from './services/webhook-server.ts';
+export type { WebhookHandler } from './services/webhook-server.ts';
 
 // Reranker
 export { Qwen3Reranker } from './providers/rerankers/qwen3-reranker.ts';
@@ -117,5 +122,10 @@ export { rerank } from './lib/rerank.ts';
 // Search types
 export type { SearchStrategy, SearchOptions, DomainVectorSearch } from './search/types.ts';
 
+// Multi-process coordination
+export { bumpVersion, getVersions, getVersion } from './db/index-state.ts';
+export { acquireLock, releaseLock, withLock } from './lib/write-lock.ts';
+
 // Database (for plugin access)
 export type { Database } from './db/database.ts';
+

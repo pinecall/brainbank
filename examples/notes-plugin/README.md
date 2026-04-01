@@ -58,5 +58,5 @@ const allNotes = notesPlugin.listNotes();
 | Typed plugin access | `brain.plugin<NotesPlugin>('notes')` |
 | Collection API | `ctx.collection('notes')` for KV store with hybrid search |
 | Idempotent indexing | Skip unchanged files, update modified ones |
-| `WatchablePlugin` | Auto-re-index on `.txt` file changes |
+| `WatchablePlugin` | Plugin-driven watching via `watch(onEvent)` for `.txt` file changes |
 | Factory function pattern | `export function notes(opts): Plugin` |
