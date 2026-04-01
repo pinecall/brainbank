@@ -1357,11 +1357,11 @@ createBrain(repoPath?)  [src/cli/factory/index.ts]
   builtins = config?.plugins ?? ['code', 'git', 'docs']
   registerBuiltins(brain, rp, builtins, config):
     multi-repo detection: detectGitSubdirs() if no root .git
-    per-plugin embedding: config.code.embedding, config.git.embedding, etc.
-    merge ignore: config.code.ignore + --ignore flag
-    loadCodePlugin/loadGitPlugin/loadDocsPlugin (dynamic import, null if not installed)
-    multi-repo → code:{sub.name}, git:{sub.name} per subdirectory
-    single → code({ repoPath }), git(), docs()
+    per-plugin embedding: config[pluginName].embedding (generic)
+    merge ignore: config[pluginName].ignore + --ignore flag
+    loadPlugin(name) from PLUGIN_LOADERS registry (dynamic import, null if not installed)
+    multi-repo → {name}:{sub.name} per subdirectory for multi-repo-capable plugins
+    single → factory({ repoPath, ...pluginConfig })
   for plugin in folderPlugins: brain.use(plugin)
   for plugin in config?.indexers: brain.use(plugin)
   return brain   ← NOT initialized, .use() still allowed

@@ -5,13 +5,13 @@
  * with checkboxes to select which modules to index. Use --yes to skip.
  */
 
-import type { ScanResult } from './scan.ts';
-import type { DocsPlugin } from '@/plugin.ts';
+import type { ScanResult, ScanModule } from './scan.ts';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { c, args, getFlag, hasFlag } from '@/cli/utils.ts';
 import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory/index.ts';
+import { findDocsPlugin } from '@/cli/utils.ts';
 import { scanRepo } from './scan.ts';
 
 export async function cmdIndex(): Promise<void> {
@@ -73,7 +73,7 @@ export async function cmdIndex(): Promise<void> {
         const absDocsPath = path.resolve(docsPath);
         const collName = path.basename(absDocsPath);
         try {
-            const docsPlugin = brain.plugin<DocsPlugin>('docs');
+            const docsPlugin = findDocsPlugin(brain);
             await docsPlugin?.addCollection({
                 name: collName,
                 path: absDocsPath,
@@ -135,51 +135,25 @@ function printScanTree(scan: ScanResult, depth: number): void {
         }
     }
 
-    // Code
-    console.log('');
-    if (scan.code.total > 0) {
-        const langCount = scan.code.byLanguage.size;
-        console.log(`  📁 ${c.bold('Code')} — ${scan.code.total} files (${langCount} language${langCount > 1 ? 's' : ''})`);
-        const sorted = [...scan.code.byLanguage.entries()].sort((a, b) => b[1] - a[1]);
-        const maxShow = 7;
-        const shown = sorted.slice(0, maxShow);
-        const remaining = sorted.length - maxShow;
-        for (let i = 0; i < shown.length; i++) {
-            const [lang, count] = shown[i];
-            const isLast = i === shown.length - 1 && remaining <= 0;
-            const prefix = isLast ? '└──' : '├──';
-            console.log(c.dim(`     ${prefix} ${lang.padEnd(14)} ${count} files`));
+    // Dynamic module display
+    for (const mod of scan.modules) {
+        console.log('');
+        if (mod.available) {
+            const extra = mod.name === 'git' ? ` (depth: ${depth})` : '';
+            console.log(`  ${mod.icon} ${c.bold(capitalizeFirst(mod.name))} — ${mod.summary}${extra}`);
+            if (mod.details) {
+                for (const d of mod.details) {
+                    console.log(c.dim(`     ${d}`));
+                }
+            }
+        } else {
+            console.log(`  ${mod.icon} ${c.dim(`${capitalizeFirst(mod.name)} — ${mod.summary}`)}`);
         }
-        if (remaining > 0) {
-            console.log(c.dim(`     └── ...and ${remaining} more`));
-        }
-        if (scan.config.ignore?.length) {
-            console.log(c.dim(`     Ignore: ${scan.config.ignore.join(', ')}`));
-        }
-    } else {
-        console.log(`  📁 ${c.dim('Code — no supported source files found')}`);
     }
 
-    // Git
-    if (scan.git) {
-        console.log(`\n  📜 ${c.bold('Git')} — ${scan.git.commitCount.toLocaleString()} commits (depth: ${depth})`);
-        if (scan.git.lastMessage) {
-            console.log(c.dim(`     Last: ${scan.git.lastMessage} (${scan.git.lastDate})`));
-        }
-    } else {
-        console.log(`\n  📜 ${c.dim('Git — no .git directory found')}`);
-    }
-
-    // Docs
-    if (scan.docs.length > 0) {
-        const totalFiles = scan.docs.reduce((s, d) => s + d.fileCount, 0);
-        console.log(`\n  📄 ${c.bold('Docs')} — ${scan.docs.length} collection${scan.docs.length > 1 ? 's' : ''} (${totalFiles} files)`);
-        for (let i = 0; i < scan.docs.length; i++) {
-            const d = scan.docs[i];
-            const isLast = i === scan.docs.length - 1;
-            const prefix = isLast ? '└──' : '├──';
-            console.log(c.dim(`     ${prefix} ${d.name.padEnd(10)} → ${d.path} (${d.fileCount} files)`));
-        }
+    // Config ignore
+    if (scan.config.ignore?.length) {
+        console.log(c.dim(`     Ignore: ${scan.config.ignore.join(', ')}`));
     }
 
     // Config & DB
@@ -199,11 +173,7 @@ function printScanTree(scan: ScanResult, depth: number): void {
 
 /** Build the default list of available modules based on scan. */
 function buildDefaultModules(scan: ScanResult): string[] {
-    const m: string[] = [];
-    if (scan.code.total > 0) m.push('code');
-    if (scan.git) m.push('git');
-    if (scan.docs.length > 0) m.push('docs');
-    return m;
+    return scan.modules.filter(m => m.available && m.checked).map(m => m.name);
 }
 
 /** Interactive checkbox prompt via @inquirer/prompts. */
@@ -211,56 +181,14 @@ async function promptModules(scan: ScanResult): Promise<string[]> {
     const { checkbox } = await import('@inquirer/prompts');
     console.log(c.dim('  ─────────────────────────────────────────\n'));
 
-    type ModuleName = string;
-    const choices: { name: string; value: ModuleName; checked: boolean; disabled?: string }[] = [];
+    const choices = scan.modules.map((m: ScanModule) => ({
+        name: `${capitalizeFirst(m.name).padEnd(6)} — ${m.summary}`,
+        value: m.name,
+        checked: m.checked && m.available,
+        disabled: m.available ? undefined : m.disabled,
+    }));
 
-    if (scan.code.total > 0) {
-        choices.push({
-            name: `Code  — ${scan.code.total} files (${scan.code.byLanguage.size} languages)`,
-            value: 'code',
-            checked: true,
-        });
-    } else {
-        choices.push({
-            name: 'Code  — no source files found',
-            value: 'code',
-            checked: false,
-            disabled: 'nothing to index',
-        });
-    }
-
-    if (scan.git) {
-        choices.push({
-            name: `Git   — ${scan.git.commitCount.toLocaleString()} commits`,
-            value: 'git',
-            checked: true,
-        });
-    } else {
-        choices.push({
-            name: 'Git   — no .git directory',
-            value: 'git',
-            checked: false,
-            disabled: 'not a git repo',
-        });
-    }
-
-    if (scan.docs.length > 0) {
-        const totalFiles = scan.docs.reduce((s, d) => s + d.fileCount, 0);
-        choices.push({
-            name: `Docs  — ${scan.docs.length} collection${scan.docs.length > 1 ? 's' : ''} (${totalFiles} files)`,
-            value: 'docs',
-            checked: true,
-        });
-    } else {
-        choices.push({
-            name: 'Docs  — no documents found',
-            value: 'docs',
-            checked: false,
-            disabled: 'no .md/.mdx files',
-        });
-    }
-
-    return checkbox<ModuleName>({
+    return checkbox<string>({
         message: 'Select modules to index:\n',
         choices,
     });
@@ -276,6 +204,11 @@ function timeSince(date: Date): string {
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
+}
+
+/** Capitalize first letter. */
+function capitalizeFirst(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Offer to generate .brainbank/config.json from the selected modules. */
@@ -320,14 +253,6 @@ async function offerSaveConfig(repoPath: string, modules: string[]): Promise<voi
         plugins: modules,
         embedding,
     };
-
-    // Add sensible defaults per module
-    if (modules.includes('code')) {
-        config.code = { maxFileSize: 512000 };
-    }
-    if (modules.includes('git')) {
-        config.git = { depth: 500 };
-    }
 
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');

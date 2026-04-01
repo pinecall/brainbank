@@ -1,11 +1,14 @@
 /**
  * BrainBank CLI — Shared Utilities
  *
- * Colors, argument parsing, and result formatting.
+ * Colors, argument parsing, result formatting, and plugin discovery.
  */
 
+import type { BrainBank } from '@/brainbank.ts';
+import type { DocsPlugin } from '@/plugin.ts';
 import type { SearchResult } from '@/types.ts';
 
+import { isDocsPlugin } from '@/plugin.ts';
 
 export const c = {
     green:   (s: string) => `\x1b[32m${s}\x1b[0m`,
@@ -106,4 +109,13 @@ export function printResults(results: SearchResult[], minScore = 0.70): void {
             console.log('');
         }
     }
+}
+
+/** Discover the first plugin that implements DocsPlugin by capability. */
+export function findDocsPlugin(brain: BrainBank): DocsPlugin | undefined {
+    for (const name of brain.plugins) {
+        const p = brain.plugin(name);
+        if (p && isDocsPlugin(p)) return p;
+    }
+    return undefined;
 }

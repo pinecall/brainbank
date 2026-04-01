@@ -80,7 +80,7 @@ packages/                ← All plugin implementations live here (NOT in src/)
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
 - `src/brainbank.ts` — Main orchestrator with inline initialization (`_runInitialize`).
 - `src/engine/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
-- `src/cli/factory/index.ts` — CLI factory (delegates to config-loader, plugin-loader, provider-setup, builtin-registration).
+- `src/cli/factory/index.ts` — CLI factory (delegates to config-loader, plugin-loader, builtin-registration).
 - `scripts/lint-imports.mjs` — Lint script: detects `@/` imports that should be `./` (same-directory).
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 

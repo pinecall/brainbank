@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Breaking Changes
+- **`ProjectConfig.plugins`** — type changed from `('code' | 'git' | 'docs')[]` to `string[]`. Config files remain compatible
+- **`IndexStats`** — removed hardcoded `code?`, `git?`, `documents?` typed fields. Only the generic `[pluginName: string]` index signature remains
+- **`ScanResult`** — replaced hardcoded `.code`/`.git`/`.docs` fields with dynamic `modules: ScanModule[]` array (internal CLI type)
+- **Removed `CodeConfig`/`GitConfig`/`DocsConfig`** typed interfaces from `config-loader.ts` — per-plugin config now accessed generically via `config[pluginName]` index signature
+
+### Changed
+- **CLI plugin loading** — replaced individual `loadCodePlugin`/`loadGitPlugin`/`loadDocsPlugin` with generic `PLUGIN_LOADERS` registry map. New `loadPlugin(name)` is the single entry point
+- **CLI builtin registration** — `registerBuiltins()` now iterates `pluginNames: string[]` generically. Per-plugin config resolved via `pluginCfg(config, name)` helper. Multi-repo support uses `MULTI_REPO_PLUGINS` set
+- **CLI scan** — `scanRepo()` returns `modules: ScanModule[]` instead of hardcoded fields. Each scanner produces a generic module descriptor with name, availability, summary, and details
+- **CLI commands** — `printScanTree()`, `promptModules()`, `buildDefaultModules()`, `offerSaveConfig()` all iterate modules generically
+- **CLI stats** — `cmdStats()` iterates `Object.entries(brain.stats())` dynamically instead of accessing hardcoded keys
+- **CLI DocsPlugin access** — `docs.ts`, `collection.ts`, `context.ts` use shared `findDocsPlugin(brain)` utility with `isDocsPlugin()` type guard instead of `brain.plugin<DocsPlugin>('docs')`
+- **`plugin-loader.ts`** — merged `provider-setup.ts` functionality (`setupProviders`, `resolveEmbeddingKey`). Added `registerPluginLoader()` for custom plugin loaders
+
 ### Fixed
 - **Config loading**: `loadConfig()` now resolves `.brainbank/config.json` relative to the target repo path, not the process CWD. This fixes ignore patterns, plugin lists, and per-plugin config not being applied when running `brainbank index <path>` from a different directory
 - **Docs collection paths**: `registerConfigCollections` now resolves relative collection paths against the repo path instead of CWD

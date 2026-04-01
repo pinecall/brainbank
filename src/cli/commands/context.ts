@@ -4,9 +4,7 @@
  * brainbank context list
  */
 
-import type { DocsPlugin } from '@/plugin.ts';
-
-import { c, args, stripFlags } from '@/cli/utils.ts';
+import { c, args, stripFlags, findDocsPlugin } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory/index.ts';
 
 export async function cmdContext(): Promise<void> {
@@ -26,7 +24,7 @@ export async function cmdContext(): Promise<void> {
 
         const brain = await createBrain();
         await brain.initialize();
-        const docsPlugin = brain.plugin<DocsPlugin>('docs');
+        const docsPlugin = findDocsPlugin(brain);
         if (!docsPlugin) { console.log(c.red('Docs plugin not loaded.')); process.exit(1); }
         docsPlugin.addContext(collection, path, desc);
         console.log(c.green(`✓ Context added: ${collection}:${path} → "${desc}"`));
@@ -38,7 +36,7 @@ export async function cmdContext(): Promise<void> {
     if (sub === 'list') {
         const brain = await createBrain();
         await brain.initialize();
-        const docsPlugin = brain.plugin<DocsPlugin>('docs');
+        const docsPlugin = findDocsPlugin(brain);
         if (!docsPlugin) { console.log(c.yellow('  Docs plugin not loaded.')); brain.close(); return; }
         const contexts = docsPlugin.listContexts();
         if (contexts.length === 0) {

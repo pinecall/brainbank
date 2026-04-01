@@ -12,39 +12,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { c, getFlag } from '../utils.ts';
 
-/** Per-plugin config section (shared shape). */
-interface PluginConfig {
-    embedding?: string;
-}
-
-/** Code plugin config. */
-export interface CodeConfig extends PluginConfig {
-    maxFileSize?: number;
-    ignore?: string[];
-}
-
-/** Git plugin config. */
-export interface GitConfig extends PluginConfig {
-    depth?: number;
-    maxDiffBytes?: number;
-}
-
-/** Docs plugin config. */
-export interface DocsConfig extends PluginConfig {
-    collections?: DocumentCollection[];
-}
-
 /** Full .brainbank/config.json schema. */
 export interface ProjectConfig {
-    plugins?: ('code' | 'git' | 'docs')[];
-    code?: CodeConfig;
-    git?: GitConfig;
-    docs?: DocsConfig;
+    plugins?: string[];
     embedding?: string;
     reranker?: string;
     maxFileSize?: number;
     indexers?: Plugin[];
     brainbank?: Partial<BrainBankConfig>;
+    /** Per-plugin config sections (e.g. code, git, docs). */
     [pluginName: string]: unknown;
 }
 

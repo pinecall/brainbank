@@ -2,7 +2,7 @@
  * brainbank scan — Lightweight repo scanner for the interactive index flow.
  *
  * Scans the filesystem WITHOUT initializing BrainBank. Returns a ScanResult
- * describing what's available to index (code files, git history, docs, config).
+ * describing what's available to index via dynamic ScanModule descriptors.
  */
 
 import * as fs from 'node:fs';
@@ -11,11 +11,27 @@ import { execSync } from 'node:child_process';
 import { SUPPORTED_EXTENSIONS, isIgnoredDir, isIgnoredFile } from '@/lib/languages.ts';
 
 
+/** A single scannable module (plugin). */
+export interface ScanModule {
+    /** Plugin name (e.g. 'code', 'git', 'docs'). */
+    name: string;
+    /** Whether there's content available to index. */
+    available: boolean;
+    /** Human-readable summary (e.g. '1243 files (5 languages)'). */
+    summary: string;
+    /** Emoji icon for display. */
+    icon: string;
+    /** Whether checked by default in the prompt. */
+    checked: boolean;
+    /** Reason this module is disabled (shown in prompt). */
+    disabled?: string;
+    /** Detail lines for the scan tree (e.g. per-language breakdown). */
+    details?: string[];
+}
+
 export interface ScanResult {
     repoPath: string;
-    code: { total: number; byLanguage: Map<string, number> };
-    git: { commitCount: number; lastMessage: string; lastDate: string } | null;
-    docs: { name: string; path: string; fileCount: number }[];
+    modules: ScanModule[];
     config: { exists: boolean; ignore?: string[]; plugins?: string[] };
     db: { exists: boolean; sizeMB: number; lastModified?: Date } | null;
     gitSubdirs: { name: string }[];
@@ -25,20 +41,29 @@ export interface ScanResult {
 /** Scan a repo path and return what's available to index. */
 export function scanRepo(repoPath: string): ScanResult {
     const resolved = path.resolve(repoPath);
+    const gitSubdirs = scanGitSubdirs(resolved);
 
     return {
         repoPath: resolved,
-        code: scanCode(resolved),
-        git: scanGit(resolved),
-        docs: scanDocs(resolved),
+        modules: scanModules(resolved, gitSubdirs),
         config: scanConfig(resolved),
         db: scanDb(resolved),
-        gitSubdirs: scanGitSubdirs(resolved),
+        gitSubdirs,
     };
 }
 
-/** Walk the repo and count source files by language. */
-function scanCode(repoPath: string): ScanResult['code'] {
+/** Produce ScanModule descriptors for known plugin types. */
+function scanModules(repoPath: string, gitSubdirs: { name: string }[]): ScanModule[] {
+    return [
+        scanCodeModule(repoPath),
+        scanGitModule(repoPath, gitSubdirs),
+        scanDocsModule(repoPath),
+    ];
+}
+
+
+/** Scan for indexable code files. */
+function scanCodeModule(repoPath: string): ScanModule {
     const byLanguage = new Map<string, number>();
     let total = 0;
 
@@ -63,25 +88,100 @@ function scanCode(repoPath: string): ScanResult['code'] {
     }
 
     walk(repoPath);
-    return { total, byLanguage };
+
+    if (total === 0) {
+        return { name: 'code', available: false, summary: 'no supported source files found', icon: '📁', checked: false, disabled: 'nothing to index' };
+    }
+
+    const langCount = byLanguage.size;
+    const sorted = [...byLanguage.entries()].sort((a, b) => b[1] - a[1]);
+    const maxShow = 7;
+    const shown = sorted.slice(0, maxShow);
+    const remaining = sorted.length - maxShow;
+
+    const details: string[] = [];
+    for (let i = 0; i < shown.length; i++) {
+        const [lang, count] = shown[i];
+        const isLast = i === shown.length - 1 && remaining <= 0;
+        const prefix = isLast ? '└──' : '├──';
+        details.push(`${prefix} ${lang.padEnd(14)} ${count} files`);
+    }
+    if (remaining > 0) {
+        details.push(`└── ...and ${remaining} more`);
+    }
+
+    return {
+        name: 'code',
+        available: true,
+        summary: `${total} files (${langCount} language${langCount > 1 ? 's' : ''})`,
+        icon: '📁',
+        checked: true,
+        details,
+    };
 }
 
-/** Check for git repo and get basic stats. Supports multi-repo. */
-function scanGit(repoPath: string): ScanResult['git'] {
-    // Single repo: .git at root
+/** Scan for git history. */
+function scanGitModule(repoPath: string, gitSubdirs: { name: string }[]): ScanModule {
+    const stats = scanGitStats(repoPath, gitSubdirs);
+
+    if (!stats) {
+        return { name: 'git', available: false, summary: 'no .git directory found', icon: '📜', checked: false, disabled: 'not a git repo' };
+    }
+
+    const details: string[] = [];
+    if (stats.lastMessage) {
+        details.push(`Last: ${stats.lastMessage} (${stats.lastDate})`);
+    }
+
+    return {
+        name: 'git',
+        available: true,
+        summary: `${stats.commitCount.toLocaleString()} commits`,
+        icon: '📜',
+        checked: true,
+        details,
+    };
+}
+
+/** Scan for document collections. */
+function scanDocsModule(repoPath: string): ScanModule {
+    const collections = scanDocsCollections(repoPath);
+
+    if (collections.length === 0) {
+        return { name: 'docs', available: false, summary: 'no documents found', icon: '📄', checked: false, disabled: 'no .md/.mdx files' };
+    }
+
+    const totalFiles = collections.reduce((s, d) => s + d.fileCount, 0);
+    const details = collections.map((d, i) => {
+        const isLast = i === collections.length - 1;
+        const prefix = isLast ? '└──' : '├──';
+        return `${prefix} ${d.name.padEnd(10)} → ${d.path} (${d.fileCount} files)`;
+    });
+
+    return {
+        name: 'docs',
+        available: true,
+        summary: `${collections.length} collection${collections.length > 1 ? 's' : ''} (${totalFiles} files)`,
+        icon: '📄',
+        checked: true,
+        details,
+    };
+}
+
+
+/** Get git stats. Supports single repo and multi-repo aggregation. */
+function scanGitStats(repoPath: string, gitSubdirs: { name: string }[]): { commitCount: number; lastMessage: string; lastDate: string } | null {
     if (fs.existsSync(path.join(repoPath, '.git'))) {
         return gitStats(repoPath);
     }
 
-    // Multi-repo: aggregate from subdirectories with .git
-    const subdirs = scanGitSubdirs(repoPath);
-    if (subdirs.length === 0) return null;
+    if (gitSubdirs.length === 0) return null;
 
     let totalCommits = 0;
     let latestMessage = '';
     let latestDate = '';
 
-    for (const sub of subdirs) {
+    for (const sub of gitSubdirs) {
         const stats = gitStats(path.join(repoPath, sub.name));
         if (stats) {
             totalCommits += stats.commitCount;
@@ -98,7 +198,7 @@ function scanGit(repoPath: string): ScanResult['git'] {
 }
 
 /** Get git stats for a single directory. */
-function gitStats(dir: string): ScanResult['git'] {
+function gitStats(dir: string): { commitCount: number; lastMessage: string; lastDate: string } | null {
     try {
         const count = parseInt(execSync('git rev-list --count HEAD', { cwd: dir, encoding: 'utf-8' }).trim(), 10);
         const log = execSync('git log -1 --format="%s|%ar"', { cwd: dir, encoding: 'utf-8' }).trim();
@@ -109,22 +209,23 @@ function gitStats(dir: string): ScanResult['git'] {
     }
 }
 
-/** Scan for documents: filesystem .md/.mdx files + config.json collections. */
-function scanDocs(repoPath: string): ScanResult['docs'] {
-    const results: ScanResult['docs'] = [];
+/** Scan for document collections (config + auto-detect). */
+function scanDocsCollections(repoPath: string): { name: string; path: string; fileCount: number }[] {
+    const results: { name: string; path: string; fileCount: number }[] = [];
     const seen = new Set<string>();
 
     // 1. Read explicit collections from config.json
     const configPath = path.join(repoPath, '.brainbank', 'config.json');
     try {
         if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-            const collections = config?.docs?.collections as { name: string; path: string }[] | undefined;
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+            const docsCfg = config?.docs as Record<string, unknown> | undefined;
+            const collections = docsCfg?.collections as { name: string; path: string }[] | undefined;
             if (collections) {
                 for (const coll of collections) {
                     const absPath = path.resolve(repoPath, coll.path);
                     results.push({ name: coll.name, path: coll.path, fileCount: countDocs(absPath) });
-                    seen.add(path.resolve(repoPath, coll.path));
+                    seen.add(absPath);
                 }
             }
         }
@@ -188,10 +289,11 @@ function scanConfig(repoPath: string): ScanResult['config'] {
     if (!fs.existsSync(configPath)) return { exists: false };
 
     try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+        const codeCfg = config?.code as Record<string, unknown> | undefined;
         return {
             exists: true,
-            ignore: config?.code?.ignore as string[] | undefined,
+            ignore: codeCfg?.ignore as string[] | undefined,
             plugins: config?.plugins as string[] | undefined,
         };
     } catch {

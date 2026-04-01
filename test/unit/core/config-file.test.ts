@@ -46,7 +46,8 @@ function cleanup(p: string) {
 }
 
 export const tests = {
-    async 'config.json schema is valid TypeScript type'(assert: any) {
+    async 'config.json schema is valid TypeScript type'(assert: unknown) {
+        const a = assert as Record<string, Function>;
         // Verify the ProjectConfig type is exported and usable
         const config: ProjectConfig = {
             plugins: ['code', 'git', 'docs'],
@@ -63,11 +64,15 @@ export const tests = {
             maxFileSize: 512000,
         };
 
-        assert.equal(config.plugins!.length, 3);
-        assert.equal(config.code!.embedding, 'openai');
-        assert.equal(config.git!.depth, 100);
-        assert.equal(config.docs!.collections!.length, 1);
-        assert.equal(config.embedding, 'openai');
+        a.equal(config.plugins!.length, 3);
+        const codeCfg = config.code as Record<string, unknown>;
+        a.equal(codeCfg.embedding, 'openai');
+        const gitCfg = config.git as Record<string, unknown>;
+        a.equal(gitCfg.depth, 100);
+        const docsCfg = config.docs as Record<string, unknown>;
+        const collections = docsCfg.collections as unknown[];
+        a.equal(collections.length, 1);
+        a.equal(config.embedding, 'openai');
     },
 
     async 'registerConfigCollections registers docs from config'(assert: any) {

@@ -3,9 +3,7 @@
  * brainbank dsearch — Search documents only
  */
 
-import type { DocsPlugin } from '@/plugin.ts';
-
-import { c, args, getFlag, stripFlags } from '@/cli/utils.ts';
+import { c, args, getFlag, stripFlags, findDocsPlugin } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory/index.ts';
 
 export async function cmdDocs(): Promise<void> {
@@ -20,7 +18,7 @@ export async function cmdDocs(): Promise<void> {
         process.stdout.write(`\r  ${c.cyan(col)} [${cur}/${total}] ${file}                    `);
     };
 
-    const docsPlugin = brain.plugin<DocsPlugin>('docs');
+    const docsPlugin = findDocsPlugin(brain);
     if (!docsPlugin) { console.log(c.red('  Docs plugin not loaded. Install @brainbank/docs.')); process.exit(1); }
 
     const results = await docsPlugin.indexDocs(opts);
@@ -46,7 +44,7 @@ export async function cmdDocSearch(): Promise<void> {
 
     console.log(c.bold(`\n━━━ BrainBank Doc Search: "${query}" ━━━\n`));
 
-    const docsPlugin = brain.plugin<DocsPlugin>('docs');
+    const docsPlugin = findDocsPlugin(brain);
     if (!docsPlugin) {
         console.log(c.red('Docs plugin not loaded. Install @brainbank/docs.'));
         process.exit(1);

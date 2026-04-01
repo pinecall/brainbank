@@ -1,8 +1,8 @@
 /**
  * BrainBank CLI — Plugin Loader
  *
- * Dynamic loading of @brainbank/* plugin packages and
- * auto-discovery of user plugins from .brainbank/plugins/.
+ * Generic plugin loader registry with dynamic @brainbank/* package loading
+ * and auto-discovery of user plugins from .brainbank/plugins/.
  */
 
 import type { Plugin } from '@/plugin.ts';
@@ -16,33 +16,39 @@ import { c, getFlag } from '../utils.ts';
 /** Plugin factory — accepts config, returns Plugin. */
 type PluginFactory = (opts: Record<string, unknown>) => Plugin;
 
+/** Loader function: dynamically imports a package and returns its factory. */
+type PluginLoaderFn = () => Promise<PluginFactory | null>;
+
+/** Built-in plugin loader registry. Extensible at runtime. */
+const PLUGIN_LOADERS = new Map<string, PluginLoaderFn>([
+    ['code', async () => { try { return (await import('@brainbank/code')).code as PluginFactory; } catch { return null; } }],
+    ['git', async () => { try { return (await import('@brainbank/git')).git as PluginFactory; } catch { return null; } }],
+    ['docs', async () => { try { return (await import('@brainbank/docs')).docs as PluginFactory; } catch { return null; } }],
+]);
+
+/** Plugins that support multi-repo mode (one instance per git subdir). */
+const MULTI_REPO_PLUGINS = new Set(['code', 'git']);
+
+/** Load a plugin factory by name. Returns null if not installed. */
+export async function loadPlugin(name: string): Promise<PluginFactory | null> {
+    const loader = PLUGIN_LOADERS.get(name);
+    if (!loader) return null;
+    return loader();
+}
+
+/** Register a custom plugin loader. */
+export function registerPluginLoader(name: string, loader: PluginLoaderFn): void {
+    PLUGIN_LOADERS.set(name, loader);
+}
+
+/** Check if a plugin supports multi-repo mode. */
+export function isMultiRepoCapable(name: string): boolean {
+    return MULTI_REPO_PLUGINS.has(name);
+}
+
 const INDEXER_EXTENSIONS = ['.ts', '.js', '.mjs'];
 const NOT_LOADED = Symbol('not-loaded');
 let _folderPluginsCache: Plugin[] | typeof NOT_LOADED = NOT_LOADED;
-
-/** Try to load @brainbank/code. Returns factory or null if not installed. */
-export async function loadCodePlugin(): Promise<PluginFactory | null> {
-    try {
-        const mod = await import('@brainbank/code');
-        return mod.code;
-    } catch { return null; }
-}
-
-/** Try to load @brainbank/git. Returns factory or null if not installed. */
-export async function loadGitPlugin(): Promise<PluginFactory | null> {
-    try {
-        const mod = await import('@brainbank/git');
-        return mod.git;
-    } catch { return null; }
-}
-
-/** Try to load @brainbank/docs. Returns factory or null if not installed. */
-export async function loadDocsPlugin(): Promise<PluginFactory | null> {
-    try {
-        const mod = await import('@brainbank/docs');
-        return mod.docs;
-    } catch { return null; }
-}
 
 /** Auto-discover plugins from .brainbank/plugins/ folder. */
 export async function discoverFolderPlugins(): Promise<Plugin[]> {

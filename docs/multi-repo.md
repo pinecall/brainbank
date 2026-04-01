@@ -41,7 +41,7 @@ brainbank hsearch "cancel job confirmation" --repo ~/projects
 
 ## Detection Logic
 
-The CLI's `builtin-registration.ts` checks for a root `.git/` directory. If absent, it scans immediate subdirectories for `.git/` folders (excluding dot-directories and `node_modules`). Each detected sub-repo gets namespaced plugin instances.
+The CLI's `builtin-registration.ts` checks for a root `.git/` directory. If absent, it scans immediate subdirectories for `.git/` folders (excluding dot-directories and `node_modules`). Each detected sub-repo gets namespaced plugin instances for any plugin in the `MULTI_REPO_PLUGINS` set (currently `code` and `git`, extensible at runtime).
 
 ---
 
@@ -107,7 +107,7 @@ In multi-repo, you can override embeddings per plugin — the CLI reads from `co
 }
 ```
 
-The CLI also merges ignore patterns: `config.code.ignore` + `--ignore` flag apply to all code plugins.
+The CLI also merges ignore patterns: `config[pluginName].ignore` + `--ignore` flag apply to all code plugins.
 
 ---
 

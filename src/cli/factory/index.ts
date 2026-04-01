@@ -6,6 +6,7 @@
  * Delegates to focused modules in factory/.
  */
 
+import type { Plugin } from '@/plugin.ts';
 import type { BrainBankConfig } from '@/types.ts';
 
 import { BrainBank } from '@/brainbank.ts';
@@ -30,7 +31,7 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     const folderPlugins = await discoverFolderPlugins();
 
     const brainOpts: Partial<BrainBankConfig> & Record<string, unknown> = { repoPath: rp, ...(config?.brainbank ?? {}) };
-    if (config?.maxFileSize) brainOpts.maxFileSize = config.maxFileSize;
+    if (config?.maxFileSize) brainOpts.maxFileSize = config.maxFileSize as number;
     await setupProviders(brainOpts, config);
 
     const brain = new BrainBank(brainOpts);
@@ -40,7 +41,7 @@ export async function createBrain(repoPath?: string): Promise<BrainBank> {
     for (const plugin of folderPlugins) brain.use(plugin);
 
     if (config?.indexers) {
-        for (const plugin of config.indexers) brain.use(plugin);
+        for (const plugin of config.indexers as Plugin[]) brain.use(plugin);
     }
 
     return brain;

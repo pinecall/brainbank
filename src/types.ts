@@ -349,26 +349,8 @@ export interface DocChunk {
 }
 
 
+/** Plugin-provided stats. Key is the plugin name. */
 export interface IndexStats {
-    code?: {
-        files: number;
-        chunks: number;
-        hnswSize: number;
-    };
-    git?: {
-        commits: number;
-        filesTracked: number;
-        coEdits: number;
-        hnswSize: number;
-    };
-
-    documents?: {
-        collections: number;
-        documents: number;
-        chunks: number;
-        hnswSize: number;
-    };
-    /** Plugin-provided stats. Key is the plugin name. */
     [pluginName: string]: Record<string, number | string> | undefined;
 }
 
