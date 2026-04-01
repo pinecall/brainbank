@@ -4,13 +4,28 @@
  * Keyword search via SQLite FTS5 with BM25 ranking.
  * Searches across code chunks and git commits.
  * Uses Porter stemming + unicode61 tokenizer.
+ *
+ * @deprecated Use CompositeBM25Search with BM25SearchPlugin instances instead.
+ * Kept for backward compatibility with tests.
  */
 
 import type { Database } from '@/db/database.ts';
-import type { CodeChunkRow, GitCommitRow } from '@/db/rows.ts';
 import type { SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { sanitizeFTS, normalizeBM25, escapeLike } from '@/lib/fts.ts';
+
+/** Local row type for code_chunks table (domain type moved to @brainbank/code). */
+interface CodeChunkRow {
+    id: number; file_path: string; chunk_type: string; name: string | null;
+    start_line: number; end_line: number; content: string; language: string;
+}
+
+/** Local row type for git_commits table (domain type moved to @brainbank/git). */
+interface GitCommitRow {
+    id: number; hash: string; short_hash: string; message: string;
+    author: string; date: string; files_json: string; diff: string | null;
+    additions: number; deletions: number; is_merge: number;
+}
 
 /** Check if an error is an FTS5 query syntax error (expected, safe to ignore). */
 function isFTSError(e: unknown): boolean {

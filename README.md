@@ -60,11 +60,11 @@ brain.close();
 
 ## Packages
 
-`brainbank` is the core framework. Plugins are separate `@brainbank/*` packages — install only what you need:
+`brainbank` is the core framework — strictly plugin-agnostic. Plugins are separate `@brainbank/*` packages that own their database schema, search strategies, and context formatting. Install only what you need:
 
 ### Indexer Plugins
 
-Data sources that feed into BrainBank's hybrid search engine.
+Data sources that feed into BrainBank's hybrid search engine. Each plugin manages its own tables via the built-in migration system.
 
 | Package | Description | Install |
 |---------|-------------|----------|

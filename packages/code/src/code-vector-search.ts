@@ -1,19 +1,30 @@
 /**
- * BrainBank — Code Vector Search
+ * @brainbank/code — Code Vector Search
  *
  * Searches code_chunks via HNSW with optional MMR diversification.
- * One of three domain-specific vector strategies composed by CompositeVectorSearch.
+ * Moved from core — domain-specific strategy for CompositeVectorSearch.
  */
 
-import type { Database } from '@/db/database.ts';
-import type { CodeChunkRow } from '@/db/rows.ts';
-import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { SearchResult } from '@/types.ts';
-import { searchMMR } from './mmr.ts';
+import type { SearchResult } from 'brainbank';
+import { searchMMR } from 'brainbank';
+
+/** Typed row shape for code_chunks table. */
+export interface CodeChunkRow {
+    id: number;
+    file_path: string;
+    chunk_type: string;
+    name: string | null;
+    start_line: number;
+    end_line: number;
+    content: string;
+    language: string;
+    file_hash: string | null;
+    indexed_at: number;
+}
 
 export interface CodeVectorConfig {
-    db: Database;
-    hnsw: HNSWIndex;
+    db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } };
+    hnsw: { size: number; search(vec: Float32Array, k: number): { id: number; score: number }[] };
     vecs: Map<number, Float32Array>;
 }
 
@@ -29,7 +40,7 @@ export class CodeVectorSearch {
         if (hnsw.size === 0) return [];
 
         const hits = useMMR
-            ? searchMMR(hnsw, queryVec, vecs, k, mmrLambda)
+            ? searchMMR(hnsw as Parameters<typeof searchMMR>[0], queryVec, vecs, k, mmrLambda)
             : hnsw.search(queryVec, k);
         if (hits.length === 0) return [];
 

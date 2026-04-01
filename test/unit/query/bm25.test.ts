@@ -1,16 +1,25 @@
 /**
  * BrainBank — BM25 + FTS5 Tests
+ *
+ * Tests use createDomainSchema() to set up domain tables since
+ * code/git/docs schemas are no longer in core.
  */
 
-import { Database, KeywordSearch, SCHEMA_VERSION, tmpDb } from '../../helpers.ts';
+import { Database, KeywordSearch, SCHEMA_VERSION, tmpDb, createDomainSchema } from '../../helpers.ts';
 
 export const name = 'BM25 Full-Text Search';
 
-export const tests = {
-    async 'FTS5 tables are created with schema v6'(assert: any) {
-        const db = new Database(tmpDb('bm25-test'));
+function freshDb(label: string): ReturnType<typeof Database.prototype.db extends infer D ? () => InstanceType<typeof Database> : never> {
+    const db = new Database(tmpDb(label));
+    createDomainSchema(db);
+    return db;
+}
 
-        assert.equal(SCHEMA_VERSION, 6);
+export const tests = {
+    async 'FTS5 tables are created with schema v7'(assert: any) {
+        const db = freshDb('bm25-test');
+
+        assert.equal(SCHEMA_VERSION, 7);
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_%'"
@@ -25,7 +34,7 @@ export const tests = {
     },
 
     async 'FTS5 triggers auto-sync on insert'(assert: any) {
-        const db = new Database(tmpDb('bm25-sync'));
+        const db = freshDb('bm25-sync');
 
         db.prepare(`
             INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
@@ -43,7 +52,7 @@ export const tests = {
     },
 
     async 'KeywordSearch finds code by keyword'(assert: any) {
-        const db = new Database(tmpDb('bm25-search'));
+        const db = freshDb('bm25-search');
 
         db.prepare(`
             INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
@@ -69,7 +78,7 @@ export const tests = {
     },
 
     async 'KeywordSearch finds git commits'(assert: any) {
-        const db = new Database(tmpDb('bm25-git'));
+        const db = freshDb('bm25-git');
 
         db.prepare(`
             INSERT INTO git_commits (hash, short_hash, message, author, date, timestamp, files_json, diff, is_merge)
@@ -89,7 +98,7 @@ export const tests = {
 
 
     async 'BM25 returns empty for no matches'(assert: any) {
-        const db = new Database(tmpDb('bm25-empty'));
+        const db = freshDb('bm25-empty');
         const bm25 = new KeywordSearch(db);
         const results = await bm25.search('xyznonexistentterm');
 
@@ -98,7 +107,7 @@ export const tests = {
     },
 
     async 'BM25 sanitizes dangerous queries'(assert: any) {
-        const db = new Database(tmpDb('bm25-sanitize'));
+        const db = freshDb('bm25-sanitize');
         const bm25 = new KeywordSearch(db);
 
         await bm25.search('test AND OR NOT');

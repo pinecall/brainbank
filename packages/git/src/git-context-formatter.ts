@@ -1,14 +1,13 @@
 /**
- * BrainBank — Git Formatters
+ * @brainbank/git — Git Context Formatter
  *
- * Formats git commit results and co-edit suggestions.
+ * Formats git commit results with diff snippets and co-edit suggestions.
+ * Moved from core — domain-specific formatting for git results.
  */
 
-import type { SearchResult, CoEditSuggestion } from '@/types.ts';
+import type { SearchResult, CoEditSuggestion } from 'brainbank';
 
-import { isDocumentResult } from '@/types.ts';
-
-/** Duck-typed interface for co-edit suggestions (provided by @brainbank/git). */
+/** Duck-typed interface for co-edit suggestions (provided by CoEditAnalyzer). */
 export interface CoEditProvider {
     suggest(filePath: string, limit: number): CoEditSuggestion[];
 }
@@ -59,23 +58,4 @@ export function formatCoEdits(affectedFiles: string[], parts: string[], coEdits?
         parts.push(...coEditLines);
         parts.push('');
     }
-}
-
-
-
-
-/** Format document search results into a markdown section. Returns empty string if no results. */
-export function formatDocuments(docs: SearchResult[]): string {
-    if (docs.length === 0) return '';
-
-    const body = docs.map(r => {
-        if (!isDocumentResult(r)) return r.content;
-        const m = r.metadata;
-        const h = r.context
-            ? `**[${m.collection}]** ${m.title} — _${r.context}_`
-            : `**[${m.collection}]** ${m.title}`;
-        return `${h}\n\n${r.content}`;
-    }).join('\n\n---\n\n');
-
-    return `## Relevant Documents\n\n${body}`;
 }

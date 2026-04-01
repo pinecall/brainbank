@@ -27,11 +27,13 @@ export type {
     ReembeddablePlugin, ReembedTable,
     DocsPlugin,
     VectorSearchPlugin, ContextFormatterPlugin,
+    MigratablePlugin, BM25SearchPlugin,
 } from './plugin.ts';
 export {
     isIndexable, isSearchable, isWatchable,
     isDocsPlugin, isCoEditPlugin, isReembeddable,
     isVectorSearchPlugin, isContextFormatterPlugin,
+    isMigratable, isBM25SearchPlugin,
 } from './plugin.ts';
 
 // Constants (core-only)
@@ -87,6 +89,10 @@ export type { EmbeddingKey } from './providers/embeddings/resolve.ts';
 // Config
 export { resolveConfig, DEFAULTS } from './config.ts';
 
+// Migrations
+export type { Migration } from './db/migrations.ts';
+export { runPluginMigrations } from './db/migrations.ts';
+
 // Vector indices
 export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';
@@ -103,13 +109,14 @@ export { KVService } from './services/kv-service.ts';
 // Search internals (plugins may use these)
 export { ContextBuilder } from './search/context-builder.ts';
 export { CompositeVectorSearch } from './search/vector/composite-vector-search.ts';
+export { CompositeBM25Search } from './search/keyword/composite-bm25-search.ts';
 export { KeywordSearch } from './search/keyword/keyword-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
-export { normalizeBM25 } from './lib/fts.ts';
+export { sanitizeFTS, normalizeBM25, escapeLike } from './lib/fts.ts';
 export { rerank } from './lib/rerank.ts';
 
 // Search types
-export type { SearchStrategy, SearchOptions, DomainVectorSearch, CodeGraphProvider, CodeChunkSummary } from './search/types.ts';
+export type { SearchStrategy, SearchOptions, DomainVectorSearch } from './search/types.ts';
 
 // Database (for plugin access)
 export type { Database } from './db/database.ts';

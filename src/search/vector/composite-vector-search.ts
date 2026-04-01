@@ -17,6 +17,9 @@ export interface CompositeVectorConfig {
 }
 
 export class CompositeVectorSearch implements SearchStrategy {
+    /** Default K when no source override is provided. */
+    private static readonly DEFAULT_K = 6;
+
     constructor(private _c: CompositeVectorConfig) {}
 
     /** Search across all registered domain strategies. */
@@ -28,7 +31,7 @@ export class CompositeVectorSearch implements SearchStrategy {
         const results: SearchResult[] = [];
 
         for (const [name, strategy] of this._c.strategies) {
-            const k = src[name] ?? this._c.defaults?.[name] ?? 0;
+            const k = src[name] ?? this._c.defaults?.[name] ?? CompositeVectorSearch.DEFAULT_K;
             if (k <= 0) continue;
             results.push(...strategy.search(queryVec, k, minScore, useMMR, mmrLambda));
         }

@@ -14,6 +14,7 @@
  */
 
 import type { Database } from './db/database.ts';
+import type { Migration } from './db/migrations.ts';
 import type { HNSWIndex } from './providers/vector/hnsw-index.ts';
 import type { DomainVectorSearch } from './search/types.ts';
 import type {
@@ -190,4 +191,33 @@ export interface ContextFormatterPlugin extends Plugin {
 /** Check if a plugin provides context formatting. */
 export function isContextFormatterPlugin(p: Plugin): p is ContextFormatterPlugin {
     return typeof (p as ContextFormatterPlugin).formatContext === 'function';
+}
+
+
+/** Plugin that owns database tables and supports versioned migrations. */
+export interface MigratablePlugin extends Plugin {
+    /** Current schema version for this plugin. */
+    readonly schemaVersion: number;
+    /** Ordered list of migrations (version 1, 2, 3, …). */
+    readonly migrations: Migration[];
+}
+
+/** Check if a plugin supports schema migrations. */
+export function isMigratable(p: Plugin): p is MigratablePlugin {
+    return typeof (p as MigratablePlugin).schemaVersion === 'number'
+        && Array.isArray((p as MigratablePlugin).migrations);
+}
+
+
+/** Plugin that can do FTS5 keyword search on its own tables. */
+export interface BM25SearchPlugin extends Plugin {
+    /** Run BM25 keyword search. Returns scored results. */
+    searchBM25(query: string, k: number, minScore?: number): SearchResult[];
+    /** Rebuild the FTS5 index from the content table. */
+    rebuildFTS?(): void;
+}
+
+/** Check if a plugin provides BM25 keyword search. */
+export function isBM25SearchPlugin(p: Plugin): p is BM25SearchPlugin {
+    return typeof (p as BM25SearchPlugin).searchBM25 === 'function';
 }

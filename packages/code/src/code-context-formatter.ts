@@ -1,15 +1,15 @@
 /**
- * BrainBank — Code & Graph Formatters
+ * @brainbank/code — Code Context Formatter
  *
  * Formats code search results grouped by file with call graph annotations,
  * and import graph expansion results.
+ * Moved from core — domain-specific formatting for code results.
  */
 
-import type { SearchResult } from '@/types.ts';
-import type { CodeGraphProvider } from '../types.ts';
+import type { SearchResult } from 'brainbank';
+import { isCodeResult } from 'brainbank';
 
-import { isCodeResult } from '@/types.ts';
-
+import type { CodeGraphProvider } from './sql-code-graph.js';
 
 /** Format code search results grouped by file with call graph info. */
 export function formatCodeResults(codeHits: SearchResult[], parts: string[], codeGraph?: CodeGraphProvider): void {

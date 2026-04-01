@@ -1,10 +1,15 @@
 /**
  * Unit Tests — SQLite Schema & Database
+ *
+ * Tests core schema (v7+) which contains only framework tables.
+ * Domain-specific tables (code, git, docs) are created by plugins
+ * via the migration system — tested via createDomainSchema().
  */
 
 import * as fs from 'node:fs';
 import { Database } from '../../../src/db/database.ts';
 import { getSchemaVersion, SCHEMA_VERSION } from '../../../src/db/schema.ts';
+import { createDomainSchema } from '../../helpers.ts';
 
 export const name = 'Schema & Database';
 
@@ -18,8 +23,30 @@ function freshDb(): Database {
 }
 
 export const tests = {
-    'creates all tables'(assert: any) {
+    'creates core tables'(assert: any) {
         const db = freshDb();
+        const tables = db.db.prepare(
+            `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`
+        ).all().map((r: any) => r.name);
+
+        // Core tables
+        assert.includes(tables, 'schema_version');
+        assert.includes(tables, 'plugin_versions');
+        assert.includes(tables, 'kv_data');
+        assert.includes(tables, 'kv_vectors');
+        assert.includes(tables, 'embedding_meta');
+
+        // Domain tables should NOT be in core schema
+        assert.ok(!tables.includes('code_chunks'), 'code_chunks should not be in core schema');
+        assert.ok(!tables.includes('git_commits'), 'git_commits should not be in core schema');
+        assert.ok(!tables.includes('collections'), 'collections should not be in core schema');
+        db.close();
+    },
+
+    'domain tables created via createDomainSchema'(assert: any) {
+        const db = freshDb();
+        createDomainSchema(db);
+
         const tables = db.db.prepare(
             `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`
         ).all().map((r: any) => r.name);
@@ -31,12 +58,10 @@ export const tests = {
         assert.includes(tables, 'commit_files');
         assert.includes(tables, 'co_edits');
         assert.includes(tables, 'git_vectors');
-        assert.includes(tables, 'schema_version');
         assert.includes(tables, 'collections');
         assert.includes(tables, 'doc_chunks');
         assert.includes(tables, 'doc_vectors');
         assert.includes(tables, 'path_contexts');
-        // Code graph tables (v5)
         assert.includes(tables, 'code_imports');
         assert.includes(tables, 'code_symbols');
         assert.includes(tables, 'code_refs');
@@ -75,6 +100,7 @@ export const tests = {
 
     'insert and query roundtrip'(assert: any) {
         const db = freshDb();
+        createDomainSchema(db);
         db.prepare(`INSERT INTO code_chunks (file_path, chunk_type, start_line, end_line, content, language)
                      VALUES (?, ?, ?, ?, ?, ?)`).run('test.ts', 'file', 1, 10, 'hello', 'typescript');
 
@@ -88,6 +114,7 @@ export const tests = {
 
     'transaction commits on success'(assert: any) {
         const db = freshDb();
+        createDomainSchema(db);
         db.transaction(() => {
             db.prepare(`INSERT INTO code_chunks (file_path, chunk_type, start_line, end_line, content, language)
                          VALUES (?, ?, ?, ?, ?, ?)`).run('tx.ts', 'file', 1, 1, 'tx', 'typescript');
@@ -99,6 +126,7 @@ export const tests = {
 
     'transaction rolls back on error'(assert: any) {
         const db = freshDb();
+        createDomainSchema(db);
         try {
             db.transaction(() => {
                 db.prepare(`INSERT INTO code_chunks (file_path, chunk_type, start_line, end_line, content, language)
@@ -113,6 +141,7 @@ export const tests = {
 
     'batch inserts multiple rows'(assert: any) {
         const db = freshDb();
+        createDomainSchema(db);
         db.batch(
             `INSERT INTO code_chunks (file_path, chunk_type, start_line, end_line, content, language)
              VALUES (?, ?, ?, ?, ?, ?)`,

@@ -4,14 +4,12 @@ Git history indexing plugin for [BrainBank](https://github.com/pinecall/brainban
 
 ## Install
 
-Included in core `brainbank` as an optional dependency. Also available as a standalone package:
-
 ```bash
-# Already included when you install brainbank globally
-npm i -g brainbank
+# Global install (CLI + programmatic)
+npm i -g brainbank @brainbank/git
 
-# Or install standalone (e.g. for programmatic use)
-npm i -g @brainbank/git
+# Or as a project dependency
+npm i @brainbank/git
 ```
 
 ## Quick Start
@@ -101,6 +99,20 @@ Repository → git log → parse commits → filter new
 ## Peer Dependencies
 
 - `brainbank` >= 0.7.0
+
+## Plugin Capabilities
+
+`@brainbank/git` implements the following capability interfaces, discovered by the core at runtime:
+
+| Interface | What it does |
+|-----------|-------------|
+| `IndexablePlugin` | Participates in `brain.index()` — commit parsing + embedding |
+| `VectorSearchPlugin` | Provides `GitVectorSearch` for semantic commit search |
+| `BM25SearchPlugin` | Provides FTS5 keyword search against `fts_commits` |
+| `ContextFormatterPlugin` | Formats git history + co-edit suggestions for `brain.getContext()` |
+| `MigratablePlugin` | Owns its schema — `git_commits`, `commit_files`, `co_edits`, `git_vectors`, `fts_commits` |
+| `ReembeddablePlugin` | Participates in `brain.reembed()` |
+| `CoEditPlugin` | Suggests files that tend to change together |
 
 ## License
 

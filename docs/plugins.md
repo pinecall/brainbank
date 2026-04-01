@@ -73,8 +73,9 @@ Plugins implement zero or more capability interfaces discovered at runtime via t
 | `WatchablePlugin` | `isWatchable()` | `watchPatterns()` + `onFileChange()` | Auto-re-index on file changes |
 | `VectorSearchPlugin` | `isVectorSearchPlugin()` | `createVectorSearch()` | Provides domain-specific vector strategy for CompositeVectorSearch |
 | `ContextFormatterPlugin` | `isContextFormatterPlugin()` | `formatContext(results, parts)` | Contributes sections to `brain.getContext()` output |
+| `BM25SearchPlugin` | `isBM25SearchPlugin()` | `searchBM25(query, k)` | Provides FTS5 keyword search for CompositeBM25Search |
+| `MigratablePlugin` | `isMigratable()` | `schemaVersion` + `migrations` | Plugin owns its DB schema via versioned migrations |
 | `ReembeddablePlugin` | `isReembeddable()` | `reembedConfig()` | Participates in `brain.reembed()` |
-| `HnswPlugin` | `isHnswPlugin()` | `hnsw` + `vecCache` | Exposes shared HNSW for reembed |
 | `CoEditPlugin` | `isCoEditPlugin()` | `coEdits.suggest()` | Provides co-edit suggestions |
 
 ---

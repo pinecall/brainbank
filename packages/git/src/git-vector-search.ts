@@ -1,18 +1,31 @@
 /**
- * BrainBank — Git Vector Search
+ * @brainbank/git — Git Vector Search
  *
  * Searches git_commits via HNSW.
- * One of three domain-specific vector strategies composed by CompositeVectorSearch.
+ * Moved from core — domain-specific strategy for CompositeVectorSearch.
  */
 
-import type { Database } from '@/db/database.ts';
-import type { GitCommitRow } from '@/db/rows.ts';
-import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { SearchResult } from '@/types.ts';
+import type { SearchResult } from 'brainbank';
+
+/** Typed row shape for git_commits table. */
+export interface GitCommitRow {
+    id: number;
+    hash: string;
+    short_hash: string;
+    message: string;
+    author: string;
+    date: string;
+    timestamp: number;
+    files_json: string;
+    diff: string | null;
+    additions: number;
+    deletions: number;
+    is_merge: number;
+}
 
 export interface GitVectorConfig {
-    db: Database;
-    hnsw: HNSWIndex;
+    db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } };
+    hnsw: { size: number; search(vec: Float32Array, k: number): { id: number; score: number }[] };
 }
 
 export class GitVectorSearch {

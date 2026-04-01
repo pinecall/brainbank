@@ -13,12 +13,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Removed `CodeVectorSearch`, `GitVectorSearch`, `PatternVectorSearch`, `SqlCodeGraphProvider` exports from core — these belong in `@brainbank/code` / `@brainbank/git`
 - Removed `brain.indexCode()` and `brain.indexGit()` — use `brain.plugin('code')?.index()` directly
 - **`@brainbank/memory` removed** — deleted `packages/memory/` and all core references (`memory_patterns`, `memory_vectors`, `distilled_strategies` tables, `fts_patterns` FTS5, `PatternVectorSearch`, `MemoryPatternRow`, `LearningPattern`, `DistilledStrategy`, `PatternResult`, `HnswPlugin`, `isHnswPlugin`, `isPatternResult`, `formatPatternResults`). Memory/pattern storage should use `brain.collection()` KV collections instead
+- **Schema v7** — domain tables (code, git, docs) removed from core schema. Each plugin now creates its own tables via the migration system. Schema version bumped from 6 to 7
+- **`KeywordSearch` deprecated** — replaced by `CompositeBM25Search` which discovers BM25-capable plugins dynamically. `KeywordSearch` kept for backward compatibility but marked deprecated
+- **`CodeGraphProvider`, `CodeChunkSummary` removed from core** — moved to `@brainbank/code` package
+- **Domain row types removed from core** — `CodeChunkRow`, `GitCommitRow`, `DocChunkRow`, `CollectionRow`, `ImportRow` removed from `db/rows.ts`. Each package defines its own row types
 
 ### Added
 - `VectorSearchPlugin` capability interface — plugins can register domain-specific vector search strategies
 - `ContextFormatterPlugin` capability interface — plugins can provide custom context formatting for LLM prompts
 - `DomainVectorSearch` interface — generic abstraction for pre-embedded vector search
 - `isVectorSearchPlugin()`, `isContextFormatterPlugin()` type guards
+- `MigratablePlugin` + `BM25SearchPlugin` capability interfaces — plugins own their schema and FTS5 search
+- `isMigratable()`, `isBM25SearchPlugin()` type guards
+- `runPluginMigrations()` — per-plugin versioned migration runner backed by `plugin_versions` table
+- `CompositeBM25Search` — generic BM25 coordinator that discovers `BM25SearchPlugin` instances from the registry
+- `plugin_versions` table in core schema — tracks per-plugin migration versions
 - Generic `brain.index()` — discovers `IndexablePlugin` implementations automatically
 - Generic `brain.stats()` — iterates all plugins with `stats()` method
 - `brain.code` typed accessor (matches existing `brain.docs` and `brain.git`)

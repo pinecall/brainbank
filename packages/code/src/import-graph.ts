@@ -1,16 +1,20 @@
 /**
- * BrainBank — Import Graph Traversal
+ * @brainbank/code — Import Graph Traversal
  *
  * 2-hop traversal of the code_imports table to discover related files.
  * Also clusters sibling files from directories with 3+ search hits.
+ * Moved from core — domain-specific to code indexing.
  */
 
-import type { Database } from '@/db/database.ts';
-import type { CodeChunkRow } from '@/db/rows.ts';
-import { escapeLike } from '@/lib/fts.ts';
+import { escapeLike } from 'brainbank';
+
+/** Minimal DB interface for queries — avoids importing concrete Database class. */
+interface DbLike {
+    prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown };
+}
 
 /** Traverse import graph 1-2 hops from seed files, return new file paths. */
-export function expandViaImportGraph(db: Database, seedFiles: Set<string>): Set<string> {
+export function expandViaImportGraph(db: DbLike, seedFiles: Set<string>): Set<string> {
     const discovered = new Set<string>();
     const frontier = new Set(seedFiles);
 
@@ -67,7 +71,7 @@ export function expandViaImportGraph(db: Database, seedFiles: Set<string>): Set<
 }
 
 /** Resolve a basename import (e.g. 'message') to real file paths. */
-function resolveImportPath(db: Database, basename: string, fromDir: string): string[] {
+function resolveImportPath(db: DbLike, basename: string, fromDir: string): string[] {
     try {
         const escapedDir = escapeLike(fromDir);
         const escapedBase = escapeLike(basename);
@@ -95,7 +99,7 @@ function resolveImportPath(db: Database, basename: string, fromDir: string): str
 }
 
 /** If 3+ hits from same directory, include other files in that directory. */
-function clusterSiblings(db: Database, seedFiles: Set<string>, discovered: Set<string>): void {
+function clusterSiblings(db: DbLike, seedFiles: Set<string>, discovered: Set<string>): void {
     const dirCounts = new Map<string, number>();
     for (const f of seedFiles) {
         const dir = f.split('/').slice(0, -1).join('/');
@@ -117,7 +121,7 @@ function clusterSiblings(db: Database, seedFiles: Set<string>, discovered: Set<s
 }
 
 /** Fetch the most informative chunk per file (largest by line span). */
-export function fetchBestChunks(db: Database, filePaths: string[]): Array<{
+export function fetchBestChunks(db: DbLike, filePaths: string[]): Array<{
     filePath: string; content: string; name: string;
     chunkType: string; startLine: number; endLine: number; language: string;
 }> {
@@ -134,7 +138,7 @@ export function fetchBestChunks(db: Database, filePaths: string[]): Array<{
                 `SELECT file_path, content, name, chunk_type, start_line, end_line, language
                  FROM code_chunks WHERE file_path = ?
                  ORDER BY (end_line - start_line) DESC LIMIT 1`
-            ).get(fp) as CodeChunkRow | undefined;
+            ).get(fp) as { file_path: string; content: string; name: string | null; chunk_type: string; start_line: number; end_line: number; language: string } | undefined;
             if (row) {
                 results.push({
                     filePath: row.file_path, content: row.content, name: row.name ?? '',

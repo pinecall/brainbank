@@ -80,7 +80,7 @@ brainbank/
 │   ├── plugin.ts           ← Plugin interfaces + type guards
 │   ├── types.ts            ← All TypeScript interfaces
 │   ├── engine/             ← IndexAPI, SearchAPI, reembed
-│   ├── db/                 ← Database, schema, embedding-meta, row types
+│   ├── db/                 ← Database, schema, migrations, embedding-meta
 │   ├── providers/          ← Embeddings, rerankers, vector (HNSW)
 │   ├── search/             ← Vector search, keyword, context builder, MMR
 │   ├── services/           ← Collection, KVService, PluginRegistry, Watch

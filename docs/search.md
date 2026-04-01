@@ -74,11 +74,10 @@ brain.hybridSearch('auth')
   │     ├── Embed query once
   │     └── Delegate to domain strategies (code, git)
   │
-  ├── KeywordSearch (FTS5 BM25)
-  │     ├── fts_code (file_path×5, name×3, content×1)
-  │     └── fts_commits (message×5, author×2, diff×1)
+  ├── CompositeBM25Search (via BM25SearchPlugin discovery)
+  │     └── Delegates to each plugin's searchBM25() method
   │
-  ├── SearchablePlugins (per-plugin, not in vector search)
+  ├── SearchablePlugins (per-plugin, not in vector/BM25 pipelines)
   │     └── DocsPlugin.search() ── own HNSW + BM25 → RRF → dedup by file
   │
   ├── KV Collections (named in sources)
@@ -88,14 +87,14 @@ brain.hybridSearch('auth')
         └── Optional: Qwen3 Reranker (position-aware blend)
 ```
 
-**Plugin-based discovery:** `createSearchAPI()` iterates over all registered plugins. Plugins implementing `VectorSearchPlugin` provide domain strategies wired into `CompositeVectorSearch`. Plugins implementing `SearchablePlugin` (but not `VectorSearchPlugin`) contribute results that get fused via RRF.
+**Plugin-based discovery:** `createSearchAPI()` iterates over all registered plugins. Plugins implementing `VectorSearchPlugin` provide domain strategies wired into `CompositeVectorSearch`. Plugins implementing `BM25SearchPlugin` provide FTS5 search wired into `CompositeBM25Search`. Plugins implementing `SearchablePlugin` (but not the above) contribute results that get fused via RRF.
 
 ### Method Reference
 
 | Method | Engine | What it searches |
 |--------|--------|-----------------|
 | `search(q, opts?)` | CompositeVectorSearch + SearchablePlugins | Vector strategies + plugin search → RRF |
-| `searchBM25(q, opts?)` | KeywordSearch | Code + git text (FTS5) |
+| `searchBM25(q, opts?)` | CompositeBM25Search | Plugin-driven FTS5 BM25 (code + git) |
 | `hybridSearch(q, opts?)` | All engines | Vector + BM25 + plugins + KV → RRF → rerank |
 | `getContext(task, opts?)` | ContextBuilder | All sources → formatted markdown |
 

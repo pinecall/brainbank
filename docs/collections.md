@@ -121,7 +121,7 @@ Collections are the **low-level storage primitive**. Plugins use them internally
 ```
 brain.hybridSearch('auth')                  ← searches EVERYTHING via RRF
   ├── CompositeVectorSearch (shared HNSW)   ← code + git vectors (via VectorSearchPlugin)
-  ├── KeywordSearch (FTS5 BM25)             ← code + git + patterns text
+  ├── CompositeBM25Search (FTS5 BM25)       ← plugin-driven keyword search
   ├── SearchablePlugins                     ← docs plugin (own HNSW + BM25)
   └── KV collections                        ← if named in options.sources
 
@@ -132,7 +132,7 @@ brain.collection('errors').search('auth')   ← searches ONLY that collection
 |-------|--------|-----------------|
 | **BrainBank** | `hybridSearch(q, options?)` | All sources → RRF |
 | **BrainBank** | `search(q, options?)` | Vector strategies + searchable plugins |
-| **BrainBank** | `searchBM25(q, options?)` | Code + git + patterns text (FTS5) |
+| **BrainBank** | `searchBM25(q, options?)` | Plugin-driven FTS5 keyword search |
 | **Plugin** | `brain.plugin('docs').search(q)` | Document collections only |
 | **Collection** | `collection.search(q)` | Single collection (shared HNSW + FTS5) |
 

@@ -1,18 +1,39 @@
 /**
- * BrainBank — SQL Code Graph Provider
+ * @brainbank/code — SQL Code Graph Provider
  *
  * Concrete implementation of CodeGraphProvider backed by SQLite.
- * Encapsulates all code_refs, code_imports, and code_chunks SQL queries
- * so the search/context layer stays decoupled from the DB schema.
+ * Encapsulates all code_refs, code_imports, and code_chunks SQL queries.
+ * Moved from core — domain-specific to code indexing.
  */
 
-import type { Database } from '@/db/database.ts';
-import type { CodeGraphProvider, CodeChunkSummary } from '../types.ts';
-import { expandViaImportGraph, fetchBestChunks } from '../import-graph.ts';
+import { expandViaImportGraph, fetchBestChunks } from './import-graph.js';
+
+/** Summary of a code chunk for graph expansion results. */
+export interface CodeChunkSummary {
+    filePath: string;
+    content: string;
+    name: string;
+    chunkType: string;
+    startLine: number;
+    endLine: number;
+    language: string;
+}
+
+/** Provider for code graph queries (call info, import graph, chunk lookup). */
+export interface CodeGraphProvider {
+    getCallInfo(chunkId: number, symbolName?: string): { calls: string[]; calledBy: string[] } | null;
+    expandImportGraph(seedFiles: Set<string>): Set<string>;
+    fetchBestChunks(filePaths: string[]): CodeChunkSummary[];
+}
+
+/** Minimal DB interface for queries. */
+interface DbLike {
+    prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown };
+}
 
 /** SQL-backed CodeGraphProvider — reads code_refs, code_imports, code_chunks. */
 export class SqlCodeGraphProvider implements CodeGraphProvider {
-    constructor(private _db: Database) {}
+    constructor(private _db: DbLike) {}
 
     /** Get call/called-by info for a code chunk. */
     getCallInfo(chunkId: number, symbolName?: string): { calls: string[]; calledBy: string[] } | null {

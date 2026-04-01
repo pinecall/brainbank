@@ -127,7 +127,30 @@ interface ReembeddablePlugin extends Plugin {
 // ReembedTable: { name, textTable, vectorTable, idColumn, fkColumn, textBuilder }
 ```
 
----
+### BM25SearchPlugin
+
+Provides FTS5 keyword search wired into `CompositeBM25Search`:
+
+```typescript
+interface BM25SearchPlugin extends Plugin {
+  searchBM25(query: string, k: number): SearchResult[];
+  rebuildFTS?(): void;
+}
+```
+
+### MigratablePlugin
+
+Plugin owns its DB schema via versioned migrations. Tables are created on `initialize()` — the core schema stays domain-free:
+
+```typescript
+interface MigratablePlugin extends Plugin {
+  readonly schemaVersion: number;
+  readonly migrations: Record<number, string[]>;
+}
+// migrations: { 1: ['CREATE TABLE ...', 'CREATE INDEX ...'], 2: ['ALTER TABLE ...'] }
+```
+
+> Plugins call `runPluginMigrations(db, pluginName, plugin.schemaVersion, plugin.migrations)` at the top of their `initialize()` method. The migration runner uses the `plugin_versions` table to track which version each plugin has been migrated to.
 
 ## Full Example: Notes Plugin
 

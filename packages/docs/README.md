@@ -4,14 +4,12 @@ Document collection indexing plugin for [BrainBank](https://github.com/pinecall/
 
 ## Install
 
-Included in core `brainbank`. Also available as a standalone package:
-
 ```bash
-# Already included when you install brainbank globally
-npm i -g brainbank
+# Global install (CLI + programmatic)
+npm i -g brainbank @brainbank/docs
 
-# Or install standalone (e.g. for programmatic use)
-npm i -g @brainbank/docs
+# Or as a project dependency
+npm i @brainbank/docs
 ```
 
 ## Quick Start
@@ -34,7 +32,7 @@ docsPlugin.addCollection({
 });
 
 // Index all collections
-await docsPlugin.indexCollections();
+await docsPlugin.indexDocs();
 
 // Search documents
 const results = await docsPlugin.search('deployment guide');
@@ -66,19 +64,19 @@ docsPlugin.addCollection({
 });
 ```
 
-#### `indexCollections(options?): Promise<Results>`
+#### `indexDocs(options?): Promise<Results>`
 
 Index all (or specific) collections. Incremental — skips unchanged files.
 
 ```typescript
 // Index everything
-await docsPlugin.indexCollections();
+await docsPlugin.indexDocs();
 
 // Index specific collections
-await docsPlugin.indexCollections({ collections: ['wiki', 'notes'] });
+await docsPlugin.indexDocs({ collections: ['wiki', 'notes'] });
 
 // With progress callback
-await docsPlugin.indexCollections({
+await docsPlugin.indexDocs({
   onProgress: (collection, file, current, total) => {
     console.log(`[${collection}] ${file} (${current}/${total})`);
   },
@@ -135,6 +133,18 @@ Hybrid search engine combining vector similarity and BM25 keyword search:
 ## Peer Dependencies
 
 - `brainbank` >= 0.7.0
+
+## Plugin Capabilities
+
+`@brainbank/docs` implements the following capability interfaces, discovered by the core at runtime:
+
+| Interface | What it does |
+|-----------|-------------|
+| `IndexablePlugin` | Participates in `brain.index()` — heading-aware chunking + embedding |
+| `SearchablePlugin` | Provides hybrid search (own HNSW + BM25 → RRF) |
+| `ContextFormatterPlugin` | Formats document results for `brain.getContext()` |
+| `MigratablePlugin` | Owns its schema — `collections`, `doc_chunks`, `doc_vectors`, `path_contexts`, `fts_docs` |
+| `ReembeddablePlugin` | Participates in `brain.reembed()` |
 
 ## License
 

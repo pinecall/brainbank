@@ -12,10 +12,12 @@
 
 import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult, ReembedTable, IndexResult } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
+import { runPluginMigrations } from 'brainbank';
 
 import * as path from 'node:path';
 import { DocsIndexer } from './docs-indexer.js';
 import { DocumentSearch } from './document-search.js';
+import { DOCS_SCHEMA_VERSION, DOCS_MIGRATIONS } from './docs-schema.js';
 
 type Database = PluginContext['db'];
 
@@ -31,6 +33,7 @@ class DocsPlugin implements Plugin {
 
     async initialize(ctx: PluginContext): Promise<void> {
         this._db = ctx.db;
+        runPluginMigrations(ctx.db.db, 'docs', DOCS_SCHEMA_VERSION, DOCS_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
         this.hnsw = await ctx.createHnsw(undefined, embedding.dims, 'doc');

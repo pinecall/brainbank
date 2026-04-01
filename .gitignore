@@ -9,3 +9,5 @@ dist/
 
 # QMD benchmark scripts (private)
 test/benchmarks/rag/benchmark-vs-qmd*.ts
+diff
+tmp/

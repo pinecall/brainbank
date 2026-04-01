@@ -4,14 +4,12 @@ AST-aware code indexing plugin for [BrainBank](https://github.com/pinecall/brain
 
 ## Install
 
-Included in core `brainbank` as an optional dependency. Also available as a standalone package:
-
 ```bash
-# Already included when you install brainbank globally
-npm i -g brainbank
+# Global install (CLI + programmatic)
+npm i -g brainbank @brainbank/code
 
-# Or install standalone (e.g. for programmatic use)
-npm i -g @brainbank/code
+# Or as a project dependency
+npm i @brainbank/code
 ```
 
 > **⚠️ Peer dep conflict:** Some bundled `tree-sitter-*` grammars have overlapping peer dependency ranges on `tree-sitter`. If you hit an `ERESOLVE` error during install, use `npm i --force` or `npm i --legacy-peer-deps`.
@@ -158,6 +156,20 @@ method: AuthService.login
 ### Incremental Indexing
 
 Uses FNV-1a content hashing — only re-indexes files that actually changed. Old chunks, vectors, and graph data are atomically replaced in a single SQLite transaction.
+
+## Plugin Capabilities
+
+`@brainbank/code` implements the following capability interfaces, discovered by the core at runtime:
+
+| Interface | What it does |
+|-----------|-------------|
+| `IndexablePlugin` | Participates in `brain.index()` — AST chunking + embedding |
+| `VectorSearchPlugin` | Provides `CodeVectorSearch` for semantic code search |
+| `BM25SearchPlugin` | Provides FTS5 keyword search against `fts_code` |
+| `ContextFormatterPlugin` | Formats code results + import graph for `brain.getContext()` |
+| `MigratablePlugin` | Owns its schema — `code_chunks`, `code_vectors`, `indexed_files`, `code_imports`, `code_symbols`, `code_refs`, `fts_code` |
+| `ReembeddablePlugin` | Participates in `brain.reembed()` |
+| `WatchablePlugin` | Auto-re-indexes on file changes via `brain.watch()` |
 
 ## Supported Languages
 

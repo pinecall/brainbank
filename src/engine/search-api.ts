@@ -19,7 +19,7 @@ import { isVectorSearchPlugin, isSearchable, isCoEditPlugin, isContextFormatterP
 import { rerank } from '@/lib/rerank.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
-import { KeywordSearch } from '@/search/keyword/keyword-search.ts';
+import { CompositeBM25Search } from '@/search/keyword/composite-bm25-search.ts';
 import { CompositeVectorSearch } from '@/search/vector/composite-vector-search.ts';
 
 /** Dependencies injected at construction time. */
@@ -38,7 +38,7 @@ export interface SearchAPIDeps {
  * Always returns an instance — handles search-less setups internally.
  */
 export function createSearchAPI(
-    db: Database,
+    _db: Database,
     embedding: EmbeddingProvider,
     config: ResolvedConfig,
     registry: PluginRegistry,
@@ -61,11 +61,10 @@ export function createSearchAPI(
         ? new CompositeVectorSearch({
             strategies,
             embedding,
-            defaults: { code: 6, git: 5 },
         })
         : undefined;
 
-    const bm25 = new KeywordSearch(db);
+    const bm25 = new CompositeBM25Search(registry);
 
     const contextBuilder = new ContextBuilder(search, registry);
 

@@ -3,15 +3,24 @@
  *
  * Tests the code_imports, code_symbols, and code_refs tables
  * and their foreign key constraints and indices.
+ * Domain tables are created via createDomainSchema() since
+ * they are no longer part of the core schema.
  */
 
-import { Database, tmpDb } from '../helpers.ts';
+import { Database, tmpDb, createDomainSchema } from '../helpers.ts';
 
 export const name = 'Code Graph Schema';
 
+/** Create a fresh DB with domain tables. */
+function freshDb(label: string): InstanceType<typeof Database> {
+    const db = new Database(tmpDb(label));
+    createDomainSchema(db);
+    return db;
+}
+
 export const tests = {
     'code_imports stores and retrieves file relationships'(assert: any) {
-        const db = new Database(tmpDb('graph-imports'));
+        const db = freshDb('graph-imports');
 
         db.prepare('INSERT INTO code_imports (file_path, imports_path) VALUES (?, ?)').run('src/app.ts', 'utils');
         db.prepare('INSERT INTO code_imports (file_path, imports_path) VALUES (?, ?)').run('src/app.ts', 'config');
@@ -30,7 +39,7 @@ export const tests = {
     },
 
     'code_imports enforces primary key (dedup)'(assert: any) {
-        const db = new Database(tmpDb('graph-imports-dup'));
+        const db = freshDb('graph-imports-dup');
 
         db.prepare('INSERT INTO code_imports (file_path, imports_path) VALUES (?, ?)').run('a.ts', 'b');
         // Duplicate should fail or be ignored with INSERT OR IGNORE
@@ -45,7 +54,7 @@ export const tests = {
     },
 
     'code_symbols stores definitions linked to chunks'(assert: any) {
-        const db = new Database(tmpDb('graph-symbols'));
+        const db = freshDb('graph-symbols');
 
         // Insert a code chunk first
         const chunkResult = db.prepare(
@@ -73,7 +82,7 @@ export const tests = {
     },
 
     'code_refs stores call references linked to chunks'(assert: any) {
-        const db = new Database(tmpDb('graph-refs'));
+        const db = freshDb('graph-refs');
 
         const chunkResult = db.prepare(
             `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
@@ -96,7 +105,7 @@ export const tests = {
     },
 
     'code_refs cascade-delete when chunk is deleted'(assert: any) {
-        const db = new Database(tmpDb('graph-refs-cascade'));
+        const db = freshDb('graph-refs-cascade');
 
         const chunkResult = db.prepare(
             `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
@@ -118,7 +127,7 @@ export const tests = {
     },
 
     'code_symbols cascade-delete when chunk is deleted'(assert: any) {
-        const db = new Database(tmpDb('graph-sym-cascade'));
+        const db = freshDb('graph-sym-cascade');
 
         const chunkResult = db.prepare(
             `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
@@ -137,7 +146,7 @@ export const tests = {
     },
 
     'cross-reference: find callers of a symbol'(assert: any) {
-        const db = new Database(tmpDb('graph-crossref'));
+        const db = freshDb('graph-crossref');
 
         // Chunk A calls "validate"
         const chunkA = db.prepare(

@@ -171,7 +171,7 @@ Tables are deduplicated by `vectorTable` name (important for multi-repo where `c
 
 Each project has its own `.brainbank/` database. In multi-repo setups (same DB, different `code:frontend` / `code:backend` plugins), file paths are relative to each repo root — no collisions. Same-type plugins share a single HNSW index (e.g. all `code:*` share `hnsw-code.index`).
 
-> **Current schema version: v6.** The code graph tables (`code_imports`, `code_symbols`, `code_refs`) were introduced in v5. Existing databases are auto-migrated via `CREATE TABLE IF NOT EXISTS` on first run.
+> **Current schema version: v7.** Domain tables (`code_chunks`, `git_commits`, `doc_chunks`, etc.) are now created by their respective plugins via the per-plugin migration system (`runPluginMigrations()`). The core schema contains only framework tables (`schema_version`, `plugin_versions`, `kv_data`, `kv_vectors`, `embedding_meta`). Plugin schema versions are tracked in the `plugin_versions` table.
 
 ---
 
