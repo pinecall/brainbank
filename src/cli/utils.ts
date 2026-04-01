@@ -2,10 +2,10 @@
  * BrainBank CLI — Shared Utilities
  *
  * Colors, argument parsing, and result formatting.
- * No BrainBank imports — pure Node.js / terminal helpers.
  */
 
-// ── Colors ──────────────────────────────────────────
+import type { SearchResult } from '@/types.ts';
+
 
 export const c = {
     green:   (s: string) => `\x1b[32m${s}\x1b[0m`,
@@ -17,7 +17,6 @@ export const c = {
     magenta: (s: string) => `\x1b[35m${s}\x1b[0m`,
 };
 
-// ── Argument Parsing ────────────────────────────────
 
 /** Raw argv, sliced past the Node binary and script path. */
 export const args = process.argv.slice(2);
@@ -69,9 +68,8 @@ export function stripFlags(argv: string[]): string[] {
     return result;
 }
 
-// ── Result Printer ──────────────────────────────────
 
-export function printResults(results: any[], minScore = 0.70): void {
+export function printResults(results: SearchResult[], minScore = 0.70): void {
     const filtered = results.filter(r => r.score >= minScore).slice(0, 20);
 
     if (filtered.length === 0) {

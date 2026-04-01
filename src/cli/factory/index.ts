@@ -6,13 +6,13 @@
  * Delegates to focused modules in factory/.
  */
 
-import { BrainBank } from '@/brainbank.ts';
 import type { BrainBankConfig } from '@/types.ts';
+
+import { BrainBank } from '@/brainbank.ts';
 import { getFlag } from '../utils.ts';
-import { loadConfig, getConfig, resetConfigCache } from './config-loader.ts';
-import { discoverFolderPlugins, resetPluginCache } from './plugin-loader.ts';
-import { setupProviders } from './plugin-loader.ts';
 import { registerBuiltins, registerConfigCollections } from './builtin-registration.ts';
+import { loadConfig, getConfig, resetConfigCache } from './config-loader.ts';
+import { discoverFolderPlugins, resetPluginCache, setupProviders } from './plugin-loader.ts';
 
 export type { ProjectConfig } from './config-loader.ts';
 export { getConfig, registerConfigCollections };

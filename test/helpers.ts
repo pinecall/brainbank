@@ -31,7 +31,7 @@ import {
 import { code } from '@brainbank/code';
 import { git } from '@brainbank/git';
 import { docs } from '@brainbank/docs';
-import { patterns, memory } from '@brainbank/memory';
+
 
 import type { EmbeddingProvider, Reranker } from '../src/types.ts';
 
@@ -119,8 +119,6 @@ export {
     code,
     git,
     docs,
-    memory,
-    patterns,
 
 };
 

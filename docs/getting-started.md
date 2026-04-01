@@ -53,7 +53,7 @@ brainbank search "auth middleware"         # vector search
 brainbank ksearch "TypeError"             # keyword search (BM25)
 ```
 
-Store and retrieve agent memory:
+Store and retrieve agent knowledge:
 
 ```bash
 brainbank kv add decisions "Use Redis for session storage"
@@ -75,13 +75,13 @@ const brain = new BrainBank({ repoPath: '.' })
   .use(code())
   .use(git());
 
-await brain.index();  // incremental — only processes changes
+await brain.index();  // auto-initializes, incremental — only processes changes
 
 // Search across everything
 const results = await brain.hybridSearch('authentication middleware');
 console.log(results.map(r => `${r.filePath}:L${r.metadata?.startLine} (${r.score.toFixed(2)})`));
 
-// Store agent memory
+// Store agent knowledge
 const log = brain.collection('decisions');
 await log.add(
   'Switched from bcrypt to argon2id for password hashing. ' +
@@ -168,4 +168,3 @@ Returns markdown with relevant code, import graphs, git history, and co-edit pat
 | Configure embeddings | [Embeddings & Reranker](embeddings.md) |
 | MCP integration | [MCP Server](mcp.md) |
 | Local development setup | [Local Development](local-development.md) |
-

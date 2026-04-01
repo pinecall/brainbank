@@ -10,7 +10,6 @@ import type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } fr
 // Re-export collection types so consumers don't need to import from services/
 export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions };
 
-// ── Collection Interface ────────────────────────────
 
 /** Public contract for a KV collection. Plugins depend on this interface, not the concrete class. */
 export interface ICollection {
@@ -38,7 +37,6 @@ export interface ICollection {
     clear(): void;
 }
 
-// ── Configuration ───────────────────────────────────
 
 export interface BrainBankConfig {
     /** Root path of the repository to index. Default: '.' */
@@ -83,7 +81,6 @@ export interface ResolvedConfig {
     reranker?: Reranker;
 }
 
-// ── Embedding Provider ──────────────────────────────
 
 export interface EmbeddingProvider {
     /** Vector dimensions produced by this provider. */
@@ -96,7 +93,6 @@ export interface EmbeddingProvider {
     close(): Promise<void>;
 }
 
-// ── Reranker ────────────────────────────────────────
 
 export interface Reranker {
     /**
@@ -110,7 +106,6 @@ export interface Reranker {
     close?(): Promise<void>;
 }
 
-// ── Vector Index ────────────────────────────────────
 
 export interface SearchHit {
     id: number;
@@ -132,7 +127,6 @@ export interface VectorIndex {
     readonly size: number;
 }
 
-// ── Code Chunking ───────────────────────────────────
 
 export interface CodeChunk {
     /** Auto-incremented DB id (set after insert) */
@@ -153,7 +147,6 @@ export interface CodeChunk {
     language: string;
 }
 
-// ── Git ─────────────────────────────────────────────
 
 export interface GitCommitRecord {
     id?: number;
@@ -170,38 +163,11 @@ export interface GitCommitRecord {
     isMerge: boolean;
 }
 
-// ── Agent Learning ─────────────────────────────────────────
 
-export interface LearningPattern {
-    id?: number;
-    /** Category (e.g. 'api', 'refactor', 'debug') */
-    taskType: string;
-    /** What was the task */
-    task: string;
-    /** How it was approached */
-    approach: string;
-    /** What happened */
-    outcome?: string;
-    /** 0.0 – 1.0 */
-    successRate: number;
-    /** Lessons learned */
-    critique?: string;
-    /** Tokens consumed (optional tracking) */
-    tokensUsed?: number;
-    /** Latency in ms (optional tracking) */
-    latencyMs?: number;
-}
 
-export interface DistilledStrategy {
-    taskType: string;
-    strategy: string;
-    confidence: number;
-    updatedAt: number;
-}
 
-// ── Search Results ──────────────────────────────────
 
-export type SearchResultType = 'code' | 'commit' | 'pattern' | 'document' | 'collection';
+export type SearchResultType = 'code' | 'commit' | 'document' | 'collection';
 
 // Typed metadata per result type
 
@@ -230,15 +196,7 @@ export interface CommitResultMetadata {
     rrfScore?: number;
 }
 
-export interface PatternResultMetadata {
-    taskType: string;
-    task: string;
-    outcome?: string;
-    successRate: number;
-    critique?: string;
-    searchType?: string;
-    rrfScore?: number;
-}
+
 
 export interface DocumentResultMetadata {
     collection?: string;
@@ -271,14 +229,7 @@ export interface CommitResult {
     metadata: CommitResultMetadata;
 }
 
-export interface PatternResult {
-    type: 'pattern';
-    score: number;
-    filePath?: string;
-    content: string;
-    context?: string;
-    metadata: PatternResultMetadata;
-}
+
 
 export interface DocumentResult {
     type: 'document';
@@ -305,9 +256,8 @@ export interface CollectionResult {
     metadata: CollectionResultMetadata;
 }
 
-export type SearchResult = CodeResult | CommitResult | PatternResult | DocumentResult | CollectionResult;
+export type SearchResult = CodeResult | CommitResult | DocumentResult | CollectionResult;
 
-// ── Type Guards ──────────────────────────────────────
 
 /** Narrow a SearchResult to CodeResult. */
 export function isCodeResult(r: SearchResult): r is CodeResult {
@@ -321,21 +271,16 @@ export function isCommitResult(r: SearchResult): r is CommitResult {
 export function isDocumentResult(r: SearchResult): r is DocumentResult {
     return r.type === 'document';
 }
-/** Narrow a SearchResult to PatternResult. */
-export function isPatternResult(r: SearchResult): r is PatternResult {
-    return r.type === 'pattern';
-}
+
 /** Narrow a SearchResult to CollectionResult. */
 export function isCollectionResult(r: SearchResult): r is CollectionResult {
     return r.type === 'collection';
 }
 
-// ── Match Helper ─────────────────────────────────────
 
 type MatchHandlers<T> = {
     code?:       (r: CodeResult)       => T;
     commit?:     (r: CommitResult)     => T;
-    pattern?:    (r: PatternResult)    => T;
     document?:   (r: DocumentResult)   => T;
     collection?: (r: CollectionResult) => T;
     _?:          (r: SearchResult)     => T;
@@ -352,16 +297,14 @@ export function matchResult<T>(
     switch (result.type) {
         case 'code':       return (handlers.code       ?? handlers._)?.(result);
         case 'commit':     return (handlers.commit     ?? handlers._)?.(result);
-        case 'pattern':    return (handlers.pattern    ?? handlers._)?.(result);
         case 'document':   return (handlers.document   ?? handlers._)?.(result);
         case 'collection': return (handlers.collection ?? handlers._)?.(result);
     }
 }
 
-// ── Context Builder ─────────────────────────────────
 
 export interface ContextOptions {
-    /** Per-source result limits. Built-in: 'code', 'git', 'memory'. Default: { code: 6, git: 5, memory: 4 } */
+    /** Per-source result limits. Built-in: 'code', 'git'. Default: { code: 6, git: 5 } */
     sources?: Record<string, number>;
     /** Files the agent is about to modify (improves co-edit suggestions) */
     affectedFiles?: string[];
@@ -373,7 +316,6 @@ export interface ContextOptions {
     mmrLambda?: number;
 }
 
-// ── Document Collections ────────────────────────────
 
 export interface DocumentCollection {
     /** Collection name (e.g. 'notes', 'docs') */
@@ -406,7 +348,6 @@ export interface DocChunk {
     contentHash: string;
 }
 
-// ── Stats ───────────────────────────────────────────
 
 export interface IndexStats {
     code?: {
@@ -420,11 +361,7 @@ export interface IndexStats {
         coEdits: number;
         hnswSize: number;
     };
-    memory?: {
-        patterns: number;
-        avgSuccess: number;
-        hnswSize: number;
-    };
+
     documents?: {
         collections: number;
         documents: number;
@@ -435,7 +372,6 @@ export interface IndexStats {
     [pluginName: string]: Record<string, number | string> | undefined;
 }
 
-// ── Index Progress ──────────────────────────────────
 
 /** File-level progress (used by indexers). */
 export type ProgressCallback = (file: string, current: number, total: number) => void;
@@ -449,7 +385,6 @@ export interface IndexResult {
     chunks?: number;
 }
 
-// ── Co-Edits ────────────────────────────────────────
 
 export interface CoEditSuggestion {
     file: string;

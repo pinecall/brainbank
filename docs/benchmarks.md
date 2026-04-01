@@ -78,8 +78,6 @@ Shows the incremental impact of each technique BrainBank adds:
 | **BM25 title weight 10×** | Boosts title column in FTS5 | Doc titles are the strongest relevance signal |
 | **Qwen3 Reranker** | Cross-encoder rescoring on top-k | Promotes semantically relevant docs — R@5: 78% → 83% |
 
-> The custom eval script used for these results tested against Pinecall.io's internal documentation and is not included in the repo. Use `beir-eval.ts` to run reproducible benchmarks on public datasets.
-
 ---
 
 ## Head-to-Head: BrainBank vs QMD
@@ -122,22 +120,6 @@ Shows the incremental impact of each technique BrainBank adds:
 - **Query expansion helps but can't compensate** — QMD's fine-tuned 1.7B expansion model generates good `lex:/vec:/hyde:` variations, but the underlying embedding model limits recall
 - **Reranker is the great equalizer** — boosted QMD's broad queries from 17% → 83% and overall R@5 from 50% → 65%
 - **QMD wins on privacy** — zero data leaves the machine, zero API cost
-
-### How to Reproduce
-
-```bash
-# BEIR SciFact head-to-head (auto-downloads dataset)
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts
-
-# BrainBank only
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts --skip-qmd
-
-# QMD only (no API key needed)
-npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts --skip-brainbank
-
-# With Qwen3 reranker (both engines)
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/benchmark-vs-qmd.ts --reranker
-```
 
 ---
 

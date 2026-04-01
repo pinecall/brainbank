@@ -17,13 +17,13 @@
  *   watcher.close(); // stop watching
  */
 
+import type { Plugin } from '@/plugin.ts';
+
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isSupported, isIgnoredDir, isIgnoredFile } from '@/lib/languages.ts';
-import type { Plugin } from '@/plugin.ts';
 import { isWatchable } from '@/plugin.ts';
 
-// ── Types ───────────────────────────────────────────
 
 export interface WatchOptions {
     /** Paths to watch. Default: [config.repoPath] */
@@ -36,7 +36,6 @@ export interface WatchOptions {
     onError?: (error: Error) => void;
 }
 
-// ── Watcher Class ───────────────────────────────────
 
 /** File watcher that auto-re-indexes on changes. */
 export class Watcher {
@@ -68,7 +67,6 @@ export class Watcher {
         this._watchers.length = 0;
     }
 
-    // ── Private ─────────────────────────────────────
 
     /** Collect custom watch patterns from indexers. */
     private _collectCustomPatterns(): void {

@@ -1,14 +1,11 @@
 /**
  * BrainBank — Database Row Types
  *
- * Type definitions for rows returned by SQLite queries.
- * Use these instead of `as any[]` to get IDE autocomplete and catch typos.
- *
- * Only covers the most-queried tables. For one-off queries in indexers,
- * `as any` is acceptable when the query is co-located with its usage.
+ * Typed interfaces for rows returned by SQLite queries.
+ * Always cast query results to the matching row type for IDE
+ * autocomplete and compile-time safety.
  */
 
-// ── KV Store ────────────────────────────────────────
 
 export interface KvDataRow {
     id: number;
@@ -25,7 +22,6 @@ export interface KvVectorRow {
     embedding: Buffer;
 }
 
-// ── Code Chunks ─────────────────────────────────────
 
 export interface CodeChunkRow {
     id: number;
@@ -38,7 +34,6 @@ export interface CodeChunkRow {
     language: string;
 }
 
-// ── Git Commits ─────────────────────────────────────
 
 export interface GitCommitRow {
     id: number;
@@ -54,7 +49,6 @@ export interface GitCommitRow {
     is_merge: number;
 }
 
-// ── Document Chunks ─────────────────────────────────
 
 export interface DocChunkRow {
     id: number;
@@ -66,7 +60,6 @@ export interface DocChunkRow {
     content_hash: string;
 }
 
-// ── Collections ─────────────────────────────────────
 
 export interface CollectionRow {
     name: string;
@@ -76,25 +69,12 @@ export interface CollectionRow {
     context: string | null;
 }
 
-// ── Memory Patterns ─────────────────────────────────
 
-export interface MemoryPatternRow {
-    id: number;
-    task_type: string;
-    task: string;
-    approach: string;
-    outcome: string;
-    success_rate: number;
-    critique: string;
-}
-
-// ── Embedding Metadata ──────────────────────────────
 
 export interface EmbeddingMetaRow {
     value: string;
 }
 
-// ── Import Graph ────────────────────────────────────
 
 export interface ImportRow {
     imports_path?: string;
@@ -102,14 +82,12 @@ export interface ImportRow {
     name?: string;
 }
 
-// ── Vector Tables ───────────────────────────────────
 
 export interface VectorRow {
     id: number;
     embedding: Buffer;
 }
 
-// ── Scalar count result ─────────────────────────────
 
 export interface CountRow {
     c: number;

@@ -2,12 +2,12 @@
  * BrainBank — Keyword Search Strategy
  * 
  * Keyword search via SQLite FTS5 with BM25 ranking.
- * Searches across code chunks, git commits, and memory patterns.
+ * Searches across code chunks and git commits.
  * Uses Porter stemming + unicode61 tokenizer.
  */
 
 import type { Database } from '@/db/database.ts';
-import type { CodeChunkRow, GitCommitRow, MemoryPatternRow } from '@/db/rows.ts';
+import type { CodeChunkRow, GitCommitRow } from '@/db/rows.ts';
 import type { SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { sanitizeFTS, normalizeBM25, escapeLike } from '@/lib/fts.ts';
@@ -28,7 +28,6 @@ export class KeywordSearch implements SearchStrategy {
         const src = options.sources ?? {};
         const codeK = src.code ?? 8;
         const gitK = src.git ?? 5;
-        const patternK = src.memory ?? 4;
 
         const ftsQuery = sanitizeFTS(query);
         if (!ftsQuery) return [];
@@ -37,7 +36,6 @@ export class KeywordSearch implements SearchStrategy {
 
         if (codeK > 0) this._searchCode(ftsQuery, query, codeK, results);
         if (gitK > 0) this._searchGit(ftsQuery, gitK, results);
-        if (patternK > 0) this._searchPatterns(ftsQuery, patternK, results);
 
         return results.sort((a, b) => b.score - a.score);
     }
@@ -111,42 +109,10 @@ export class KeywordSearch implements SearchStrategy {
                         shortHash: r.short_hash,
                         author: r.author,
                         date: r.date,
-                        files: JSON.parse(r.files_json ?? '[]'),
+                        files: JSON.parse(r.files_json ?? '[]') as string[],
                         additions: r.additions,
                         deletions: r.deletions,
                         diff: r.diff ?? undefined,
-                        searchType: 'bm25',
-                    },
-                });
-            }
-        } catch (e) { if (!isFTSError(e)) throw e; }
-    }
-
-    /** FTS5 search across memory patterns. */
-    private _searchPatterns(ftsQuery: string, k: number, results: SearchResult[]): void {
-        try {
-            const rows = this._db.prepare(`
-                SELECT p.id, p.task_type, p.task, p.approach, p.outcome,
-                       p.success_rate, p.critique,
-                       bm25(fts_patterns, 3.0, 5.0, 5.0, 1.0) AS score
-                FROM fts_patterns f
-                JOIN memory_patterns p ON p.id = f.rowid
-                WHERE fts_patterns MATCH ? AND p.success_rate >= 0.5
-                ORDER BY score ASC
-                LIMIT ?
-            `).all(ftsQuery, k) as (MemoryPatternRow & { score: number })[];
-
-            for (const r of rows) {
-                results.push({
-                    type: 'pattern',
-                    score: normalizeBM25(r.score),
-                    content: r.approach,
-                    metadata: {
-                        taskType: r.task_type,
-                        task: r.task,
-                        outcome: r.outcome,
-                        successRate: r.success_rate,
-                        critique: r.critique,
                         searchType: 'bm25',
                     },
                 });
@@ -178,7 +144,6 @@ export class KeywordSearch implements SearchStrategy {
         try {
             this._db.prepare("INSERT INTO fts_code(fts_code) VALUES('rebuild')").run();
             this._db.prepare("INSERT INTO fts_commits(fts_commits) VALUES('rebuild')").run();
-            this._db.prepare("INSERT INTO fts_patterns(fts_patterns) VALUES('rebuild')").run();
         } catch { /* non-fatal */ }
     }
 }

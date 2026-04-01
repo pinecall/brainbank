@@ -98,7 +98,9 @@ export class OpenAIEmbedding implements EmbeddingProvider {
         const MAX_CHARS = 24_000;
         const safeInput = input.map(t => t.length > MAX_CHARS ? t.slice(0, MAX_CHARS) : t);
 
-        const body: Record<string, any> = { model: this._model, input: safeInput };
+        const body: { model: string; input: string[]; dimensions?: number } = {
+            model: this._model, input: safeInput,
+        };
         if (this._requestDims) body.dimensions = this._requestDims;
 
         const controller = new AbortController();
@@ -115,9 +117,9 @@ export class OpenAIEmbedding implements EmbeddingProvider {
                 body: JSON.stringify(body),
                 signal: controller.signal,
             });
-        } catch (err: any) {
+        } catch (err: unknown) {
             clearTimeout(timer);
-            if (err.name === 'AbortError') {
+            if (err instanceof Error && err.name === 'AbortError') {
                 throw new Error(`OpenAI embedding request timed out after ${this._timeout}ms.`);
             }
             throw err;

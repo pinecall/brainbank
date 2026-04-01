@@ -7,9 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Breaking Changes
-- Removed `brain.indexCode()` and `brain.indexGit()` — use `brain.code?.index()` and `(brain.git as IndexablePlugin)?.index()` directly
+- **Plugin decoupling** — removed typed accessors `brain.docs`, `brain.git`, `brain.code`. Use `brain.plugin<T>('name')` instead
+- Removed `PLUGIN` constant from core — plugin names are owned by their packages
+- Removed `IndexStats` typed return from `brain.stats()` — now returns generic `Record<string, Record<string, number | string> | undefined>`
+- Removed `CodeVectorSearch`, `GitVectorSearch`, `PatternVectorSearch`, `SqlCodeGraphProvider` exports from core — these belong in `@brainbank/code` / `@brainbank/git`
+- Removed `brain.indexCode()` and `brain.indexGit()` — use `brain.plugin('code')?.index()` directly
+- **`@brainbank/memory` removed** — deleted `packages/memory/` and all core references (`memory_patterns`, `memory_vectors`, `distilled_strategies` tables, `fts_patterns` FTS5, `PatternVectorSearch`, `MemoryPatternRow`, `LearningPattern`, `DistilledStrategy`, `PatternResult`, `HnswPlugin`, `isHnswPlugin`, `isPatternResult`, `formatPatternResults`). Memory/pattern storage should use `brain.collection()` KV collections instead
 
 ### Added
+- `VectorSearchPlugin` capability interface — plugins can register domain-specific vector search strategies
+- `ContextFormatterPlugin` capability interface — plugins can provide custom context formatting for LLM prompts
+- `DomainVectorSearch` interface — generic abstraction for pre-embedded vector search
+- `isVectorSearchPlugin()`, `isContextFormatterPlugin()` type guards
+- Generic `brain.index()` — discovers `IndexablePlugin` implementations automatically
+- Generic `brain.stats()` — iterates all plugins with `stats()` method
 - `brain.code` typed accessor (matches existing `brain.docs` and `brain.git`)
 - `docs/local-development.md` — local dev setup guide
 - `.agents/workflows/setup-local.md` — automated workflow for fresh machine setup
@@ -30,8 +41,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **ANTI-25: batch type safety** — `Database.batch<T>` bound changed from `any[]` to `unknown[]`
 - **ANTI-27: IndexStats extensibility** — added `[pluginName: string]` index signature for plugin-provided stats
 - **ANTI-30: duplicate metadata write** — removed inline `embedding_meta` upsert in `reembedAll`, uses canonical `setEmbeddingMeta()` only
+- **Zero `any` in production** — typed `HnswlibIndex`/`HnswlibModule` in `hnsw-index.ts`, `XenovaModule` in `local-embedding.ts`, `NodeLlamaCppModule` in `qwen3-reranker.ts`, `catch (err: unknown)` + typed request body in `openai-embedding.ts`, `Record<string, unknown>` in `collection.ts`, `SearchResult[]` in `cli/utils.ts`, `as string[]` casts on `JSON.parse` in search files
 
 ### Changed
+- **Init inlined** — `earlyInit()` / `lateInit()` / `buildPluginContext()` / `resolveStartupEmbedding()` from `bootstrap/initializer.ts` inlined into `BrainBank._runInitialize()` as a linear 8-step flow with private helpers `_resolveEmbedding()` and `_buildPluginContext()`. File deleted — zero indirection
+- **IndexAPI → free function** — replaced `IndexAPI` class with `runIndex()` free function; class had one method and no state
+- **search-factory merged** — `createSearchAPI()` and `SearchAPIDeps` moved into `search-api.ts`; deleted `search-factory.ts` and `engine/types.ts`
 - **Search API: generic `sources` param** — replaced `codeK`/`gitK`/`patternK` in `SearchOptions` and `codeResults`/`gitResults`/`patternResults` in `ContextOptions` with unified `sources: Record<string, number>`. Any plugin or KV collection can now be scoped from the public API.
 - **docs/architecture.md** — updated all sections (facade API, SearchOptions, hybridSearch flow, ContextBuilder, SearchAPI, data flow diagrams, CLI flags) to reflect generic `sources` API; removed `searchCode`/`searchCommits` references
 - `ContextBuilder` accepts optional `SearchStrategy` for docs-only setups

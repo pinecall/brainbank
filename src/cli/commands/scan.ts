@@ -10,7 +10,6 @@ import * as path from 'node:path';
 import { execSync } from 'node:child_process';
 import { SUPPORTED_EXTENSIONS, isIgnoredDir, isIgnoredFile } from '@/lib/languages.ts';
 
-// ── Types ───────────────────────────────────────────
 
 export interface ScanResult {
     repoPath: string;
@@ -22,7 +21,6 @@ export interface ScanResult {
     gitSubdirs: { name: string }[];
 }
 
-// ── Scanner ─────────────────────────────────────────
 
 /** Scan a repo path and return what's available to index. */
 export function scanRepo(repoPath: string): ScanResult {

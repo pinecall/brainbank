@@ -9,12 +9,32 @@
  * to skip costly vector-by-vector rebuild on startup.
  */
 
-import { existsSync } from 'node:fs';
 import type { VectorIndex, SearchHit } from '@/types.ts';
 
+import { existsSync } from 'node:fs';
+
+/** Shape of the HNSW index from hnswlib-node. */
+interface HnswlibIndex {
+    initIndex(maxElements: number, M: number, efConstruction: number): void;
+    setEf(ef: number): void;
+    addPoint(vector: number[], id: number): void;
+    markDelete(id: number): void;
+    searchKnn(vector: number[], k: number): { neighbors: number[]; distances: number[] };
+    writeIndexSync(path: string): void;
+    readIndexSync(path: string): void;
+    getCurrentCount(): number;
+    getIdsList(): number[];
+}
+
+/** Shape of the hnswlib-node module (supports default + named exports). */
+interface HnswlibModule {
+    default?: { HierarchicalNSW: new (space: 'cosine' | 'l2' | 'ip', dims: number) => HnswlibIndex };
+    HierarchicalNSW?: new (space: 'cosine' | 'l2' | 'ip', dims: number) => HnswlibIndex;
+}
+
 export class HNSWIndex implements VectorIndex {
-    private _index: any = null;
-    private _lib: any = null;
+    private _index: HnswlibIndex | null = null;
+    private _lib: HnswlibModule | null = null;
     private _ids = new Set<number>();
 
     constructor(
@@ -46,7 +66,9 @@ export class HNSWIndex implements VectorIndex {
     }
 
     private _createIndex(): void {
+        if (!this._lib) throw new Error('HNSW lib not loaded');
         const HNSW = this._lib.default?.HierarchicalNSW ?? this._lib.HierarchicalNSW;
+        if (!HNSW) throw new Error('HierarchicalNSW not found in hnswlib-node module');
         this._index = new HNSW('cosine', this._dims);
         this._index.initIndex(this._maxElements, this._M, this._efConstruction);
         this._index.setEf(this._efSearch);

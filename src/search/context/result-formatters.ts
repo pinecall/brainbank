@@ -1,10 +1,11 @@
 /**
- * BrainBank — Git & Pattern Formatters
+ * BrainBank — Git Formatters
  *
- * Formats git commit results, co-edit suggestions, and memory patterns.
+ * Formats git commit results and co-edit suggestions.
  */
 
 import type { SearchResult, CoEditSuggestion } from '@/types.ts';
+
 import { isDocumentResult } from '@/types.ts';
 
 /** Duck-typed interface for co-edit suggestions (provided by @brainbank/git). */
@@ -60,25 +61,8 @@ export function formatCoEdits(affectedFiles: string[], parts: string[], coEdits?
     }
 }
 
-/** Format memory pattern results. */
-export function formatPatternResults(results: SearchResult[], limit: number, parts: string[]): void {
-    const memHits = results.filter(r => r.type === 'pattern').slice(0, limit);
-    if (memHits.length === 0) return;
 
-    parts.push('## Learned Patterns\n');
-    for (const p of memHits) {
-        const m = p.metadata;
-        const score = Math.round(p.score * 100);
-        const success = Math.round((m.successRate ?? 0) * 100);
-        parts.push(`**${m.taskType}** — ${success}% success, ${score}% match`);
-        parts.push(`Task: ${m.task}`);
-        parts.push(`Approach: ${p.content}`);
-        if (m.critique) parts.push(`Lesson: ${m.critique}`);
-        parts.push('');
-    }
-}
 
-// ── Documents ───────────────────────────────────────
 
 /** Format document search results into a markdown section. Returns empty string if no results. */
 export function formatDocuments(docs: SearchResult[]): string {

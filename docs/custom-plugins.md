@@ -41,11 +41,20 @@ Every plugin receives a `PluginContext` during `initialize()`:
 | Property | What you use it for |
 |----------|---------------------|
 | `ctx.collection(name)` | **Start here.** Get/create a KV collection with built-in hybrid search |
-| `ctx.db` | Raw SQLite access (for custom tables) |
-| `ctx.embedding` | `embed(text)` / `embedBatch(texts)` |
-| `ctx.config` | `repoPath`, `dbPath`, etc. |
-| `ctx.createHnsw(max?, dims?)` | Standalone HNSW index (advanced) |
-| `ctx.getOrCreateSharedHnsw(type)` | Shared HNSW across same-type plugins (multi-repo) |
+| `ctx.db` | Raw SQLite access (for custom tables or direct queries) |
+| `ctx.embedding` | `embed(text)` / `embedBatch(texts)` — the global embedding provider |
+| `ctx.config` | `repoPath`, `dbPath`, `embeddingDims`, `hnswM`, etc. |
+| `ctx.createHnsw(max?, dims?, name?)` | Private HNSW index (persisted to `hnsw-{name}.index` if named) |
+| `ctx.loadVectors(table, idCol, hnsw, cache)` | Load existing vectors from a SQLite vectors table into HNSW + cache. Skipped on dimension mismatch force-init. Tries disk file first (fast), falls back to row-by-row from SQLite. |
+| `ctx.getOrCreateSharedHnsw(type, max?, dims?)` | Shared HNSW across same-type plugins (e.g. all `code:*` share one). Returns `{ hnsw, vecCache, isNew }`. Only the first caller (isNew=true) should `loadVectors`. |
+
+### HNSW Allocation Strategy
+
+| Use case | Method | Example |
+|----------|--------|---------|
+| Plugin-local search (not in main pipeline) | `ctx.createHnsw(max, dims, name)` | DocsPlugin, PatternsPlugin |
+| Shared across multi-repo plugins | `ctx.getOrCreateSharedHnsw(type)` | CodePlugin (`'code'`), GitPlugin (`'git'`) |
+| KV collections | N/A — owned by KVService | All `brain.collection()` calls |
 
 ---
 
@@ -53,11 +62,70 @@ Every plugin receives a `PluginContext` during `initialize()`:
 
 Implement these to hook into BrainBank's lifecycle:
 
-| Interface | Method to implement | What happens |
-|-----------|---------------------|-------------|
-| `IndexablePlugin` | `index(options?)` | Runs during `brain.index()` |
-| `SearchablePlugin` | `search(query, options?)` | Results merged via RRF in `brain.hybridSearch()` |
-| `WatchablePlugin` | `watchPatterns()` + `onFileChange(path, event)` | Auto-re-index on file changes |
+### IndexablePlugin
+
+Participates in `brain.index()`:
+
+```typescript
+interface IndexablePlugin extends Plugin {
+  index(options?: IndexOptions): Promise<IndexResult>;
+}
+// IndexOptions: { forceReindex?, depth?, onProgress? }
+// IndexResult: { indexed: number, skipped: number, chunks?: number }
+```
+
+### SearchablePlugin
+
+Results merged via RRF in `brain.hybridSearch()`:
+
+```typescript
+interface SearchablePlugin extends Plugin {
+  search(query: string, options?: Record<string, unknown>): Promise<SearchResult[]>;
+}
+```
+
+### WatchablePlugin
+
+Auto-re-index on file changes:
+
+```typescript
+interface WatchablePlugin extends Plugin {
+  onFileChange(filePath: string, event: 'create' | 'update' | 'delete'): Promise<boolean>;
+  watchPatterns(): string[];  // glob patterns like ['**/*.csv']
+}
+```
+
+### VectorSearchPlugin
+
+Provides a domain-specific vector search strategy wired into CompositeVectorSearch:
+
+```typescript
+interface VectorSearchPlugin extends Plugin {
+  createVectorSearch(): DomainVectorSearch | undefined;
+}
+// DomainVectorSearch: { search(queryVec, k, minScore, useMMR?, mmrLambda?): SearchResult[] }
+```
+
+### ContextFormatterPlugin
+
+Contributes markdown sections to `brain.getContext()` output:
+
+```typescript
+interface ContextFormatterPlugin extends Plugin {
+  formatContext(results: SearchResult[], parts: string[], options?: Record<string, unknown>): void;
+}
+```
+
+### ReembeddablePlugin
+
+Participates in `brain.reembed()` — maps text rows to vector BLOBs:
+
+```typescript
+interface ReembeddablePlugin extends Plugin {
+  reembedConfig(): ReembedTable;
+}
+// ReembedTable: { name, textTable, vectorTable, idColumn, fkColumn, textBuilder }
+```
 
 ---
 
@@ -66,7 +134,7 @@ Implement these to hook into BrainBank's lifecycle:
 A plugin that reads `.txt` files and makes them searchable:
 
 ```typescript
-import type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, SearchResult } from 'brainbank';
+import type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, SearchResult, IndexResult } from 'brainbank';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -80,7 +148,7 @@ function notesPlugin(dir: string): Plugin & IndexablePlugin & SearchablePlugin {
       ctx = context;
     },
 
-    async index() {
+    async index(): Promise<IndexResult> {
       const col = ctx.collection('notes');
       const files = fs.readdirSync(dir).filter(f => f.endsWith('.txt'));
 
@@ -181,25 +249,9 @@ brainbank stats    # shows all plugins
 
 ---
 
-## Typed Plugin Access
-
-```typescript
-// Built-in plugins — typed getters
-brain.docs!.addCollection({ name: 'wiki', path: './docs' });
-brain.git!.suggestCoEdits('src/auth.ts');
-
-// Custom plugins — generic access with type parameter
-const myPlugin = brain.plugin<MyPlugin>('my-plugin')!;
-const results = await myPlugin.searchMyData('query');
-```
-
----
-
 ## Developing a Plugin Package
 
 Publish a reusable plugin as a standalone npm package (like `@brainbank/git` or `@brainbank/docs`).
-
-> 📂 **Full scaffold:** [examples/custom-package/](../examples/custom-package/) — a CSV indexer as a publishable npm package.
 
 > ⚠️ The `@brainbank` npm scope is reserved for official plugins. Use your own scope (e.g. `brainbank-csv`, `@myorg/brainbank-csv`).
 
@@ -230,16 +282,6 @@ const brain = new BrainBank({ repoPath: '.' }).use(csv({ dir: './data' }));
 await brain.initialize();
 await brain.index();
 ```
-
----
-
-## Examples
-
-| Example | Description | Run |
-|---------|-------------|-----|
-| [notes-plugin](../examples/notes-plugin/) | Programmatic plugin (reads `.txt` files) | `npx tsx examples/notes-plugin/usage.ts` |
-| [custom-plugin](../examples/custom-plugin/) | CLI auto-discovery plugin (quotes) | `brainbank index` from the directory |
-| [custom-package](../examples/custom-package/) | Standalone npm package scaffold (CSV) | See [README](../examples/custom-package/README.md) |
 
 ---
 

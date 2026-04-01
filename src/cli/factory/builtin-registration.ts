@@ -5,13 +5,13 @@
  * and per-plugin embedding overrides.
  */
 
-import * as path from 'node:path';
-import * as fs from 'node:fs';
 import type { BrainBank } from '@/brainbank.ts';
 import type { ProjectConfig } from './config-loader.ts';
-import { loadCodePlugin, loadGitPlugin, loadDocsPlugin } from './plugin-loader.ts';
-import { resolveEmbeddingKey } from './plugin-loader.ts';
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { c, getFlag } from '../utils.ts';
+import { loadCodePlugin, loadGitPlugin, loadDocsPlugin, resolveEmbeddingKey } from './plugin-loader.ts';
 
 /** Detect subdirectories that have their own .git repo. */
 function detectGitSubdirs(parentPath: string): { name: string; path: string }[] {
@@ -102,13 +102,14 @@ export async function registerConfigCollections(brain: BrainBank, config: Projec
     const collections = config?.docs?.collections;
     if (!collections?.length) return;
 
-    const docsPlugin = brain.docs;
-    if (!docsPlugin?.addCollection) return;
+    const { isDocsPlugin } = await import('@/plugin.ts');
+    const rawPlugin = brain.plugin('docs');
+    if (!rawPlugin || !isDocsPlugin(rawPlugin)) return;
 
     for (const coll of collections) {
         const absPath = path.resolve(coll.path);
         try {
-            await docsPlugin.addCollection({
+            await rawPlugin.addCollection({
                 name: coll.name, path: absPath,
                 pattern: coll.pattern ?? '**/*.md', ignore: coll.ignore, context: coll.context,
             });

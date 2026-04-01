@@ -11,27 +11,18 @@
  */
 
 import type { Database } from '@/db/database.ts';
-import { vecToBuffer } from '@/lib/math.ts';
-import type { EmbeddingProvider, ProgressCallback } from '@/types.ts';
-import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { CountRow, VectorRow } from '@/db/rows.ts';
-import { saveAllHnsw } from '@/providers/vector/hnsw-loader.ts';
-import { setEmbeddingMeta } from '@/db/embedding-meta.ts';
-import { isReembeddable } from '@/plugin.ts';
-import type { ReembedTable } from '@/plugin.ts';
-import type { Plugin } from '@/plugin.ts';
+import type { Plugin, ReembedTable } from '@/plugin.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
+import type { EmbeddingProvider, ProgressCallback } from '@/types.ts';
 
-// ── Core Tables (not plugin-owned) ──────────────────
+import { setEmbeddingMeta } from '@/db/embedding-meta.ts';
+import { vecToBuffer } from '@/lib/math.ts';
+import { isReembeddable } from '@/plugin.ts';
+import { saveAllHnsw } from '@/providers/vector/hnsw-loader.ts';
+
 
 const CORE_TABLES: ReembedTable[] = [
-    {
-        name: 'memory',
-        textTable: 'memory_patterns',
-        vectorTable: 'memory_vectors',
-        idColumn: 'id',
-        fkColumn: 'pattern_id',
-        textBuilder: (r) => `${r.task_type} ${r.task} ${r.approach}`,
-    },
     {
         name: 'kv',
         textTable: 'kv_data',
@@ -57,7 +48,6 @@ function collectTables(plugins: Plugin[]): ReembedTable[] {
     return [...byVectorTable.values()];
 }
 
-// ── Result ──────────────────────────────────────────
 
 export interface ReembedResult {
     /** Per-table vector counts. Keys are table names (e.g. 'code', 'git', 'docs', 'kv'). */
@@ -72,7 +62,6 @@ export interface ReembedOptions {
     batchSize?: number;
 }
 
-// ── Engine ──────────────────────────────────────────
 
 /**
  * Re-embed all existing text with the current embedding provider.

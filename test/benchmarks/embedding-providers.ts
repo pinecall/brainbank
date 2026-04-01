@@ -129,7 +129,7 @@ async function benchProvider(config: ProviderConfig): Promise<BenchResult> {
     try { fs.unlinkSync(dbPath + '-wal'); } catch { /* ignore */ }
     try { fs.unlinkSync(dbPath + '-shm'); } catch { /* ignore */ }
 
-    return { provider: config.name, indexTimeMs, chunks, queries, avgSearchMs };
+    return { provider: config.name, indexTimeMs, chunks: Number(stats.code?.chunks ?? 0), queries, avgSearchMs };
 }
 
 async function main() {

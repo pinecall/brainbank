@@ -3,15 +3,14 @@
 1. [What is BrainBank](#1-what-is-brainbank)
 2. [Repository Structure](#2-repository-structure)
 3. [BrainBank — Main Facade](#3-brainbank--main-facade)
-4. [Two-Phase Initialization](#4-two-phase-initialization)
+4. [Initialization](#4-initialization)
 5. [Plugin Registry](#5-plugin-registry)
 6. [Plugin System & Plugin Context](#6-plugin-system--plugin-context)
 7. [Built-in Plugins](#7-built-in-plugins)
    - 7.1 [@brainbank/code](#71-brainbankcode)
    - 7.2 [@brainbank/git](#72-brainbankgit)
    - 7.3 [@brainbank/docs](#73-brainbankdocs)
-8. [@brainbank/memory Package](#8-brainbankmemory-package)
-9. [@brainbank/mcp Package](#9-brainbankmcp-package)
+8. [@brainbank/mcp Package](#8-brainbankmcp-package)
 10. [Collection — KV Store](#10-collection--kv-store)
 11. [Search Layer](#11-search-layer)
     - 11.1 [SearchStrategy Interface](#111-searchstrategy-interface)
@@ -62,7 +61,7 @@ and an optional reranker on top:
 Everything is accessed through a **single facade** (`BrainBank`) that composes
 specialized subsystems via a **plugin architecture**. The core package owns all
 infrastructure (DB, schema, HNSW, embeddings, search, CLI). Plugin packages
-(`@brainbank/code`, `@brainbank/git`, `@brainbank/docs`, `@brainbank/memory`,
+(`@brainbank/code`, `@brainbank/git`, `@brainbank/docs`,
 `@brainbank/mcp`) implement domain-specific indexing and are loaded via `.use()`.
 
 ```
@@ -76,16 +75,16 @@ infrastructure (DB, schema, HNSW, embeddings, search, CLI). Plugin packages
 ┌──────────────────────────────────────────────────────────────────────┐
 │                   BrainBank  (Facade + EventEmitter)                 │
 │                                                                      │
-│  ┌───────────┐  ┌────────────┐  ┌──────────────┐  ┌─────────────┐   │
-│  │ IndexAPI  │  │ SearchAPI  │  │ PluginRegistry│  │ Initializer │   │
-│  └─────┬─────┘  └─────┬──────┘  └──────┬────────┘  └──────┬──────┘  │
+│  ┌───────────┐  ┌────────────┐  ┌──────────────┐                    │
+│  │ IndexAPI  │  │ SearchAPI  │  │ PluginRegistry│                    │
+│  └─────┬─────┘  └─────┬──────┘  └──────┬────────┘                   │
 └────────┼──────────────┼────────────────┼────────────────── ┼─────────┘
          │              │                │                    │
          ▼              ▼                ▼                    ▼
    ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────────┐
    │ Plugins  │  │  SearchLayer │  │ Plugin   │  │  Database        │
    │ code/git/│  │  Composite   │  │ instances│  │  HNSWIndex       │
-   │ docs/mem │  │  Keyword     │  │          │  │  EmbeddingProvider│
+   │ docs     │  │  Keyword     │  │          │  │  EmbeddingProvider│
    └──────────┘  │  Context     │  └──────────┘  └──────────────────┘
                  └──────────────┘
 ```
@@ -112,9 +111,7 @@ brainbank/
 │   ├── config.ts                      ← resolveConfig() + DEFAULTS
 │   ├── plugin.ts                      ← Plugin interfaces, PluginContext, type guards
 │   │
-│   ├── bootstrap/
-│   │   └── initializer.ts             ← Two-phase startup: earlyInit() / lateInit()
-│   │                                     Builds PluginContext, calls plugin.initialize()
+│   ├── bootstrap/                        ← (reserved for future system wiring)
 │   │
 │   ├── engine/
 │   │   ├── types.ts                   ← IndexAPIDeps + SearchAPIDeps interfaces
@@ -222,21 +219,9 @@ brainbank/
     │       ├── docs-indexer.ts        ← Smart markdown chunker + incremental indexer (SHA-256)
     │       └── document-search.ts     ← Hybrid search for doc collections (RRF + dedup by file)
     │
-    ├── mcp/                           ← @brainbank/mcp
-    │   └── src/
-    │       └── mcp-server.ts          ← MCP stdio server (6 tools, LRU pool of 10 workspaces)
-    │
-    └── memory/                        ← @brainbank/memory
+    └── mcp/                           ← @brainbank/mcp
         └── src/
-            ├── index.ts
-            ├── memory.ts              ← Memory: LLM-powered fact extraction + dedup pipeline
-            ├── entities.ts            ← EntityStore: entity/relationship knowledge graph
-            ├── llm.ts                 ← LLMProvider interface + OpenAIProvider
-            ├── prompts.ts             ← EXTRACT_PROMPT, EXTRACT_WITH_ENTITIES_PROMPT, DEDUP_PROMPT
-            ├── patterns-plugin.ts     ← PatternsPlugin factory: patterns() / memory()
-            ├── pattern-store.ts       ← PatternStore: LearningPattern CRUD + HNSW search
-            ├── consolidator.ts        ← Consolidator: prune old failures + dedup near-duplicates
-            └── pattern-distiller.ts   ← PatternDistiller: aggregate patterns → strategy text
+            └── mcp-server.ts          ← MCP stdio server (6 tools, LRU pool of 10 workspaces)
 ```
 
 **Package dependency graph:**
@@ -246,7 +231,6 @@ brainbank/
 @brainbank/git     ── peerDep ──► brainbank (core)
 @brainbank/docs    ── peerDep ──► brainbank (core)
 @brainbank/mcp     ── peerDep ──► brainbank + @brainbank/code + @brainbank/git + @brainbank/docs
-@brainbank/memory  ── (none)  ──  uses Collection interface from brainbank at runtime
 ```
 
 > **Schema ownership:** Core owns ALL table schemas via `createSchema()` in `src/db/schema.ts`.
@@ -286,7 +270,7 @@ no business logic itself.
 │  PUBLIC API                                                            │
 │  ─────────────────────────────────────────────────────────────────    │
 │  .use(plugin)              register plugin, chainable, before init     │
-│  .initialize(opts?)        two-phase init, idempotent, auto-called     │
+│  .initialize(opts?)        inline init, idempotent, auto-called      │
 │  .collection(name)         get/create KV Collection                   │
 │  .listCollectionNames()    list all collections with data              │
 │  .deleteCollection(name)   remove from DB + evict from cache           │
@@ -391,79 +375,54 @@ _registry.clear()
 
 ---
 
-## 4. Two-Phase Initialization
+## 4. Initialization
 
-**File:** `src/bootstrap/initializer.ts` (194 lines)
-**Pattern:** Two-Phase Construction
+**File:** `src/brainbank.ts` — `_runInitialize()` method
+**Pattern:** Linear multi-step construction
 
-The split exists because plugins call `ctx.collection()` during their own
-`initialize()`. `collection()` requires `KVService` (which holds `kvHnsw`),
-so `KVService` must exist before Phase 2 runs plugins.
+Plugins call `ctx.collection()` during their own `initialize()`.
+`collection()` requires `KVService` (which holds `kvHnsw`),
+so KVService is created in step 4, before plugins run in step 6.
 
 ```
 BrainBank._runInitialize({ force? })
 │
-├── PHASE 1: earlyInit(config, emit, { force? })
-│   │
-│   ├── new Database(config.dbPath)
-│   │     fs.mkdirSync(dirname) if needed
-│   │     WAL mode, FK constraints, FTS5 triggers, all tables via createSchema()
-│   │
-│   ├── resolveStartupEmbedding(config, emit, db):
-│   │     1. config.embeddingProvider (explicit — highest priority)
-│   │     2. embedding_meta.provider_key in DB → resolveEmbedding(key)
-│   │        e.g. if prev indexed with 'openai' → auto-resolves OpenAIEmbedding
-│   │     3. fallback → resolveEmbedding('local') → LocalEmbedding
-│   │
-│   ├── detectProviderMismatch(db, embedding):
-│   │     compare { constructor.name, dims } stored vs current
-│   │     ├── null → first time, no stored data, proceed
-│   │     ├── mismatch && !force → db.close(), throw Error
-│   │     │     "Embedding dimension mismatch (stored: X/384, current: Y/1536).
-│   │     │      Run brain.reembed() or switch back."
-│   │     └── mismatch && force → skipVectorLoad = true
-│   │
-│   ├── setEmbeddingMeta(db, embedding)
-│   │     UPSERT embedding_meta: provider, dims, provider_key, indexed_at
-│   │
-│   ├── dims = embedding.dims ?? config.embeddingDims
-│   │     ← Sync dims from resolved provider. Without this, passing OpenAI (1536d)
-│   │       without explicit embeddingDims would create a 384-dim kvHnsw.
-│   │
-│   └── new HNSWIndex(dims, maxElements, M, efConstruction, efSearch).init()
-│         ← kvHnsw READY
-│         returns EarlyInit: { db, embedding, kvHnsw, skipVectorLoad }
+├── 1. Open Database
+│     new Database(config.dbPath)
+│     WAL mode, FK constraints, FTS5 triggers, all tables via createSchema()
 │
-│   BrainBank assigns:
-│     this._db          = early.db
-│     this._embedding   = early.embedding
-│     this._kvService   = new KVService(db, embedding, kvHnsw, new Map(), config.reranker)
-│     ← collection() NOW WORKS (plugins can call ctx.collection() in Phase 2)
+├── 2. Resolve Embedding
+│     _resolveEmbedding():
+│       1. config.embeddingProvider (explicit — highest priority)
+│       2. embedding_meta.provider_key in DB → resolveEmbedding(key)
+│       3. fallback → resolveEmbedding('local') → LocalEmbedding
 │
-└── PHASE 2: lateInit(config, earlyResult, registry, sharedHnsw, kvService)
-    │
-    ├── Load KV vectors (unless skipVectorLoad):
-    │     kvIndexPath = hnswPath(dbPath, 'kv')
-    │     kvCount = countRows(db, 'kv_vectors')
-    │     if kvHnsw.tryLoad(kvIndexPath, kvCount):
-    │       loadVecCache(db, 'kv_vectors', 'data_id', kvService.vecs)
-    │       ← HNSW graph loaded from file, only populate the Map
-    │     else:
-    │       loadVectors(db, 'kv_vectors', 'data_id', kvHnsw, kvService.vecs)
-    │       ← rebuild HNSW from SQLite BLOBs (slower)
-    │
-    ├── privateHnsw = new Map<string, HNSWIndex>()
-    ├── ctx = buildPluginContext(config, db, embedding, sharedHnsw, skipVectorLoad,
-    │                            kvService, privateHnsw)
-    │
-    ├── for each mod in registry.all:
-    │     await mod.initialize(ctx)
-    │
-    ├── saveAllHnsw(config.dbPath, kvHnsw, sharedHnsw, privateHnsw)
-    │     ← non-fatal try/catch; next startup rebuilds from SQLite if missing
-    │
-    └── createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw)
-          → SearchAPI (always created, even if no vector search available)
+├── 3. Check Dimension Mismatch
+│     detectProviderMismatch(db, embedding):
+│       null → first time, proceed
+│       mismatch && !force → db.close(), throw Error
+│       mismatch && force → skipVectorLoad = true
+│     setEmbeddingMeta(db, embedding)
+│
+├── 4. Create KV HNSW + KVService
+│     dims = embedding.dims ?? config.embeddingDims
+│     kvHnsw = new HNSWIndex(dims, ...).init()
+│     _kvService = new KVService(db, embedding, kvHnsw, new Map(), reranker)
+│     ← collection() NOW WORKS
+│
+├── 5. Load KV Vectors (unless skipVectorLoad)
+│     tryLoad(kvIndexPath, kvCount) → loadVecCache (hit) / loadVectors (miss)
+│
+├── 6. Initialize Plugins
+│     ctx = _buildPluginContext(skipVectorLoad, privateHnsw)
+│     for each mod in registry.all: await mod.initialize(ctx)
+│
+├── 7. Persist HNSW Indices
+│     saveAllHnsw(dbPath, kvHnsw, sharedHnsw, privateHnsw)
+│
+└── 8. Build SearchAPI + IndexAPI
+      createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw)
+      new IndexAPI({ registry, gitDepth, emit })
 ```
 
 **HNSW persistence strategy:**
@@ -582,10 +541,6 @@ DocsPlugin extends SearchablePlugin
 │  addContext(collection, path, context): void
 │  listContexts(): PathContext[]
 
-HnswPlugin extends Plugin
-│  hnsw:     HNSWIndex
-│  vecCache: Map<number, Float32Array>
-
 CoEditPlugin extends Plugin
 │  coEdits: { suggest(filePath: string, limit: number): CoEditSuggestion[] }
 
@@ -603,14 +558,13 @@ isWatchable(p)    → typeof p.onFileChange === 'function'
                      && typeof p.watchPatterns === 'function'
 isDocsPlugin(p)   → typeof p.addCollection === 'function'
                      && typeof p.listCollections === 'function'
-isHnswPlugin(p)   → 'hnsw' in p && 'vecCache' in p
 isCoEditPlugin(p) → 'coEdits' in p && typeof p.coEdits?.suggest === 'function'
 isReembeddable(p) → typeof p.reembedConfig === 'function'
 ```
 
 ### 6.2 PluginContext — Dependency Injection Container
 
-Built by `buildPluginContext()` in `src/bootstrap/initializer.ts`.
+Built by `_buildPluginContext()` in `src/brainbank.ts`.
 Every plugin receives exactly one `PluginContext` during `initialize()`.
 
 ```
@@ -628,7 +582,7 @@ PluginContext
 │     ← creates a PRIVATE HNSW for the plugin
 │     ← dims defaults to config.embeddingDims
 │     ← name → registered in privateHnsw Map → saved to 'hnsw-{name}.index'
-│     ← used by: DocsPlugin ('doc'), PatternsPlugin ('memory')
+│     ← used by: DocsPlugin ('doc')
 │
 ├── loadVectors(table, idCol, hnsw, cache): void
 │     ← no-op if skipVectorLoad === true (force-init with dim mismatch)
@@ -654,7 +608,6 @@ Plugin        │ HNSW location            │ Shared? │ Persisted as
 CodePlugin    │ _sharedHnsw['code']       │ ✓ all code:* │ hnsw-code.index
 GitPlugin     │ _sharedHnsw['git']        │ ✓ all git:*  │ hnsw-git.index
 DocsPlugin    │ plugin.hnsw (private)     │ ✗       │ hnsw-doc.index
-PatternsPlugin│ plugin.hnsw (private)     │ ✗       │ hnsw-memory.index
 KV store      │ KVService._hnsw (kvHnsw)  │ ✓ all KV collections │ hnsw-kv.index
 ```
 
@@ -910,130 +863,9 @@ DocsPlugin.stats():
 
 ---
 
-## 8. @brainbank/memory Package
-
-**Files:** `packages/memory/src/` — `memory.ts`, `entities.ts`, `llm.ts`, `prompts.ts`, `patterns-plugin.ts`, `pattern-store.ts`, `consolidator.ts`, `pattern-distiller.ts`
-
-Two complementary systems:
-
-1. **Conversational Memory** (`Memory` + `EntityStore`) — LLM-powered fact extraction + dedup + optional knowledge graph. Uses `Collection` (KV store) as storage.
-2. **Pattern Learning** (`patterns()` plugin) — structured learning from completed tasks. Uses dedicated HNSW + DB tables.
-
-### 8.1 Memory Class
-
-```
-Memory(provider: CollectionProvider | MemoryStore, options: MemoryOptions)
-│
-│  If provider has .collection(): store = provider.collection(collectionName ?? 'memories')
-│  Else: store = provider as MemoryStore
-│
-│  MemoryOptions:
-│    llm:             LLMProvider    ← REQUIRED
-│    entityStore?:    EntityStore    ← enables entity extraction
-│    maxFacts?:       5
-│    maxMemories?:    50
-│    dedupTopK?:      3
-│    extractPrompt?:  auto-selected based on entityStore presence
-│    dedupPrompt?:    DEDUP_PROMPT
-│    onOperation?:    callback
-│    collectionName?: 'memories'
-│
-│  Constructor auto-shares LLM with EntityStore: entityStore.setLLM(llm)
-│  Selects EXTRACT_WITH_ENTITIES_PROMPT when entityStore provided
-
-
-Memory.process(userMessage, assistantMessage): Promise<ProcessResult>
-         │
-         ├── STEP 1: extract({ facts, entities, relationships })
-         │     llm.generate([system: extractPrompt, user: "User: ...\nAssistant: ..."])
-         │     { json: true, maxTokens: 500 }
-         │
-         ├── STEP 2: existing = store.list({ limit: maxMemories })
-         │
-         ├── STEP 3: for each fact:
-         │     similar = store.search(fact, { k: dedupTopK })
-         │     if none → { action:'ADD' }
-         │     else: llm.generate(DEDUP_PROMPT + context) → { action, reason }
-         │     execute: ADD → store.add(fact)
-         │             UPDATE → store.remove(similar[0].id) + store.add(fact)
-         │             NONE → skip
-         │
-         └── STEP 4: if entityStore:
-               entityStore.processExtraction(entities, relationships, context)
-
-Memory.buildContext(limit=20):
-  "## Memories\n- fact1\n- fact2..."
-  + entityStore.buildContext() if present
-```
-
-### 8.2 EntityStore
-
-```
-EntityStore(provider: CollectionProvider | EntityStoreOptions, config?)
-│
-│  entities = provider.collection(entityCollectionName ?? 'entities')
-│  relations = provider.collection(relationCollectionName ?? 'relationships')
-
-EntityStore.upsert(entity):
-  findEntity(name) → existing?
-    1. entities.search(name, { k: 5 })
-    2. exact case-insensitive match
-    3. if llm: resolveEntity(name, candidates) via ENTITY_RESOLVE_PROMPT
-       "TS" = "TypeScript", "GCP" = "Google Cloud Platform", etc.
-  if exists: remove + re-add with mentionCount+1, merged attributes
-  if new: add with mentionCount=1
-
-EntityStore.traverse(startEntity, maxDepth=2): TraversalResult
-  BFS: queue → getRelated() → push connected → TraversalNode[]
-
-EntityStore.buildContext(entityName?):
-  with name: entity info + its relationships
-  without: all entities + all relationships as markdown
-```
-
-### 8.3 patterns() Plugin
-
-```
-patterns() / memory()   ← memory() is backwards-compat alias
-         │
-PatternsPlugin.initialize(ctx):
-  hnsw = ctx.createHnsw(100_000, undefined, 'memory')  ← PRIVATE
-  ctx.loadVectors('memory_vectors', 'pattern_id', hnsw, vecCache)
-  PatternStore + Consolidator + PatternDistiller
-
-PatternStore.learn(pattern: LearningPattern):
-  INSERT memory_patterns → id
-  embed("{task_type} {task} {approach}") → vec
-  INSERT memory_vectors + hnsw.add()
-  auto-consolidate every 50 patterns
-
-Consolidator.prune(maxAgeDays=90, minSuccess=0.3):
-  DELETE WHERE success_rate < ? AND created_at < cutoff
-
-Consolidator.dedup(threshold=0.95):
-  for all pairs in vectorCache: cosine > 0.95 → keep higher success
-
-PatternDistiller.distill(taskType, topK=10):
-  SELECT approach, success_rate WHERE task_type=? AND success_rate >= 0.7
-  UPSERT distilled_strategies → formatted strategy text
-```
-
-### 8.4 LLMProvider Interface
-
-```typescript
-interface LLMProvider {
-    generate(messages: ChatMessage[], options?: GenerateOptions): Promise<string>
-}
-interface ChatMessage { role: 'system'|'user'|'assistant'; content: string }
-interface GenerateOptions { json?: boolean; maxTokens?: number; temperature?: number }
-
-// Built-in: OpenAIProvider({ apiKey?, model='gpt-4.1-nano', baseUrl? })
-// Compatible with: LangChain, Vercel AI SDK, Anthropic, Ollama, etc.
-```
-
 ---
 
-## 9. @brainbank/mcp Package
+## 8. @brainbank/mcp Package
 
 **File:** `packages/mcp/src/mcp-server.ts` (514 lines)
 
@@ -1042,7 +874,7 @@ interface GenerateOptions { json?: boolean; maxTokens?: number; temperature?: nu
 | Tool | Description |
 |------|------------|
 | `brainbank_search` | Unified: hybrid (default), vector, or keyword mode |
-| `brainbank_context` | Formatted context block (code + git + patterns + docs) |
+| `brainbank_context` | Formatted context block (code + git + docs) |
 | `brainbank_index` | Trigger incremental indexing + optional docs path register |
 | `brainbank_stats` | Index stats + KV collection inventory |
 | `brainbank_history` | Git commit history for a file path |
@@ -1167,7 +999,7 @@ interface SearchStrategy {
     rebuild?(): void
 }
 interface SearchOptions {
-    sources?: Record<string, number>  // { code: 6, git: 5, memory: 4, myNotes: 10 }
+    sources?: Record<string, number>  // { code: 6, git: 5, myNotes: 10 }
     minScore?:  number   // default 0.25
     useMMR?:    boolean  // default true
     mmrLambda?: number   // default 0.7
@@ -1179,7 +1011,7 @@ interface SearchOptions {
 **File:** `src/search/vector/composite-vector-search.ts`
 
 ```
-CompositeVectorSearch({ code?, git?, patterns?, embedding })
+CompositeVectorSearch({ code?, git?, embedding })
   implements SearchStrategy
 
   .search(query, options):
@@ -1199,10 +1031,7 @@ CompositeVectorSearch({ code?, git?, patterns?, embedding })
         SELECT * FROM git_commits WHERE id IN (?) AND is_merge = 0
         → { type:'commit', score, content:message, metadata: { hash, ... } }
 
-    if patterns && patternK > 0:
-      PatternVectorSearch.search(queryVec, patternK, minScore, useMMR, mmrLambda)
-        SELECT * FROM memory_patterns WHERE id IN (?) AND success_rate >= 0.5
-        → { type:'pattern', score, content:approach, metadata: { taskType, ... } }
+
 
     results.sort((a, b) => b.score - a.score)
 ```
@@ -1234,9 +1063,7 @@ KeywordSearch(db)  implements SearchStrategy
     bm25(fts_commits, 5.0, 2.0, 1.0)  ← message×5, author×2, diff×1
     filter: is_merge = 0
 
-  _searchPatterns(ftsQuery, patternK):
-    bm25(fts_patterns, 3.0, 5.0, 5.0, 1.0) ← task_type×3, task×5, approach×5, critique×1
-    filter: success_rate >= 0.5
+
 
   normalizeBM25(rawScore):  [src/lib/fts.ts]
     abs = Math.abs(rawScore)   ← FTS5 returns negative (lower=better)
@@ -1245,7 +1072,6 @@ KeywordSearch(db)  implements SearchStrategy
 .rebuild():
   INSERT INTO fts_code(fts_code) VALUES('rebuild')
   INSERT INTO fts_commits(fts_commits) VALUES('rebuild')
-  INSERT INTO fts_patterns(fts_patterns) VALUES('rebuild')
 ```
 
 ### 11.4 Hybrid Search + RRF
@@ -1268,7 +1094,7 @@ SearchAPI.hybridSearch(query, options?)
          │     non-builtin SearchablePlugins → lists.push(hits)
          │
          ├── _collectKvCollections(query, sources):
-         │     for [name, k] in sources not in {code,git,docs,memory}:
+         │     for [name, k] in sources not in {code,git,docs}:
          │       kvService.collection(name).searchAsResults(query, k)
          │
          ├── reciprocalRankFusion(lists, k=60, maxResults=15)
@@ -1342,7 +1168,7 @@ rerank(query, results, reranker): Promise<SearchResult[]>
 ContextBuilder(search?, coEdits?, codeGraph?, docsSearch?)
 
 .build(task, options?):
-  { sources: { code:6, git:5, memory:4 }, affectedFiles=[],
+  { sources: { code:6, git:5 }, affectedFiles=[],
     minScore=0.25, useMMR=true, mmrLambda=0.7 }
 
   results = search.search(task, ...)
@@ -1364,7 +1190,7 @@ ContextBuilder(search?, coEdits?, codeGraph?, docsSearch?)
 
   formatGitResults(results, gitK, parts)
   formatCoEdits(affectedFiles, parts, coEdits?)
-  formatPatternResults(results, memoryK, parts)
+
 
   if docsSearch:
     docs = await docsSearch(task, { k, minScore })
@@ -1625,7 +1451,6 @@ reembedAll(db, embedding, hnswMap, plugins, options?, persist?)
     for each isReembeddable plugin: plugin.reembedConfig()
     CORE_TABLES (always included, not plugin-owned):
       'kv':     kv_data → kv_vectors, textBuilder: String(r.content)
-      'memory': memory_patterns → memory_vectors, textBuilder: "{task_type} {task} {approach}"
     deduplicates by vectorTable (multi-repo plugins share same table)
 
   for each table:
@@ -1744,16 +1569,13 @@ rebuildFTS()               → bm25?.rebuild?.()
 createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw):
   codeMod = sharedHnsw.get('code')
   gitMod  = sharedHnsw.get('git')
-  memPlugin = registry.firstByType('memory')
-  memMod = isHnswPlugin(memPlugin) ? memPlugin : undefined
 
   code     = codeMod ? new CodeVectorSearch({ db, hnsw, vecs }) : undefined
   git      = gitMod  ? new GitVectorSearch({ db, hnsw }) : undefined
-  patterns = memMod  ? new PatternVectorSearch({ db, hnsw, vecs }) : undefined
 
-  hasAnyStrategy = codeMod || gitMod || memMod
+  hasAnyStrategy = codeMod || gitMod
   search = hasAnyStrategy
-    ? new CompositeVectorSearch({ code, git, patterns, embedding })
+    ? new CompositeVectorSearch({ code, git, embedding })
     : undefined
 
   bm25 = new KeywordSearch(db)
@@ -1946,29 +1768,6 @@ fts_docs (FTS5, content='doc_chunks', content_rowid='id')
   triggers: trg_fts_docs_insert, trg_fts_docs_delete
 
 
-━━━ AGENT MEMORY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-memory_patterns
-  id INTEGER PRIMARY KEY AUTOINCREMENT
-  task_type TEXT  ← idx_mp_type
-  task TEXT, approach TEXT, outcome TEXT
-  success_rate REAL  ← idx_mp_success
-  critique TEXT, tokens_used INTEGER, latency_ms INTEGER
-  created_at INTEGER  ← idx_mp_created
-
-memory_vectors
-  pattern_id INTEGER PRIMARY KEY REFERENCES memory_patterns(id) ON DELETE CASCADE
-  embedding BLOB
-
-distilled_strategies
-  task_type TEXT PRIMARY KEY
-  strategy TEXT, confidence REAL, updated_at INTEGER
-
-fts_patterns (FTS5, content='memory_patterns', content_rowid='id')
-  columns: task_type, task, approach, critique
-  triggers: trg_fts_patterns_insert, trg_fts_patterns_delete
-
-
 ━━━ KV COLLECTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 kv_data
@@ -2159,7 +1958,7 @@ brain.getContext("add rate limiting to the auth API")
 ```
 brain.reembed()   (switch Local 384d → OpenAI 1536d)
   │
-  collectTables: code + git + docs + kv + memory
+  collectTables: code + git + docs + kv
   for each table:
     CREATE temp → embedBatch in batches of 50 → INSERT temp
     TRANSACTION: DELETE old + INSERT FROM temp  ← atomic swap
@@ -2181,16 +1980,16 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
 | 5 | **Two-Phase Construction** | `earlyInit()` / `lateInit()` | KVService ready before plugins call `ctx.collection()` |
 | 6 | **Factory Method** | `code()`, `git()`, `docs()`, `patterns()`, `createBrain()` | Hide instantiation complexity |
 | 7 | **Dependency Injection** | `PluginContext` | Plugins receive all deps through one context object |
-| 8 | **Repository** | `PatternStore`, `Collection`, `DocsIndexer` | Encapsulate read/write per domain entity |
+| 8 | **Repository** | `Collection`, `DocsIndexer` | Encapsulate read/write per domain entity |
 | 9 | **Observer / EventEmitter** | `BrainBank extends EventEmitter` | `initialized`, `indexed`, `reembedded`, `progress` |
 | 10 | **Flyweight** | `_sharedHnsw` pool | `code:frontend` + `code:backend` share ONE HNSW |
 | 11 | **Builder** | `ContextBuilder` | Incrementally assembles markdown from multiple sources |
-| 12 | **Composite** | `CompositeVectorSearch` | Embed once, delegate to Code + Git + Pattern strategies |
+| 12 | **Composite** | `CompositeVectorSearch` | Embed once, delegate to Code + Git strategies |
 | 13 | **Lazy Singleton + Promise Dedup** | `LocalEmbedding._getPipeline()`, `Qwen3Reranker._ensureLoaded()` | Expensive resources loaded on first use |
 | 14 | **Memento / Persistence** | `HNSWIndex.save()` / `tryLoad()` | Graph persisted post-init with staleness check |
 | 15 | **Adapter** | Embedding providers | OpenAI `number[]`, Perplexity base64 int8, WASM flat → unified `Float32Array` |
 | 16 | **Guard / Precondition** | `_requireInit()` | Descriptive errors before null-pointer crashes |
-| 17 | **Template Method** | `plugin.initialize(ctx)` | Initializer controls sequence; plugins fill in domain logic |
+| 17 | **Template Method** | `plugin.initialize(ctx)` | BrainBank controls sequence; plugins fill in domain logic |
 | 18 | **Atomic Swap** | `reembedTable()` | Temp table → TRANSACTION DELETE+INSERT; old data safe on failure |
 | 19 | **Incremental Processing** | `CodeWalker`, `DocsIndexer`, `GitIndexer` | Content-hash skip; only changed content re-embedded |
 | 20 | **Discriminated Union** | `SearchResult` | `isCodeResult()`, `matchResult()` for exhaustive matching |
@@ -2208,9 +2007,9 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
                      └──┬──────┬──────┬───────┬─────────────┘
                         │      │      │       │
                 ┌───────▼─┐ ┌──▼───┐ ┌▼──────┐ ┌▼─────────────────┐
-                │IndexAPI │ │Search│ │Plugin │ │   Initializer    │
-                │         │ │API   │ │Reg.   │ │  earlyInit()     │
-                └────┬────┘ └──┬───┘ └───┬───┘ │  lateInit()      │
+                │IndexAPI │ │Search│ │Plugin │
+                │         │ │API   │ │Reg.   │
+                └────┬────┘ └──┬───┘ └───┬───┘
                      │        │          │     └────────┬──────────┘
                      │        │          │              │
           ┌──────────▼────┐   │   ┌──────▼──────────────▼──────────────────┐
@@ -2230,13 +2029,12 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
           │   EmbeddingProvider  ││    ├── DocsIndexer (smart chunker)     │
           │  (shared/per-plugin) ││    └── DocumentSearch                  │
           │                      ││                                        │
-          │  LocalEmbedding      ││  @brainbank/memory                     │
-          │  OpenAIEmbedding     ││    ├── patterns() → PatternsPlugin     │
-          │  PerplexityEmb.      ││    │     ├── PatternStore              │
-          │  PerplexityContext.. ││    │     ├── Consolidator              │
-          └──────────────────────┘│    │     └── PatternDistiller          │
-                                  │    ├── Memory (LLM pipeline)           │
-                                  │    └── EntityStore (knowledge graph)   │
+          │  LocalEmbedding      ││                                        │
+          │  OpenAIEmbedding     ││                                        │
+          │  PerplexityEmb.      ││                                        │
+          │  PerplexityContext.. ││                                        │
+          └──────────────────────┘│                                        │
+                                  │                                        │
                                   └────────────────────────────────────────┘
 
 
@@ -2250,8 +2048,7 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
      │    ├── KVService._hnsw        (all KV collections share one)     │
      │    ├── _sharedHnsw['code']    (all code:* plugins share one)     │
      │    ├── _sharedHnsw['git']     (all git:*  plugins share one)     │
-     │    ├── DocsPlugin.hnsw        (private, per-instance)            │
-     │    └── PatternsPlugin.hnsw    (private, per-instance)            │
+     │    └── DocsPlugin.hnsw        (private, per-instance)            │
      │                                                                  │
      │  hnsw-loader.ts: hnswPath, loadVectors, loadVecCache, saveAll    │
      │  Qwen3Reranker ──── node-llama-cpp (optional peer dep)           │
@@ -2261,7 +2058,7 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
      ┌──────────────────────────────────────────────────────────────────┐
      │                       Search Layer                               │
      │                                                                  │
-     │  SearchFactory → CompositeVectorSearch(code, git, patterns)      │
+     │  SearchFactory → CompositeVectorSearch(code, git)                │
      │  KeywordSearch ──── FTS5 BM25 (sanitizeFTS + normalizeBM25)     │
      │  reciprocalRankFusion + fuseRankedLists<T>                       │
      │  rerank (position-aware blending)                                │
@@ -2344,10 +2141,8 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
 | File | Coverage |
 |------|----------|
 | `core/collections.test.ts` | Full KV pipeline: hybrid/keyword/vector + tags + TTL + trim |
-| `query/search.test.ts` | code+git+docs+memory → search + getContext + minScore |
+| `query/search.test.ts` | code+git+docs → search + getContext + minScore |
 | `indexers/per-plugin-embedding.test.ts` | 3 dims (64d/128d/256d), separate HNSW indices |
-| `memory/memory.test.ts` | Learn → search → consolidate → distill |
-| `embeddings/real-model.test.ts` | LocalEmbedding semantic similarity, cross-encoder reranker |
 | `quality/retrieval-quality.test.ts` | Recall@5/MRR threshold assertions (synthetic corpus) |
 
 ### Package Tests (`packages/*/test/`)
@@ -2362,7 +2157,7 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
 | `@brainbank/code` | `languages.test.ts` | Extension mapping, ignore rules |
 | `@brainbank/git` | `git.test.ts` | Real git repo → commits → co-edits → fileHistory |
 | `@brainbank/docs` | `docs.test.ts` | Smart chunking → register → index → search → context |
-| `@brainbank/memory` | `memory-entities.test.ts` | Real LLM: entity extraction + dedup + graph traversal |
+
 
 ### Retrieval Quality Gate
 

@@ -1,9 +1,8 @@
 /**
  * BrainBank Integration Test — Unified Search + Context
  *
- * Tests brain.search() across all modules (code + git + memory),
+ * Tests brain.search() across all modules (code + git + docs),
  * brain.getContext() for system prompts, and minScore filtering.
- * Uses all 4 modules wired together.
  */
 
 import * as fs from 'node:fs';
@@ -11,7 +10,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { BrainBank, code, git, docs, memory, hashEmbedding } from '../../helpers.ts';
+import { BrainBank, code, git, docs, hashEmbedding } from '../../helpers.ts';
 
 export const name = 'Unified Search + Context';
 
@@ -43,36 +42,28 @@ function setup() {
 
 export const tests: Record<string, () => Promise<void>> = {};
 
-tests['setup: brain with code + git + docs + memory'] = async () => {
+tests['setup: brain with code + git + docs'] = async () => {
     const { repoDir, docsDir } = setup();
 
     brain = new BrainBank({ repoPath: repoDir, dbPath: path.join(tmpDir, 'test.db'), embeddingProvider: hashEmbedding() })
         .use(code({ repoPath: repoDir }))
         .use(git({ repoPath: repoDir }))
-        .use(docs())
-        .use(memory());
+        .use(docs());
     await brain.initialize();
 
     await brain.index({ forceReindex: true });
-    await (brain.docs as any)!.addCollection({ name: 'guide', path: docsDir, pattern: '**/*.md' });
-    await (brain.docs as any)!.indexDocs();
-
-    const mem = brain.plugin('memory') as any;
-    await mem.learn({ task: 'Fix auth bug', taskType: 'debug', approach: 'Check token flow', outcome: 'Fixed', successRate: 0.9 });
+    await (brain.plugin('docs') as any)!.addCollection({ name: 'guide', path: docsDir, pattern: '**/*.md' });
+    await (brain.plugin('docs') as any)!.indexDocs();
 
     assert.ok(brain);
 };
 
-tests['brain.search(): returns code + commit + pattern'] = async () => {
+tests['brain.search(): returns code + commit'] = async () => {
     const stats = brain.stats();
-    assert.ok((stats.code?.chunks ?? 0) > 0, `code chunks indexed: ${stats.code?.chunks}`);
-    assert.ok((stats.git?.commits ?? 0) > 0, `git commits indexed: ${stats.git?.commits}`);
+    assert.ok(Number(stats.code?.chunks ?? 0) > 0, `code chunks indexed: ${stats.code?.chunks}`);
+    assert.ok(Number(stats.git?.commits ?? 0) > 0, `git commits indexed: ${stats.git?.commits}`);
 
-    const mem = brain.plugin('memory') as any;
-    const patternResults = await mem.search('auth bug');
-    assert.ok(patternResults.length > 0, `patterns found: ${patternResults.length}`);
-
-    const all = await brain.search('auth', { minScore: 0, useMMR: false, sources: { code: 10, git: 10, memory: 10 } });
+    const all = await brain.search('auth', { minScore: 0, useMMR: false, sources: { code: 10, git: 10 } });
     assert.ok(all.length > 0, `unified search returned ${all.length} results`);
 };
 
@@ -87,8 +78,8 @@ tests['brain.search(): code results have filePath + metadata'] = async () => {
 
 tests['brain.search(): commit results have hash + author'] = async () => {
     const stats = brain.stats();
-    assert.ok((stats.git?.commits ?? 0) > 0, `commits indexed: ${stats.git?.commits}`);
-    assert.ok((stats.git?.hnswSize ?? 0) > 0, `git HNSW populated: ${stats.git?.hnswSize}`);
+    assert.ok(Number(stats.git?.commits ?? 0) > 0, `commits indexed: ${stats.git?.commits}`);
+    assert.ok(Number(stats.git?.hnswSize ?? 0) > 0, `git HNSW populated: ${stats.git?.hnswSize}`);
 
     let commits: any[] = [];
     for (const q of ['feat auth database', 'API endpoint handler', 'commit']) {
@@ -108,14 +99,6 @@ tests['brain.search(): commit results have hash + author'] = async () => {
 
     assert.ok(commits[0].metadata?.hash, 'has hash');
     assert.ok(commits[0].metadata?.author, 'has author');
-};
-
-tests['brain.search(): memory patterns have approach'] = async () => {
-    const mem = brain.plugin('memory') as any;
-    const results = await mem.search('auth bug fix');
-
-    assert.ok(results.length > 0, 'has patterns');
-    assert.ok(results[0].approach, 'has approach');
 };
 
 tests['brain.search(): minScore filters low matches'] = async () => {
@@ -142,8 +125,8 @@ tests['brain.getContext(): returns markdown string'] = async () => {
 tests['brain.stats(): reports all module stats'] = async () => {
     const stats = brain.stats();
 
-    assert.ok((stats.code?.hnswSize ?? 0) > 0, 'code HNSW');
-    assert.ok((stats.git?.hnswSize ?? 0) > 0, 'git HNSW');
+    assert.ok(Number(stats.code?.hnswSize ?? 0) > 0, 'code HNSW');
+    assert.ok(Number(stats.git?.hnswSize ?? 0) > 0, 'git HNSW');
 };
 
 tests['cleanup'] = async () => {

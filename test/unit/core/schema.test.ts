@@ -31,9 +31,6 @@ export const tests = {
         assert.includes(tables, 'commit_files');
         assert.includes(tables, 'co_edits');
         assert.includes(tables, 'git_vectors');
-        assert.includes(tables, 'memory_patterns');
-        assert.includes(tables, 'memory_vectors');
-        assert.includes(tables, 'distilled_strategies');
         assert.includes(tables, 'schema_version');
         assert.includes(tables, 'collections');
         assert.includes(tables, 'doc_chunks');

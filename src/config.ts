@@ -1,7 +1,7 @@
 import type { BrainBankConfig, ResolvedConfig } from './types.ts';
+
 import * as path from 'node:path';
 
-// ── Defaults ────────────────────────────────────────
 
 export const DEFAULTS: ResolvedConfig = {
     repoPath: '.',
@@ -16,7 +16,6 @@ export const DEFAULTS: ResolvedConfig = {
     maxElements: 2_000_000,
 };
 
-// ── Resolver ────────────────────────────────────────
 
 /**
  * Merge partial config with defaults.

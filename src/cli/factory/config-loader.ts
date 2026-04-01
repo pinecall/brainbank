@@ -5,10 +5,11 @@
  * Config priority: CLI flags > config file > defaults.
  */
 
-import * as path from 'node:path';
-import * as fs from 'node:fs';
 import type { Plugin } from '@/plugin.ts';
 import type { BrainBankConfig, DocumentCollection } from '@/types.ts';
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { c, getFlag } from '../utils.ts';
 
 /** Per-plugin config section (shared shape). */

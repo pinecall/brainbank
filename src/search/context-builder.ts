@@ -3,57 +3,53 @@
  *
  * Builds a formatted markdown context block from search results.
  * Ready for injection into an LLM system prompt.
- * Delegates formatting to focused modules in context/.
+ * Plugin-agnostic — discovers formatters from ContextFormatterPlugin.
  */
 
 import type { ContextOptions, SearchResult } from '@/types.ts';
-import type { SearchStrategy, CodeGraphProvider } from './types.ts';
-import type { CoEditProvider } from './context/result-formatters.ts';
-import { formatCodeResults, formatCodeGraph } from './context/formatters.ts';
-import { formatGitResults, formatCoEdits, formatPatternResults, formatDocuments } from './context/result-formatters.ts';
+import type { SearchStrategy } from './types.ts';
+import type { PluginRegistry } from '@/services/plugin-registry.ts';
 
-export type { CoEditProvider };
-
-/** Optional callback to search documents. */
-export type DocsSearchFn = (query: string, options?: { k?: number; minScore?: number }) => Promise<SearchResult[]>;
+import { isContextFormatterPlugin, isSearchable } from '@/plugin.ts';
 
 export class ContextBuilder {
     constructor(
         private _search: SearchStrategy | undefined,
-        private _coEdits?: CoEditProvider,
-        private _codeGraph?: CodeGraphProvider,
-        private _docsSearch?: DocsSearchFn,
+        private _registry: PluginRegistry,
     ) {}
 
     /** Build a full context block for a task. Returns markdown for system prompt. */
     async build(task: string, options: ContextOptions = {}): Promise<string> {
         const src = options.sources ?? {};
-        const codeResults = src.code ?? 6;
-        const gitResults = src.git ?? 5;
-        const patternResults = src.memory ?? 4;
-        const { affectedFiles = [], minScore = 0.25, useMMR = true, mmrLambda = 0.7 } = options;
+        const { minScore = 0.25, useMMR = true, mmrLambda = 0.7 } = options;
 
         const results: SearchResult[] = this._search
             ? await this._search.search(task, {
-                sources: { code: codeResults, git: gitResults, memory: patternResults },
+                sources: src,
                 minScore, useMMR, mmrLambda,
             })
             : [];
 
         const parts: string[] = [`# Context for: "${task}"\n`];
 
-        const codeHits = results.filter(r => r.type === 'code').slice(0, codeResults);
-        formatCodeResults(codeHits, parts, this._codeGraph);
-        formatCodeGraph(codeHits, parts, this._codeGraph);
-        formatGitResults(results, gitResults, parts);
-        formatCoEdits(affectedFiles, parts, this._coEdits);
-        formatPatternResults(results, patternResults, parts);
+        for (const mod of this._registry.all) {
+            if (isContextFormatterPlugin(mod)) {
+                mod.formatContext(results, parts, options as Record<string, unknown>);
+            }
+        }
 
-        // Document collections (if docs plugin is available)
-        if (this._docsSearch) {
-            const docs = await this._docsSearch(task, { k: codeResults, minScore });
-            const docSection = formatDocuments(docs);
-            if (docSection) parts.push(docSection);
+        // Searchable plugins that aren't context formatters → append results
+        for (const mod of this._registry.all) {
+            if (isContextFormatterPlugin(mod)) continue;
+            if (!isSearchable(mod)) continue;
+            const hits = await mod.search(task, { k: src[mod.name.split(':')[0]] ?? 6, minScore });
+            if (hits.length > 0) {
+                parts.push(`## ${mod.name}\n`);
+                for (const r of hits) {
+                    parts.push(`- [${Math.round(r.score * 100)}%] ${r.content.slice(0, 200)}`);
+                }
+                parts.push('');
+            }
         }
 
         return parts.join('\n');

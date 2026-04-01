@@ -35,7 +35,7 @@ src/
 ├── domain/            Core primitives: collection, memory
 ├── indexers/          Plugins: code, git, docs + base interface
 ├── services/          Reembed, watch
-├── bootstrap/         System wiring: initializer, registry
+├── bootstrap/         (reserved for future system wiring)
 ├── api/               Use cases: search-api, index-api
 └── cli/               CLI commands and factory
 ```

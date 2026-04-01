@@ -1,96 +1,61 @@
 /**
  * BrainBank — Index API
  *
- * Orchestrates indexing across code, git, and document indexers.
- * BrainBank delegates here after auto-initialization.
+ * Orchestrates indexing across all registered plugins.
+ * Plugin-agnostic — uses capability interfaces to discover what can be indexed.
  */
 
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 import type { IndexResult, StageProgressCallback } from '@/types.ts';
-import type { IndexAPIDeps } from './types.ts';
-import { isIndexable, isDocsPlugin } from '@/plugin.ts';
 
+import { isIndexable } from '@/plugin.ts';
 
+/** Deps injected by BrainBank at init time. */
+export interface IndexDeps {
+    registry: PluginRegistry;
+    emit: (event: string, data: unknown) => void;
+}
 
-export class IndexAPI {
-    constructor(private _d: IndexAPIDeps) {}
+/** Merge two `IndexResult` values, accumulating counts. */
+function mergeResult(acc: IndexResult | undefined, r: IndexResult): IndexResult {
+    if (!acc) return { ...r };
+    return {
+        indexed: acc.indexed + r.indexed,
+        skipped: acc.skipped + r.skipped,
+        chunks: (acc.chunks ?? 0) + (r.chunks ?? 0),
+    };
+}
 
-    async index(options: {
-        modules?: ('code' | 'git' | 'docs')[];
-        gitDepth?: number;
-        forceReindex?: boolean;
-        onProgress?: StageProgressCallback;
-    } = {}): Promise<{ code?: IndexResult; git?: IndexResult; docs?: Record<string, { indexed: number; skipped: number; chunks: number }>; [plugin: string]: unknown }> {
-        const want   = new Set(options.modules ?? ['code', 'git', 'docs']);
-        const extras: Record<string, unknown> = {};
-        let codeAcc: IndexResult | undefined;
-        let gitAcc: IndexResult | undefined;
-        let docsResult: Record<string, { indexed: number; skipped: number; chunks: number }> | undefined;
+/** Run indexing across all indexable plugins. Filter with `modules` (base types). */
+export async function runIndex(deps: IndexDeps, options: {
+    modules?: string[];
+    forceReindex?: boolean;
+    onProgress?: StageProgressCallback;
+    /** Plugin-specific options forwarded to `IndexablePlugin.index()`. */
+    pluginOptions?: Record<string, unknown>;
+} = {}): Promise<Record<string, unknown>> {
+    const want = options.modules ? new Set(options.modules) : null;
+    const results: Record<string, unknown> = {};
 
-        if (want.has('code')) {
-            for (const mod of this._d.registry.allByType('code')) {
-                if (!isIndexable(mod)) continue;
-                const label = mod.name === 'code' ? 'code' : mod.name;
-                options.onProgress?.(label, 'Starting...');
-                const r = await mod.index({
-                    forceReindex: options.forceReindex,
-                    onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
-                });
-                if (codeAcc) {
-                    codeAcc.indexed += r.indexed;
-                    codeAcc.skipped += r.skipped;
-                    codeAcc.chunks = (codeAcc.chunks ?? 0) + (r.chunks ?? 0);
-                } else {
-                    codeAcc = r;
-                }
-            }
-        }
+    for (const mod of deps.registry.all) {
+        const baseType = mod.name.split(':')[0];
 
-        if (want.has('git')) {
-            for (const mod of this._d.registry.allByType('git')) {
-                if (!isIndexable(mod)) continue;
-                const label = mod.name === 'git' ? 'git' : mod.name;
-                options.onProgress?.(label, 'Starting...');
-                const r = await mod.index({
-                    depth: options.gitDepth ?? this._d.gitDepth,
-                    onProgress: (f: string, i: number, t: number) => options.onProgress?.(label, `[${i}/${t}] ${f}`),
-                });
-                if (gitAcc) {
-                    gitAcc.indexed += r.indexed;
-                    gitAcc.skipped += r.skipped;
-                } else {
-                    gitAcc = r;
-                }
-            }
-        }
+        if (want && !want.has(baseType)) continue;
+        if (!isIndexable(mod)) continue;
 
-        if (want.has('docs') && this._d.registry.has('docs')) {
-            const docsPlugin = this._d.registry.get('docs');
-            if (isDocsPlugin(docsPlugin)) {
-                options.onProgress?.('docs', 'Starting...');
-                docsResult = await docsPlugin.indexDocs({
-                    onProgress: (coll: string, file: string, cur: number, total: number) =>
-                        options.onProgress?.('docs', `[${coll}] ${cur}/${total}: ${file}`),
-                });
-            }
-        }
+        const label = mod.name;
+        options.onProgress?.(label, 'Starting...');
 
-        // Index custom plugins (any IndexablePlugin that isn't code/git/docs)
-        const builtinTypes = new Set(['code', 'git', 'docs']);
-        for (const mod of this._d.registry.all) {
-            const baseType = mod.name.split(':')[0];
-            if (builtinTypes.has(baseType)) continue;
-            if (!isIndexable(mod)) continue;
+        const r = await mod.index({
+            forceReindex: options.forceReindex,
+            onProgress: (msg: string, cur: number, total: number) =>
+                options.onProgress?.(label, `[${cur}/${total}] ${msg}`),
+            ...options.pluginOptions,
+        });
 
-            options.onProgress?.(mod.name, 'Starting...');
-            const r = await mod.index({
-                onProgress: (msg: string) => options.onProgress?.(mod.name, msg),
-            });
-            extras[mod.name] = r;
-        }
-
-        const result = { ...extras, code: codeAcc, git: gitAcc, docs: docsResult };
-        this._d.emit('indexed', result);
-        return result;
+        results[baseType] = mergeResult(results[baseType] as IndexResult | undefined, r);
     }
+
+    deps.emit('indexed', results);
+    return results;
 }

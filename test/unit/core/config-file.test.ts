@@ -93,7 +93,7 @@ export const tests = {
 
         await registerConfigCollections(brain, config);
 
-        const collections = (brain.docs as any)!.listCollections();
+        const collections = (brain.plugin('docs') as any)!.listCollections();
         assert.equal(collections.length, 1);
         assert.equal(collections[0].name, 'test-coll');
 
@@ -112,7 +112,7 @@ export const tests = {
         await brain.initialize();
 
         await registerConfigCollections(brain, null);
-        const collections = (brain.docs as any)!.listCollections();
+        const collections = (brain.plugin('docs') as any)!.listCollections();
         assert.equal(collections.length, 0);
 
         brain.close();
@@ -144,7 +144,7 @@ export const tests = {
 
         await registerConfigCollections(brain, config);
 
-        const collections = (brain.docs as any)!.listCollections();
+        const collections = (brain.plugin('docs') as any)!.listCollections();
         assert.equal(collections.length, 2);
         const names = collections.map((c: any) => c.name).sort();
         assert.deepEqual(names, ['first', 'second']);

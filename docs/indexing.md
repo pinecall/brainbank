@@ -16,7 +16,7 @@ BrainBank uses **native tree-sitter** to parse source code into ASTs and extract
 | **Scripting** | Python, Ruby, PHP, Lua, Bash, Elixir |
 | **.NET** | C# |
 
-For large classes (>80 lines), the chunker descends into the class body and extracts each method as a separate chunk. For unsupported languages, it falls back to a sliding window with overlap.
+For large classes (>80 lines), the chunker descends into the class body and extracts each method as a separate chunk. For unsupported languages or missing grammars, it falls back to a sliding window with 5-line overlap.
 
 > 5 grammars (JS/TS/Python/HTML) are bundled. Install additional languages with `npm i -g tree-sitter-<lang>`.
 
@@ -31,8 +31,8 @@ Beyond chunking, BrainBank builds a **relationship-aware code graph** during ind
 | Layer | Table | What it captures | Example |
 |-------|-------|------------------|---------|
 | **Imports** | `code_imports` | File-level dependencies | `agent.ts` → `call`, `config`, `emitter` |
-| **Symbols** | `code_symbols` | Function/class/method defs | `TurnManager.on_vad_start` (method, L420) |
-| **Call Refs** | `code_refs` | Function calls within chunks | `on_vad_start` calls `_clear_all_bot_audio`, `emit` |
+| **Symbols** | `code_symbols` | Function/class/method defs with line + chunk link | `TurnManager.on_vad_start` (method, L420) |
+| **Call Refs** | `code_refs` | Function calls within each chunk | `on_vad_start` calls `_clear_all_bot_audio`, `emit` |
 
 ### Import Extraction
 
@@ -69,23 +69,37 @@ Searching for "VAD processing in turn manager" finds the right chunk even if the
 
 ### Context Output
 
-The `getContext()` / `brainbank context` output gains two enrichments:
+The `getContext()` / `brainbank context` output gains two enrichments from plugins implementing `ContextFormatterPlugin`:
 
-**1. Call graph annotations** on each code block:
+**1. Call graph annotations** on each code block (from `code_refs` + `code_chunks`):
 ```
 **method `on_vad_start` (L420-480)** — 95% match
   *(calls: _clear_all_bot_audio, emit | called by: on_speech_ended)*
 ```
 
-**2. Related Files** showing the import graph:
+**2. Related Code (Import Graph)** — 2-hop traversal of `code_imports` + sibling clustering:
 ```markdown
-## Related Files (Import Graph)
+## Related Code (Import Graph)
 
-- → domain.turn                      # this file imports
-- → processors.audio.vad             # this file imports
-- ← tests/test_turn_manager.py       # imported by
-- ← session/call_handler.py          # imported by
+### domain/turn.py
+**class `Turn` (L1-45)**
+```python
+class Turn: ...
 ```
+```
+
+---
+
+## Docs Chunking (heading-aware)
+
+The `@brainbank/docs` plugin uses a heading-aware smart chunker inspired by [qmd](https://github.com/qmd-ai/qmd):
+
+- **Target:** ~3000 chars per chunk (~900 tokens)
+- **Break point scoring:** H1=100, H2=90, H3=80, code-fence-close=80, HR=60, blank=20, list-item=5
+- **Distance decay:** Score × (1 - (distance/window)² × 0.7) — prefers breaks near the target length
+- **Minimum chunk:** 200 chars (tiny chunks merged into previous)
+
+The docs plugin also implements `IndexablePlugin`, so it participates in `brain.index()` alongside code and git.
 
 ---
 
@@ -95,9 +109,9 @@ All indexing is **incremental by default** — only new or changed content is pr
 
 | Plugin | Change detection | What gets skipped |
 |--------|-----------------|-------------------|
-| **Code** | FNV-1a file hash | Unchanged files |
-| **Git** | Unique commit hash | Already-indexed commits |
-| **Docs** | SHA-256 content hash | Unchanged documents |
+| **Code** | FNV-1a file hash (fast, 32-bit) | Unchanged files |
+| **Git** | Unique commit hash + vector existence check | Already-indexed commits with vectors |
+| **Docs** | SHA-256 content hash (16 chars) | Unchanged documents with vectors |
 
 ```typescript
 await brain.index();  // → { indexed: 500, skipped: 0 }   first run
@@ -110,6 +124,10 @@ Use `--force` to re-index everything:
 ```bash
 brainbank index --force
 ```
+
+### HNSW Consistency
+
+Code and git plugins apply HNSW mutations **after** the DB transaction commits. If the transaction rolls back, the in-memory HNSW stays consistent with the database. Old chunk IDs are collected before the transaction, then `hnsw.remove()` + `hnsw.add()` run only on successful commit.
 
 ---
 
@@ -136,8 +154,14 @@ brainbank reembed
 | Parses git history | **Skipped** |
 | Re-chunks documents | **Skipped** |
 | Embeds text | ✓ |
-| Replaces vectors | ✓ |
-| Rebuilds HNSW | ✓ |
+| Replaces vectors | ✓ (atomic swap via temp table) |
+| Rebuilds HNSW | ✓ (reinit + reload from new BLOBs) |
+
+The reembed engine collects tables from two sources:
+1. **Plugins** implementing `ReembeddablePlugin` (code, git, docs provide `reembedConfig()`)
+2. **Core tables** always included: `kv_data`→`kv_vectors`
+
+Tables are deduplicated by `vectorTable` name (important for multi-repo where `code:frontend` and `code:backend` share the same `code_vectors` table).
 
 > BrainBank tracks provider metadata in the `embedding_meta` table. It auto-detects dimension mismatches and refuses to initialize — use `initialize({ force: true })` then `reembed()` to migrate.
 
@@ -145,7 +169,7 @@ brainbank reembed
 
 ## Multi-Project Isolation
 
-Each project has its own `.brainbank/` database. In multi-repo setups (same DB, different `code:frontend` / `code:backend` plugins), file paths are relative to each repo root — no collisions.
+Each project has its own `.brainbank/` database. In multi-repo setups (same DB, different `code:frontend` / `code:backend` plugins), file paths are relative to each repo root — no collisions. Same-type plugins share a single HNSW index (e.g. all `code:*` share `hnsw-code.index`).
 
 > **Current schema version: v6.** The code graph tables (`code_imports`, `code_symbols`, `code_refs`) were introduced in v5. Existing databases are auto-migrated via `CREATE TABLE IF NOT EXISTS` on first run.
 

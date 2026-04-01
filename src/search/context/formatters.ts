@@ -6,10 +6,10 @@
  */
 
 import type { SearchResult } from '@/types.ts';
-import { isCodeResult } from '@/types.ts';
 import type { CodeGraphProvider } from '../types.ts';
 
-// ── Code Results ────────────────────────────────────
+import { isCodeResult } from '@/types.ts';
+
 
 /** Format code search results grouped by file with call graph info. */
 export function formatCodeResults(codeHits: SearchResult[], parts: string[], codeGraph?: CodeGraphProvider): void {
@@ -61,7 +61,6 @@ function getCallAnnotation(result: SearchResult, codeGraph: CodeGraphProvider): 
     return infoParts.length > 0 ? `*(${infoParts.join(' | ')})*` : null;
 }
 
-// ── Import Graph Expansion ──────────────────────────
 
 /** Format import graph expansion results with code chunks. */
 export function formatCodeGraph(codeHits: SearchResult[], parts: string[], codeGraph?: CodeGraphProvider): void {

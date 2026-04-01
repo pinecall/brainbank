@@ -42,7 +42,7 @@ export class GitVectorSearch {
                     metadata: {
                         hash: r.hash, shortHash: r.short_hash,
                         author: r.author, date: r.date,
-                        files: JSON.parse(r.files_json ?? '[]'),
+                        files: JSON.parse(r.files_json ?? '[]') as string[],
                         additions: r.additions, deletions: r.deletions, diff: r.diff ?? undefined,
                     },
                 });

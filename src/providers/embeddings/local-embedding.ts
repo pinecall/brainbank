@@ -18,6 +18,18 @@ interface XenovaPipeline {
     (texts: string | string[], options: { pooling: string; normalize: boolean }): Promise<XenovaPipelineOutput>;
 }
 
+/** Configuration environment of @xenova/transformers. */
+interface XenovaEnv {
+    cacheDir: string;
+    allowLocalModels: boolean;
+}
+
+/** Shape of the @xenova/transformers module used here. */
+interface XenovaModule {
+    pipeline(task: string, model: string, options?: { quantized?: boolean }): Promise<XenovaPipeline>;
+    env: XenovaEnv;
+}
+
 export class LocalEmbedding implements EmbeddingProvider {
     readonly dims: number = 384;
 
@@ -42,7 +54,7 @@ export class LocalEmbedding implements EmbeddingProvider {
         if (this._pipelinePromise) return this._pipelinePromise;
 
         this._pipelinePromise = (async () => {
-            const mod = await import(/* webpackIgnore: true */ '@xenova/transformers' as string);
+            const mod = await import(/* webpackIgnore: true */ '@xenova/transformers' as string) as XenovaModule;
             const { pipeline, env } = mod;
             env.cacheDir = this._cacheDir;
             env.allowLocalModels = true;

@@ -5,9 +5,12 @@
  * auto-discovery of user plugins from .brainbank/plugins/.
  */
 
-import * as path from 'node:path';
-import * as fs from 'node:fs';
 import type { Plugin } from '@/plugin.ts';
+import type { EmbeddingProvider } from '@/types.ts';
+import type { ProjectConfig } from './config-loader.ts';
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { c, getFlag } from '../utils.ts';
 
 /** Plugin factory — accepts config, returns Plugin. */
@@ -84,11 +87,6 @@ export async function discoverFolderPlugins(): Promise<Plugin[]> {
 export function resetPluginCache(): void {
     _folderPluginsCache = NOT_LOADED;
 }
-
-// ── Provider Setup (merged from provider-setup.ts) ──
-
-import type { EmbeddingProvider } from '@/types.ts';
-import type { ProjectConfig } from './config-loader.ts';
 
 /** Resolve an embedding key string to an EmbeddingProvider instance. */
 export async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvider> {

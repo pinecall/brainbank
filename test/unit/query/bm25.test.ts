@@ -19,7 +19,6 @@ export const tests = {
 
         assert(names.includes('fts_code'), 'fts_code table should exist');
         assert(names.includes('fts_commits'), 'fts_commits table should exist');
-        assert(names.includes('fts_patterns'), 'fts_patterns table should exist');
         assert(names.includes('fts_docs'), 'fts_docs table should exist');
 
         db.close();
@@ -87,22 +86,7 @@ export const tests = {
         db.close();
     },
 
-    async 'KeywordSearch finds memory patterns'(assert: any) {
-        const db = new Database(tmpDb('bm25-mem'));
 
-        db.prepare(`
-            INSERT INTO memory_patterns (task_type, task, approach, outcome, success_rate)
-            VALUES ('api', 'implement rate limiting middleware', 'used express-rate-limit with Redis store', 'working rate limiter', 0.9)
-        `).run();
-
-        const bm25 = new KeywordSearch(db);
-        const results = await bm25.search('rate limiting');
-
-        assert(results.length > 0, 'should find pattern');
-        assert.equal(results[0].type, 'pattern');
-
-        db.close();
-    },
 
     async 'BM25 returns empty for no matches'(assert: any) {
         const db = new Database(tmpDb('bm25-empty'));

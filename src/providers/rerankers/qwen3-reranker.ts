@@ -30,6 +30,17 @@ interface LlamaRankingContext {
     dispose(): Promise<void>;
 }
 
+/** Engine returned by getLlama(). */
+interface LlamaEngine {
+    loadModel(opts: { modelPath: string }): Promise<LlamaModel>;
+}
+
+/** Shape of the node-llama-cpp module used here. */
+interface NodeLlamaCppModule {
+    getLlama(): Promise<LlamaEngine>;
+    resolveModelFile(uri: string, cacheDir: string): Promise<string>;
+}
+
 // Default model — Qwen3-Reranker-0.6B quantized to Q8_0 (~640MB)
 const DEFAULT_MODEL_URI = 'hf:ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF/qwen3-reranker-0.6b-q8_0.gguf';
 
@@ -79,7 +90,7 @@ export class Qwen3Reranker implements Reranker {
                 // Dynamic import — node-llama-cpp is an optional peer dependency.
                 // String indirection prevents DTS from resolving the specifier at build time.
                 const llamaModule = 'node-llama-cpp';
-                const { getLlama, resolveModelFile } = await import(/* webpackIgnore: true */ llamaModule);
+                const { getLlama, resolveModelFile } = await import(/* webpackIgnore: true */ llamaModule) as NodeLlamaCppModule;
 
                 // Ensure cache directory exists
                 if (!existsSync(this._cacheDir)) {

@@ -146,7 +146,6 @@ export class PerplexityContextEmbedding implements EmbeddingProvider {
     }
 }
 
-// ── Response Types ──────────────────────────────────
 
 interface PerplexityContextResponse {
     data: Array<{

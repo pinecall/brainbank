@@ -10,8 +10,9 @@
  *   const brain = new BrainBank().use(docs());
  */
 
-import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult, ReembedTable } from 'brainbank';
+import type { Plugin, PluginContext, EmbeddingProvider, DocumentCollection, SearchResult, ReembedTable, IndexResult } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
+
 import * as path from 'node:path';
 import { DocsIndexer } from './docs-indexer.js';
 import { DocumentSearch } from './document-search.js';
@@ -66,13 +67,36 @@ class DocsPlugin implements Plugin {
 
     /** List all registered collections. */
     listCollections(): DocumentCollection[] {
-        return (this._db.prepare('SELECT * FROM collections').all() as any[]).map(row => ({
+        return (this._db.prepare('SELECT * FROM collections').all() as { name: string; path: string; pattern: string; ignore_json: string; context: string | null }[]).map(row => ({
             name: row.name,
             path: row.path,
             pattern: row.pattern,
-            ignore: JSON.parse(row.ignore_json),
-            context: row.context,
+            ignore: JSON.parse(row.ignore_json) as string[],
+            context: row.context ?? undefined,
         }));
+    }
+
+    /**
+     * IndexablePlugin implementation — allows docs to participate in brain.index().
+     * Delegates to indexDocs() and aggregates per-collection results.
+     */
+    async index(options?: { forceReindex?: boolean; onProgress?: (msg: string, cur: number, total: number) => void }): Promise<IndexResult> {
+        const results = await this.indexDocs({
+            onProgress: options?.onProgress
+                ? (col, file, cur, total) => options.onProgress!(file, cur, total)
+                : undefined,
+        });
+
+        let indexed = 0;
+        let skipped = 0;
+        let chunks = 0;
+        for (const stat of Object.values(results)) {
+            indexed += stat.indexed;
+            skipped += stat.skipped;
+            chunks += stat.chunks;
+        }
+
+        return { indexed, skipped, chunks };
     }
 
     /** Index all (or specific) collections. Incremental. */
@@ -143,14 +167,14 @@ class DocsPlugin implements Plugin {
 
     /** List all context entries. */
     listContexts(): { collection: string; path: string; context: string }[] {
-        return this._db.prepare('SELECT * FROM path_contexts').all() as any[];
+        return this._db.prepare('SELECT * FROM path_contexts').all() as { collection: string; path: string; context: string }[];
     }
 
-    stats(): Record<string, any> {
+    stats(): Record<string, number | string> {
         return {
-            collections: (this._db.prepare('SELECT COUNT(*) as c FROM collections').get() as any).c,
-            documents: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM doc_chunks').get() as any).c,
-            chunks: (this._db.prepare('SELECT COUNT(*) as c FROM doc_chunks').get() as any).c,
+            collections: (this._db.prepare('SELECT COUNT(*) as c FROM collections').get() as { c: number }).c,
+            documents: (this._db.prepare('SELECT COUNT(DISTINCT file_path) as c FROM doc_chunks').get() as { c: number }).c,
+            chunks: (this._db.prepare('SELECT COUNT(*) as c FROM doc_chunks').get() as { c: number }).c,
             hnswSize: this.hnsw.size,
         };
     }

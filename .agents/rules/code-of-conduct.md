@@ -4,7 +4,67 @@ trigger: always_on
 
 # BrainBank — Code of Conduct
 
-## 1. Class vs Free Function
+## 1. Zero `any` in Production Code
+
+**Every `any` disables the type checker for everything it touches. No exceptions.**
+
+```typescript
+// ❌ Properties
+private _lib: any = null;
+
+// ✅ Local interface for external shapes
+interface HnswlibModule {
+    default?: { HierarchicalNSW: new (space: string, dims: number) => HnswlibIndex };
+}
+private _lib: HnswlibModule | null = null;
+```
+
+```typescript
+// ❌ Dynamic imports — mod is any, everything destructured is any
+const mod = await import('some-lib');
+
+// ✅ Cast at the boundary, once
+const mod = await import('some-lib') as SomeLibModule;
+```
+
+```typescript
+// ❌ catch (err: any)
+} catch (err: any) { if (err.name === 'AbortError') ... }
+
+// ✅ catch (err: unknown) + instanceof narrowing
+} catch (err: unknown) { if (err instanceof Error && err.name === 'AbortError') ... }
+```
+
+```typescript
+// ❌ Record<string, any>
+metadata?: Record<string, any>;
+
+// ✅ Record<string, unknown> — forces narrowing at point of use
+metadata?: Record<string, unknown>;
+```
+
+```typescript
+// ❌ JSON.parse returns any — infects the expression
+const files = JSON.parse(row.files_json);
+
+// ✅ Cast to the type the schema guarantees
+const files = JSON.parse(row.files_json) as string[];
+const meta  = JSON.parse(row.meta_json) as Record<string, unknown>;
+```
+
+```typescript
+// ❌ Function params
+function printResults(results: any[]): void {}
+
+// ✅ Use existing types
+function printResults(results: SearchResult[]): void {}
+```
+
+**Rule of containment:** `as` casts belong at data boundaries (dynamic import, JSON.parse, fetch response). Never inside business logic.
+
+---
+
+## 2. Class vs Free Function
 
 **Has persistent instance state → CLASS. No state → FREE FUNCTION. No state + just passes things through → DELETE IT.**
 
@@ -13,24 +73,61 @@ trigger: always_on
 class KVService { private _collections = new Map() }
 
 // ✅ Free function — receives everything, returns result, done
-export async function reembedAll(db, embedding, hnswMap, opts): Promise<ReembedResult> {}
+export async function reembedAll(db, embedding, hnswMap): Promise<ReembedResult> {}
 
-// ❌ Class instantiated once and discarded
-const x = new Foo(config); const result = await x.run(); // x never used again
+// ❌ Class instantiated once and discarded — should be a free function
+const x = new Orchestrator(config); await x.run(); // x never used again
 ```
 
 ---
 
-## 2. Folder Contracts
+## 3. Import Rules
+
+**Layer direction — imports only flow downward:**
+
+```
+brainbank.ts
+    ↓
+engine/  services/  cli/
+    ↓
+search/  providers/  db/
+    ↓
+lib/  types.ts  constants.ts  plugin.ts
+```
+
+**Path rules:**
+- Same directory → `./` always
+- Different directory → `@/` always
+- `../` → **NEVER**
+
+**Import ordering — always this order:**
+
+```typescript
+// 1. Type-only imports (grouped: @/ first, then ./)
+import type { Database } from '@/db/database.ts';
+import type { SearchOptions } from './types.ts';
+
+// 2. Node built-ins
+import { EventEmitter } from 'node:events';
+
+// 3. Value imports (grouped: @/ first, then ./)
+import { PLUGIN } from '@/constants.ts';
+import { SearchAPI } from './search-api.ts';
+```
+
+**Never mix `import type` with value imports in the same block.**
+
+---
+
+## 4. Folder Contracts
 
 | Folder | Pattern | Imports from |
 |---|---|---|
-| `lib/` | Pure functions only, zero state | `types.ts` only |
+| `lib/` | Pure functions, zero state | `types.ts` only |
 | `db/` | `Database` class + free functions | `lib/`, `types.ts` |
-| `providers/` | Stateful provider classes + util functions | `lib/`, `db/` |
+| `providers/` | Stateful provider classes + utils | `lib/`, `db/` |
 | `services/` | **Classes with real instance state only** | `lib/`, `db/`, `providers/` |
-| `engine/` | Orchestrator classes + stateless free functions | all lower layers |
-| `bootstrap/` | Init free functions, no disposable classes | all lower layers |
+| `engine/` | Orchestrators + stateless free functions | all lower layers |
 | `search/` | `SearchStrategy` classes + pure formatters | `lib/`, `db/`, `providers/` |
 | `cli/` | One free function per command | all layers |
 
@@ -38,71 +135,16 @@ const x = new Foo(config); const result = await x.run(); // x never used again
 
 ---
 
-## 3. Import Direction
-
-```
-brainbank.ts
-    ↓
-bootstrap/  engine/  services/  cli/
-    ↓
-search/  providers/  db/
-    ↓
-lib/  types.ts  constants.ts  plugin.ts
-```
-
-Lower layers never import from higher layers.
-
-```typescript
-// Same directory → relative path always
-import { foo } from './foo'           // ✅
-import { foo } from '@/services/foo'  // ❌ (when already in services/)
-
-// Different directory → @/ alias always
-import { Database } from '@/db/database'  // ✅
-```
-
----
-
-## 4. Zero `any` in Production Code
-
-```typescript
-// ❌ Never
-private _index: any = null
-export function printResults(results: any[]): void {}
-
-// ✅ Create a minimal interface instead
-interface HnswLibIndex {
-    addPoint(vector: number[], id: number): void
-    searchKnn(query: number[], k: number): { neighbors: number[]; distances: number[] }
-}
-
-// ✅ Use the existing type
-export function printResults(results: SearchResult[]): void {}
-```
-
----
-
 ## 5. Error Handling — No Silent Swallows
 
 ```typescript
-// ❌ Silent swallow — the problem disappears without a trace
+// ❌ Silent swallow
 } catch { return false }
 
-// ✅ Expected errors: document why swallow is correct + re-throw everything else
+// ✅ Expected errors: document why + re-throw unexpected
 } catch (e) {
-    if (!isFTSError(e)) throw e  // re-throw unexpected
+    if (!isFTSError(e)) throw e;
     // FTS5 parse error — invalid query, empty result is correct
-}
-
-// ✅ Infrastructure level: propagate to caller
-} catch (err) {
-    return { ok: false, error: err instanceof Error ? err : new Error(String(err)) }
-}
-
-// ✅ CLI level: always log for the user
-} catch (err) {
-    console.error(c.red(`Error: ${err instanceof Error ? err.message : String(err)}`))
-    process.exit(1)
 }
 ```
 
@@ -110,13 +152,9 @@ export function printResults(results: SearchResult[]): void {}
 
 ## 6. Public Contracts — Interfaces, Not Concrete Classes
 
+Lower layers (`plugin.ts`, `types.ts`) depend on interfaces. Concrete classes are upper-layer details.
+
 ```typescript
-// ❌ plugin.ts importing concrete class
-import { Collection } from './services/collection'
-
-// ✅ plugin.ts depends on interface
-import type { ICollection } from './types'
-
 // ✅ KVService returns interface, not implementation
 collection(name: string): ICollection  // not Collection
 ```
@@ -125,42 +163,25 @@ collection(name: string): ICollection  // not Collection
 
 ## 7. Naming
 
-**Files:** `kebab-case` for free functions, reflects content (`hnsw-loader.ts`, `result-formatters.ts`).
+**Files:** `kebab-case` — `hnsw-loader.ts`, `keyword-search.ts`
 
-**Classes:**
-```
-SomethingService  → stateful, lives in services/
-SomethingAPI      → orchestrator with injected deps, lives in engine/
-SomethingSearch   → implements SearchStrategy, lives in search/
-SomethingProvider → external integration, lives in providers/
-SomethingIndex    → vector index, lives in providers/vector/
-SomethingBuilder  → assembles output
-SomethingRegistry → manages a collection of things
-```
+**Classes:** `Service` (stateful), `API` (orchestrator), `Search` (strategy), `Provider` (external), `Builder`, `Registry`
 
-**Functions:**
-```
-buildSomething()   → creates and returns, no side effects
-loadSomething()    → reads from storage
-saveSomething()    → writes to storage
-createSomething()  → factory, may have side effects
-formatSomething()  → pure string transformation
-resolveSomething() → looks up / resolves a value
-```
+**Functions:** `build` (pure), `load` (read), `save` (write), `create` (factory), `format` (string transform), `resolve` (lookup)
 
-**Private fields:** always `_` prefix (`_db`, `_collections`, `_initialized`).
+**Private fields:** always `_` prefix — `_db`, `_collections`, `_initialized`
 
 ---
 
-## 8. Parameters — Max 4, then Object
+## 8. Parameters — Max 4, Then Object
 
 ```typescript
 // ❌ 7 parameters
-function buildPluginContext(config, db, embedding, sharedHnsw, skipVectorLoad, kvService, privateHnsw)
+function buildCtx(config, db, embedding, sharedHnsw, skip, kv, private)
 
 // ✅ Typed object
-interface PluginContextDeps { config; db; embedding; sharedHnsw; skipVectorLoad; kvService; privateHnsw }
-function buildPluginContext(deps: PluginContextDeps): PluginContext
+interface CtxDeps { config; db; embedding; sharedHnsw; skip; kv; private }
+function buildCtx(deps: CtxDeps): PluginContext
 ```
 
 ---
@@ -168,18 +189,18 @@ function buildPluginContext(deps: PluginContextDeps): PluginContext
 ## 9. Plugin Capabilities — Composition over Inheritance
 
 ```typescript
-// ✅ Each capability is a separate interface with a type guard
+// ✅ Separate interface + type guard per capability
 interface IndexablePlugin extends Plugin {
-    index(options?: IndexOptions): Promise<IndexResult>
+    index(options?: IndexOptions): Promise<IndexResult>;
 }
 export function isIndexable(p: Plugin): p is IndexablePlugin {
-    return typeof (p as IndexablePlugin).index === 'function'
+    return typeof (p as IndexablePlugin).index === 'function';
 }
 
 // ✅ Always narrow before calling
 for (const mod of registry.all) {
-    if (!isIndexable(mod)) continue
-    await mod.index(options)
+    if (!isIndexable(mod)) continue;
+    await mod.index(options);
 }
 ```
 
@@ -188,15 +209,22 @@ for (const mod of registry.all) {
 ## 10. Pre-commit Checks
 
 ```bash
-npx tsc --noEmit                        # zero type errors
+# 1. Zero type errors
+npx tsc --noEmit
 
-# zero same-dir @/ imports
+# 2. Zero any in production
+grep -rn ": any\b\|as any\b\| any\[\]" src/ --include="*.ts"
+
+# 3. Zero same-dir @/ imports
 grep -rn "from '@/services/" src/services/
 grep -rn "from '@/providers/" src/providers/
 
-# zero any in production code
-grep -rn ": any\|as any\|any\[\]" src/ --include="*.ts"
-
-# zero empty catches — review each result manually
+# 4. Zero empty catches — review manually
 grep -rn "} catch {$" src/
+
+# 5. Zero JSON.parse without cast
+grep -rn "JSON\.parse(" src/ --include="*.ts" | grep -v " as "
+
+# 6. Zero dynamic imports without module cast
+grep -rn "await import(" src/ --include="*.ts" | grep -v ") as "
 ```

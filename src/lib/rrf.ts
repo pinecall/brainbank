@@ -79,8 +79,6 @@ function resultKey(r: SearchResult): string {
             return `code:${r.filePath}:${r.metadata.startLine}-${r.metadata.endLine}`;
         case 'commit':
             return `commit:${r.metadata.hash || r.metadata.shortHash}`;
-        case 'pattern':
-            return `pattern:${r.metadata.taskType}:${r.content?.slice(0, 60)}`;
         case 'document':
             return `document:${r.filePath ?? ''}:${r.metadata.collection ?? ''}:${r.metadata.seq ?? ''}:${r.content?.slice(0, 80)}`;
         case 'collection':

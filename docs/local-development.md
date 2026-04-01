@@ -42,11 +42,15 @@ Builds the core (`tsup`) and all workspace packages (`npm run build --workspaces
 # Type check (zero errors expected)
 npx tsc --noEmit
 
-# Unit tests (~200 tests)
+# Unit tests
 npm test
 
-# Integration tests (downloads embedding model, ~30s)
+# Integration tests (downloads embedding model on first run, ~30s)
 npm run test:integration
+
+# Filter by name
+npm test -- --filter reembed
+npm test -- --integration --filter search
 ```
 
 ---
@@ -57,13 +61,39 @@ The project uses **npm workspaces** (`"workspaces": ["packages/*"]` in root `pac
 
 | What | How |
 |------|-----|
-| `@brainbank/code`, `git`, `docs`, `memory`, `mcp` | Auto-symlinked by npm to `node_modules/@brainbank/*` |
+| `@brainbank/code`, `git`, `docs`, `mcp` | Auto-symlinked by npm to `node_modules/@brainbank/*` |
 | `brainbank` peer dep in plugins | Resolved by `postinstall` script → symlink to local root |
 | Plugin builds | `npm run build` runs `tsup` in each workspace via `--workspaces` |
 
 ### Why the postinstall script?
 
 In npm workspaces, workspace packages auto-symlink. But `brainbank` itself is the **root** package, not a workspace member. When plugins declare `peerDependencies: { "brainbank": ">=0.7.0" }`, npm fetches the published version from the registry. The `postinstall` script replaces that with a symlink to the local root so plugins always build and run against the dev version.
+
+---
+
+## Project Structure
+
+```
+brainbank/
+├── src/                    ← Core library (published as "brainbank")
+│   ├── brainbank.ts        ← Main facade (BrainBank class)
+│   ├── plugin.ts           ← Plugin interfaces + type guards
+│   ├── types.ts            ← All TypeScript interfaces
+│   ├── engine/             ← IndexAPI, SearchAPI, reembed
+│   ├── db/                 ← Database, schema, embedding-meta, row types
+│   ├── providers/          ← Embeddings, rerankers, vector (HNSW)
+│   ├── search/             ← Vector search, keyword, context builder, MMR
+│   ├── services/           ← Collection, KVService, PluginRegistry, Watch
+│   ├── lib/                ← FTS, math, RRF, rerank, languages
+│   └── cli/                ← CLI dispatcher, factory, commands
+├── packages/
+│   ├── code/               ← @brainbank/code (tree-sitter chunking)
+│   ├── git/                ← @brainbank/git (commit indexing)
+│   ├── docs/               ← @brainbank/docs (markdown collections)
+│   └── mcp/                ← @brainbank/mcp (MCP server)
+├── test/                   ← Unit + integration tests
+└── docs/                   ← Documentation
+```
 
 ---
 

@@ -39,9 +39,27 @@ brainbank hsearch "cancel job confirmation" --repo ~/projects
 
 ---
 
+## Detection Logic
+
+The CLI's `builtin-registration.ts` checks for a root `.git/` directory. If absent, it scans immediate subdirectories for `.git/` folders (excluding dot-directories and `node_modules`). Each detected sub-repo gets namespaced plugin instances.
+
+---
+
 ## Namespaced Plugins
 
-Each sub-repository gets its own namespaced plugin instances (e.g., `code:frontend`, `git:backend`). Same-type plugins share a single HNSW vector index for efficient memory usage and unified search.
+Each sub-repository gets its own namespaced plugin instances:
+
+| Sub-repo | Code plugin | Git plugin |
+|----------|------------|------------|
+| `webapp-frontend/` | `code:webapp-frontend` | `git:webapp-frontend` |
+| `webapp-backend/` | `code:webapp-backend` | `git:webapp-backend` |
+| `webapp-shared/` | `code:webapp-shared` | `git:webapp-shared` |
+
+Same-type plugins share a single HNSW vector index for efficient memory usage and unified search:
+- All `code:*` plugins share `_sharedHnsw['code']` → persisted as `hnsw-code.index`
+- All `git:*` plugins share `_sharedHnsw['git']` → persisted as `hnsw-git.index`
+
+Only the first plugin to initialize (where `isNew === true`) calls `loadVectors()`. Subsequent same-type plugins skip the load since the shared index is already populated.
 
 ---
 
@@ -65,6 +83,31 @@ await brain.index();
 const results = await brain.hybridSearch('authentication guard');
 // → Results from both frontend and backend
 ```
+
+### Plugin Registry Behavior
+
+```typescript
+brain.has('code');                   // true — prefix match
+brain.has('code:frontend');          // true — exact match
+brain.plugin('code');               // returns first code:* plugin
+brain.plugins;                      // ['code:frontend', 'code:backend', 'git:frontend', 'git:backend']
+```
+
+---
+
+## Per-Plugin Embedding Overrides
+
+In multi-repo, you can override embeddings per plugin — the CLI reads from `config.json`:
+
+```jsonc
+{
+  "code": { "embedding": "openai" },       // all code:* plugins use OpenAI
+  "git":  { "embedding": "local" },        // all git:* plugins use local
+  "docs": { "embedding": "perplexity-context" }
+}
+```
+
+The CLI also merges ignore patterns: `config.code.ignore` + `--ignore` flag apply to all code plugins.
 
 ---
 

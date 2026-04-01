@@ -5,7 +5,6 @@
  * Controls which files get indexed and how they're chunked.
  */
 
-// ── Supported Extensions ────────────────────────────
 
 export const SUPPORTED_EXTENSIONS: Record<string, string> = {
     // TypeScript / JavaScript
@@ -70,7 +69,6 @@ export const SUPPORTED_EXTENSIONS: Record<string, string> = {
     '.zig': 'zig',
 };
 
-// ── Ignore Directories ──────────────────────────────
 
 export const IGNORE_DIRS = new Set([
     // Package managers
@@ -132,7 +130,6 @@ export const IGNORE_DIRS = new Set([
     '.DS_Store',
 ]);
 
-// ── Ignore Files ────────────────────────────────────
 
 export const IGNORE_FILES = new Set([
     'package-lock.json',
@@ -146,7 +143,6 @@ export const IGNORE_FILES = new Set([
     'go.sum',
 ]);
 
-// ── Helpers ─────────────────────────────────────────
 
 import path from 'node:path';
 

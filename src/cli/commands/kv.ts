@@ -9,7 +9,6 @@ export async function cmdKv(): Promise<void> {
     const pos = stripFlags(args);
     const sub = pos[1];
 
-    // ── add ─────────────────────────────────────────
     if (sub === 'add') {
         const collName = pos[2];
         const content = pos.slice(3).join(' ');
@@ -30,7 +29,6 @@ export async function cmdKv(): Promise<void> {
         return;
     }
 
-    // ── search ──────────────────────────────────────
     if (sub === 'search') {
         const collName = pos[2];
         const query = pos.slice(3).join(' ');
@@ -63,7 +61,6 @@ export async function cmdKv(): Promise<void> {
         return;
     }
 
-    // ── list ────────────────────────────────────────
     if (sub === 'list') {
         const collName = pos[2];
         const limit = parseInt(getFlag('limit') || '20', 10);
@@ -102,7 +99,6 @@ export async function cmdKv(): Promise<void> {
         return;
     }
 
-    // ── trim ────────────────────────────────────────
     if (sub === 'trim') {
         const collName = pos[2];
         const keep = parseInt(getFlag('keep') || '0', 10);
@@ -121,7 +117,6 @@ export async function cmdKv(): Promise<void> {
         return;
     }
 
-    // ── clear ───────────────────────────────────────
     if (sub === 'clear') {
         const collName = pos[2];
         if (!collName) {

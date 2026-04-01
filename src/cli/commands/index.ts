@@ -5,11 +5,14 @@
  * with checkboxes to select which modules to index. Use --yes to skip.
  */
 
+import type { ScanResult } from './scan.ts';
+import type { DocsPlugin } from '@/plugin.ts';
+
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { c, args, getFlag, hasFlag } from '@/cli/utils.ts';
 import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory/index.ts';
-import { scanRepo, type ScanResult } from './scan.ts';
+import { scanRepo } from './scan.ts';
 
 export async function cmdIndex(): Promise<void> {
     const repoPath = args[1] || '.';
@@ -19,17 +22,15 @@ export async function cmdIndex(): Promise<void> {
     const docsPath = getFlag('docs');
     const skipPrompt = hasFlag('yes') || hasFlag('y');
 
-    // ── Phase 1: Scan ──────────────────────────────
 
     const scan = scanRepo(repoPath);
     printScanTree(scan, depth);
 
-    // ── Phase 2: Select modules ────────────────────
 
-    let modules: ('code' | 'git' | 'docs')[];
+    let modules: string[];
 
     if (onlyRaw) {
-        modules = onlyRaw.split(',').map(s => s.trim()) as typeof modules;
+        modules = onlyRaw.split(',').map(s => s.trim());
     } else if (skipPrompt) {
         modules = buildDefaultModules(scan);
     } else {
@@ -59,7 +60,6 @@ export async function cmdIndex(): Promise<void> {
         await offerSaveConfig(scan.repoPath, modules);
     }
 
-    // ── Phase 3: Index ─────────────────────────────
 
     console.log(c.bold(`\n━━━ Indexing: ${modules.join(', ')} ━━━`));
 
@@ -72,7 +72,8 @@ export async function cmdIndex(): Promise<void> {
         const absDocsPath = path.resolve(docsPath);
         const collName = path.basename(absDocsPath);
         try {
-            await brain.docs?.addCollection({
+            const docsPlugin = brain.plugin<DocsPlugin>('docs');
+            await docsPlugin?.addCollection({
                 name: collName,
                 path: absDocsPath,
                 pattern: '**/*.md',
@@ -87,36 +88,38 @@ export async function cmdIndex(): Promise<void> {
     const result = await brain.index({
         modules,
         forceReindex: force,
-        gitDepth: depth,
+        pluginOptions: { depth },
         onProgress: (stage, msg) => {
             process.stdout.write(`\r  ${c.cyan(stage.toUpperCase())} ${msg}                    `);
         },
     });
 
     console.log('\n');
-    if (result.code) {
-        console.log(`  ${c.green('Code')}: ${result.code.indexed} indexed, ${result.code.skipped} skipped, ${result.code.chunks ?? 0} chunks`);
-    }
-    if (result.git) {
-        console.log(`  ${c.green('Git')}:  ${result.git.indexed} indexed, ${result.git.skipped} skipped`);
-    }
-    if (result.docs) {
-        for (const [name, stat] of Object.entries(result.docs)) {
-            console.log(`  ${c.green('Docs')}: [${name}] ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
+    for (const [name, value] of Object.entries(result)) {
+        if (!value) continue;
+        const v = value as Record<string, unknown>;
+        if (typeof v.indexed === 'number') {
+            const parts = [`${v.indexed} indexed`, `${v.skipped ?? 0} skipped`];
+            if (typeof v.chunks === 'number') parts.push(`${v.chunks} chunks`);
+            console.log(`  ${c.green(name)}: ${parts.join(', ')}`);
+        } else {
+            console.log(`  ${c.green(name)}: done`);
         }
     }
 
     const stats = brain.stats();
     console.log(`\n  ${c.bold('Totals')}:`);
-    if (stats.code) console.log(`    Code chunks:  ${stats.code.chunks}`);
-    if (stats.git) console.log(`    Git commits:  ${stats.git.commits}`);
-    if (stats.git) console.log(`    Co-edit pairs: ${stats.git.coEdits}`);
-    if (stats.documents) console.log(`    Documents:    ${stats.documents.documents}`);
+    for (const [name, s] of Object.entries(stats)) {
+        if (!s || typeof s !== 'object') continue;
+        const entries = Object.entries(s as Record<string, unknown>)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ');
+        console.log(`    ${name}: ${entries}`);
+    }
 
     brain.close();
 }
 
-// ── Scan Tree Output ────────────────────────────────
 
 function printScanTree(scan: ScanResult, depth: number): void {
     console.clear();
@@ -192,11 +195,10 @@ function printScanTree(scan: ScanResult, depth: number): void {
     console.log('');
 }
 
-// ── Checkbox Prompt ─────────────────────────────────
 
 /** Build the default list of available modules based on scan. */
-function buildDefaultModules(scan: ScanResult): ('code' | 'git' | 'docs')[] {
-    const m: ('code' | 'git' | 'docs')[] = [];
+function buildDefaultModules(scan: ScanResult): string[] {
+    const m: string[] = [];
     if (scan.code.total > 0) m.push('code');
     if (scan.git) m.push('git');
     if (scan.docs.length > 0) m.push('docs');
@@ -204,11 +206,11 @@ function buildDefaultModules(scan: ScanResult): ('code' | 'git' | 'docs')[] {
 }
 
 /** Interactive checkbox prompt via @inquirer/prompts. */
-async function promptModules(scan: ScanResult): Promise<('code' | 'git' | 'docs')[]> {
+async function promptModules(scan: ScanResult): Promise<string[]> {
     const { checkbox } = await import('@inquirer/prompts');
     console.log(c.dim('  ─────────────────────────────────────────\n'));
 
-    type ModuleName = 'code' | 'git' | 'docs';
+    type ModuleName = string;
     const choices: { name: string; value: ModuleName; checked: boolean; disabled?: string }[] = [];
 
     if (scan.code.total > 0) {
@@ -263,7 +265,6 @@ async function promptModules(scan: ScanResult): Promise<('code' | 'git' | 'docs'
     });
 }
 
-// ── Helpers ─────────────────────────────────────────
 
 function timeSince(date: Date): string {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -277,7 +278,7 @@ function timeSince(date: Date): string {
 }
 
 /** Offer to generate .brainbank/config.json from the selected modules. */
-async function offerSaveConfig(repoPath: string, modules: ('code' | 'git' | 'docs')[]): Promise<void> {
+async function offerSaveConfig(repoPath: string, modules: string[]): Promise<void> {
     const { confirm, select } = await import('@inquirer/prompts');
     const shouldSave = await confirm({
         message: 'Save selection to .brainbank/config.json?',

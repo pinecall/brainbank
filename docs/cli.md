@@ -88,6 +88,7 @@ brainbank index [path] --only code,git      # Skip selection, index code + git
 brainbank index [path] --force              # Force re-index everything
 brainbank index [path] --depth 200          # Limit git commit depth
 brainbank index [path] --docs ~/docs        # Include a docs folder
+brainbank index [path] --ignore "sdk/**,vendor/**"  # Custom ignore patterns
 ```
 
 > **Multi-repo:** If `[path]` contains multiple Git subdirectories (no root `.git/`), BrainBank auto-detects them and indexes all into one shared DB. See [Multi-Repo](multi-repo.md).
@@ -117,6 +118,8 @@ brainbank hsearch "auth" --code 3 --git 3            # balanced mix
 brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only
 brainbank hsearch "bug" --notes 5 --git 3            # custom plugin + git
 ```
+
+Any `--<name> <number>` flag not in the known non-source flags (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--only`, `--docs-path`, `--mode`, `--limit`, `--ignore`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter.
 
 ---
 
@@ -153,8 +156,8 @@ brainbank kv add decisions "ADR: Fastify over Express. 2x throughput, schema val
 # Search past decisions
 brainbank kv search decisions "which web framework"
 
-# Store conversation summaries
-brainbank kv add conversations "Refactored auth to AuthService with DI."
+# Search modes: --mode hybrid (default), keyword, vector
+brainbank kv search decisions "caching" --mode keyword
 
 # Lifecycle management
 brainbank kv trim decisions --keep 50       # keep 50 most recent
@@ -217,9 +220,10 @@ brainbank serve                             # Start MCP server (stdio)
 | `--force` | Force re-index everything |
 | `--depth <n>` | Git commit depth |
 | `--<source> <n>` | Source filter (e.g. `--code 10 --git 0`) |
-| `--ignore <globs>` | Glob patterns to exclude |
+| `--ignore <globs>` | Glob patterns to exclude (comma-separated) |
 | `--collection <name>` | Target collection |
 | `--pattern <glob>` | File pattern for docs |
 | `--context <desc>` | Context description |
 | `--reranker <name>` | Reranker (`qwen3` or `none`) |
 | `--embedding <key>` | Embedding provider (`local`, `openai`, `perplexity`, `perplexity-context`) |
+| `--yes` / `-y` | Skip interactive prompts |

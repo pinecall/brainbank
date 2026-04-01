@@ -14,11 +14,13 @@
  */
 
 import type { Database } from './db/database.ts';
-import type { EmbeddingProvider, SearchResult, IndexResult, ProgressCallback } from './types.ts';
 import type { HNSWIndex } from './providers/vector/hnsw-index.ts';
-import type { ResolvedConfig, DocumentCollection, ICollection } from './types.ts';
+import type { DomainVectorSearch } from './search/types.ts';
+import type {
+    EmbeddingProvider, SearchResult, IndexResult, ProgressCallback,
+    ResolvedConfig, DocumentCollection, ICollection,
+} from './types.ts';
 
-// ── Plugin Context ────────────────────────────────
 // Provided to each plugin during initialization.
 
 export interface PluginContext {
@@ -46,7 +48,6 @@ export interface PluginContext {
     collection(name: string): ICollection;
 }
 
-// ── Core Plugin Interface ─────────────────────────
 // Minimal contract: name + initialize. All capabilities are expressed
 // via composed interfaces below.
 
@@ -61,7 +62,6 @@ export interface Plugin {
     close?(): void;
 }
 
-// ── Capability Interfaces ──────────────────────────
 // Implemented by plugins that support specific capabilities.
 // Use type guards below to check at runtime.
 
@@ -88,7 +88,6 @@ export interface WatchablePlugin extends Plugin {
     watchPatterns(): string[];
 }
 
-// ── Type Guards ────────────────────────────────────
 
 /** Check if a plugin can scan/index content. */
 export function isIndexable(i: Plugin): i is IndexablePlugin {
@@ -129,13 +128,6 @@ export function isDocsPlugin(i: Plugin): i is DocsPlugin {
         && typeof (i as DocsPlugin).listCollections === 'function';
 }
 
-// ── Structural Capability Interfaces ──────────────
-
-/** Plugin that exposes a shared HNSW index and vector cache (e.g. memory). */
-export interface HnswPlugin extends Plugin {
-    hnsw: HNSWIndex;
-    vecCache: Map<number, Float32Array>;
-}
 
 /** Plugin that provides co-edit suggestions (e.g. git). */
 export interface CoEditPlugin extends Plugin {
@@ -144,17 +136,11 @@ export interface CoEditPlugin extends Plugin {
     };
 }
 
-/** Check if a plugin exposes a shared HNSW index. */
-export function isHnswPlugin(p: Plugin): p is HnswPlugin {
-    return 'hnsw' in p && 'vecCache' in p;
-}
-
 /** Check if a plugin provides co-edit suggestions. */
 export function isCoEditPlugin(p: Plugin): p is CoEditPlugin {
     return 'coEdits' in p && typeof (p as CoEditPlugin).coEdits?.suggest === 'function';
 }
 
-// ── Re-embed Support ──────────────────────────────
 
 /** Table descriptor for re-embedding — maps text rows to vector BLOBs. */
 export interface ReembedTable {
@@ -181,4 +167,27 @@ export interface ReembeddablePlugin extends Plugin {
 /** Check if a plugin supports re-embedding. */
 export function isReembeddable(p: Plugin): p is ReembeddablePlugin {
     return typeof (p as ReembeddablePlugin).reembedConfig === 'function';
+}
+
+
+/** Plugin that provides a domain-specific vector search strategy. */
+export interface VectorSearchPlugin extends Plugin {
+    /** Create the domain vector search (called during SearchAPI wiring). */
+    createVectorSearch(): DomainVectorSearch | undefined;
+}
+
+/** Check if a plugin provides a domain vector search. */
+export function isVectorSearchPlugin(p: Plugin): p is VectorSearchPlugin {
+    return typeof (p as VectorSearchPlugin).createVectorSearch === 'function';
+}
+
+/** Plugin that contributes sections to the context builder output. */
+export interface ContextFormatterPlugin extends Plugin {
+    /** Append formatted markdown sections to `parts`. */
+    formatContext(results: SearchResult[], parts: string[], options?: Record<string, unknown>): void;
+}
+
+/** Check if a plugin provides context formatting. */
+export function isContextFormatterPlugin(p: Plugin): p is ContextFormatterPlugin {
+    return typeof (p as ContextFormatterPlugin).formatContext === 'function';
 }

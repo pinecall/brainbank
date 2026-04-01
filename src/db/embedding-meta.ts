@@ -6,9 +6,10 @@
  * to update the metadata after re-embedding.
  */
 
+import type { EmbeddingProvider } from '@/types.ts';
 import type { Database } from './database.ts';
 import type { EmbeddingMetaRow } from './rows.ts';
-import type { EmbeddingProvider } from '@/types.ts';
+
 import { providerKey } from '@/lib/provider-key.ts';
 
 /** Stored embedding metadata shape. */

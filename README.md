@@ -78,7 +78,6 @@ Extensions that connect BrainBank to external tools and workflows.
 
 | Package | Description | Install |
 |---------|-------------|----------|
-| [`@brainbank/memory`](packages/memory/) | Fact extraction + entity graph for conversations | `npm i @brainbank/memory` |
 | [`@brainbank/mcp`](packages/mcp/) | MCP server for Antigravity, Claude, Cursor | `npm i @brainbank/mcp` |
 
 ---
@@ -97,7 +96,6 @@ Extensions that connect BrainBank to external tools and workflows.
 | **[Embeddings & Reranker](docs/embeddings.md)** | Providers, benchmarks, per-plugin overrides |
 | **[Multi-Repo](docs/multi-repo.md)** | Index multiple repositories into one DB |
 | **[MCP Server](docs/mcp.md)** | AI tool integration (stdio) |
-| **[Memory](docs/memory.md)** | Agent patterns + `@brainbank/memory` |
 | **[Indexing](docs/indexing.md)** | Code graph, incremental indexing, re-embedding |
 | **[Architecture](docs/architecture.md)** | System internals, data flows, design patterns |
 
@@ -112,7 +110,6 @@ Extensions that connect BrainBank to external tools and workflows.
 | [custom-package](examples/custom-package/) | Standalone npm package scaffold |
 | [collection](examples/collection/) | Collections, search, tags, metadata |
 | [rag](examples/rag/) | RAG chatbot — docs retrieval + generation ¹ |
-| [memory](examples/memory/) | Memory chatbot — fact extraction + entity graph ¹ |
 
 > ¹ Requires `OPENAI_API_KEY`. RAG also requires `PERPLEXITY_API_KEY`.
 

@@ -4,6 +4,10 @@ All notable changes to `@brainbank/docs` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `index()` method — implements `IndexablePlugin` so docs participates in generic `brain.index()` pipeline
+- Eliminated all `any` from `stats()`, `listCollections()`, `listContexts()`
+
 ### Fixed
 - **BUG-09: double-transaction partial state** — `DocsIndexer._indexFile()` now embeds first, then uses a single transaction for chunks + vectors atomically. HNSW deferred to after commit
 - **ANTI-12: relative path storage** — `DocsPlugin.addCollection()` now resolves paths to absolute via `path.resolve()` before storing in DB

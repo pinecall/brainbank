@@ -45,13 +45,13 @@ Layer 1 — Infrastructure (depends on Layer 0 only)
 
 Layer 2 — Domain (depends on Layers 0-1)
 ├── plugin.ts        ← Plugin + PluginContext + capability interfaces (flattened from plugins/)
-├── services/        ← Collection, reembed, watch, memory/
+├── services/        ← Collection, reembed, watch
 └── lib/languages.ts ← Language detection + file filtering utilities
 
 Layer 3 — Application (depends on everything below)
 ├── brainbank.ts     ← The main orchestrator
 ├── constants.ts     ← PLUGIN / HNSW typed constants
-├── bootstrap/       ← System wiring: initializer, registry
+├── bootstrap/       ← (reserved for future system wiring)
 ├── engine/          ← Use cases: search-api, index-api
 └── cli/             ← CLI commands/ and factory/ (dynamic plugin loading)
 ```
@@ -67,19 +67,18 @@ packages/                ← All plugin implementations live here (NOT in src/)
 ├── git/             ← @brainbank/git — Git history + co-edit analysis
 ├── docs/            ← @brainbank/docs — Document collection search
 ├── mcp/             ← @brainbank/mcp — MCP server
-└── memory/          ← @brainbank/memory — Conversational memory
 ```
 
 > **CRITICAL:** Plugin implementations live ONLY in `packages/`. The core `src/plugin.ts` defines the `Plugin` interface. `languages.ts` lives in `src/lib/`. **Never add plugin logic to `src/`.**
 
 ### Key Files
 - `src/brainbank.ts` — The main orchestrator. All public API lives here.
-- `src/plugin.ts` — `Plugin` + `PluginContext` + capability interfaces (`HnswPlugin`, `CoEditPlugin`).
+- `src/plugin.ts` — `Plugin` + `PluginContext` + capability interfaces (`CoEditPlugin`).
 - `src/constants.ts` — `PLUGIN` / `HNSW` typed constants. Single source of truth for string keys.
 - `src/services/collection.ts` — Universal KV store with hybrid search. Core primitive.
 - `src/search/context-builder.ts` — Builds formatted context blocks (delegates to `context/` formatters).
 - `src/search/types.ts` — `SearchStrategy` interface. All search backends implement it.
-- `src/bootstrap/initializer.ts` — Two-phase system initialization (Initializer class).
+- `src/brainbank.ts` — Main orchestrator with inline initialization (`_runInitialize`).
 - `src/engine/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `src/cli/factory/index.ts` — CLI factory (delegates to config-loader, plugin-loader, provider-setup, builtin-registration).
 - `scripts/lint-imports.mjs` — Lint script: detects `@/` imports that should be `./` (same-directory).

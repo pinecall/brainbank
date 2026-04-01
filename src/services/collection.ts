@@ -11,18 +11,19 @@
 
 import type { Database } from '@/db/database.ts';
 import type { KvDataRow, CountRow } from '@/db/rows.ts';
-import { vecToBuffer } from '@/lib/math.ts';
-import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import { fuseRankedLists } from '@/lib/rrf.ts';
-import { rerank } from '@/lib/rerank.ts';
+import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
+
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
+import { vecToBuffer } from '@/lib/math.ts';
+import { rerank } from '@/lib/rerank.ts';
+import { fuseRankedLists } from '@/lib/rrf.ts';
 
 export interface CollectionItem {
     id: number;
     collection: string;
     content: string;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
     tags: string[];
     createdAt: number;
     expiresAt?: number;
@@ -42,7 +43,7 @@ export interface CollectionSearchOptions {
 
 export interface CollectionAddOptions {
     /** Metadata key-value pairs. */
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     /** Tags for filtering. */
     tags?: string[];
     /** Time-to-live duration string (e.g. '7d', '24h', '30m'). */
@@ -63,11 +64,11 @@ export class Collection {
     get name(): string { return this._name; }
 
     /** Add an item. Returns its ID. */
-    async add(content: string, options: CollectionAddOptions | Record<string, any> = {}): Promise<number> {
+    async add(content: string, options: CollectionAddOptions | Record<string, unknown> = {}): Promise<number> {
         // Support both signatures: add(content, { metadata, tags, ttl }) and add(content, metadata)
         const opts = 'tags' in options || 'ttl' in options || 'metadata' in options
             ? options as CollectionAddOptions
-            : { metadata: options as Record<string, any> };
+            : { metadata: options as Record<string, unknown> };
 
         const metadata = opts.metadata ?? {};
         const tags = opts.tags ?? [];
@@ -109,7 +110,7 @@ export class Collection {
     }
 
     /** Add multiple items. Returns their IDs. */
-    async addMany(items: { content: string; metadata?: Record<string, any>; tags?: string[]; ttl?: string }[]): Promise<number[]> {
+    async addMany(items: { content: string; metadata?: Record<string, unknown>; tags?: string[]; ttl?: string }[]): Promise<number[]> {
         if (items.length === 0) return [];
 
         // Batch embed all texts at once
@@ -286,7 +287,6 @@ export class Collection {
         }
     }
 
-    // ── Private ──────────────────────────────────────
 
     private _removeById(id: number): void {
         // DB first — can fail (disk full, lock). If it throws, HNSW+cache stay consistent.
@@ -362,8 +362,8 @@ export class Collection {
             id: r.id,
             collection: r.collection,
             content: r.content,
-            metadata: JSON.parse(r.meta_json || '{}'),
-            tags: JSON.parse(r.tags_json || '[]'),
+            metadata: JSON.parse(r.meta_json || '{}') as Record<string, unknown>,
+            tags: JSON.parse(r.tags_json || '[]') as string[],
             createdAt: r.created_at,
             expiresAt: r.expires_at ?? undefined,
         };

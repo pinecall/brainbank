@@ -107,7 +107,7 @@ tests['setup: initializes with 3 different embedding dimensions'] = async () => 
 };
 
 tests['code: indexes with per-plugin 64d embedding'] = async () => {
-    const result = await (brain.code as any).index();
+    const result = await (brain.plugin('code') as any).index();
 
     assert.ok(result.indexed >= 2, `indexed ${result.indexed} files (expected >=2)`);
     assert.ok(result.chunks! > 0, `created ${result.chunks} code chunks`);
@@ -122,7 +122,7 @@ tests['code: indexes with per-plugin 64d embedding'] = async () => {
 };
 
 tests['git: indexes with global 128d embedding'] = async () => {
-    const result = await (brain.git as any).index({ depth: 10 });
+    const result = await (brain.plugin('git') as any).index({ depth: 10 });
 
     assert.ok(result.indexed >= 2, `indexed ${result.indexed} commits`);
 
@@ -136,8 +136,8 @@ tests['git: indexes with global 128d embedding'] = async () => {
 };
 
 tests['docs: indexes with per-plugin 256d embedding'] = async () => {
-    await (brain.docs as any)!.addCollection({ name: 'docs', path: path.join(tmpDir, 'docs'), pattern: '**/*.md' });
-    const result = await (brain.docs as any)!.indexDocs();
+    await (brain.plugin('docs') as any)!.addCollection({ name: 'docs', path: path.join(tmpDir, 'docs'), pattern: '**/*.md' });
+    const result = await (brain.plugin('docs') as any)!.indexDocs();
 
     assert.ok(result.docs, 'should have docs result');
     assert.equal(result.docs.indexed, 2, 'should index 2 docs');
@@ -170,14 +170,14 @@ tests['stats: reports stats from all plugins'] = async () => {
     const stats = brain.stats();
 
     assert.ok(stats.code, 'has code stats');
-    assert.ok(stats.code.files >= 2, 'code has files');
-    assert.ok(stats.code.chunks > 0, 'code has chunks');
+    assert.ok(Number(stats.code!.files) >= 2, 'code has files');
+    assert.ok(Number(stats.code!.chunks) > 0, 'code has chunks');
 
     assert.ok(stats.git, 'has git stats');
-    assert.ok(stats.git.commits >= 2, 'git has commits');
+    assert.ok(Number(stats.git!.commits) >= 2, 'git has commits');
 
-    assert.ok(stats.documents, 'has docs stats');
-    assert.ok(stats.documents.chunks > 0, 'docs has chunks');
+    assert.ok(stats.docs, 'has docs stats');
+    assert.ok(Number(stats.docs!.chunks) > 0, 'docs has chunks');
 };
 
 tests['cleanup'] = async () => {

@@ -14,6 +14,12 @@ export interface SearchStrategy {
     rebuild?(): void;
 }
 
+/** Pre-embedded vector search for a single domain (code, git, etc.). */
+export interface DomainVectorSearch {
+    /** Search using a pre-computed query vector. */
+    search(queryVec: Float32Array, k: number, minScore: number, useMMR?: boolean, mmrLambda?: number): SearchResult[];
+}
+
 /** Summary of a code chunk for import graph expansion. */
 export interface CodeChunkSummary {
     filePath: string;

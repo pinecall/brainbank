@@ -17,7 +17,7 @@ import { c, args, stripFlags, printResults } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory/index.ts';
 
 /**
- * Parse dynamic source flags: any --<name> <number> becomes { name: number }.
+ * Parse dynamic source flags: each `--<name> <number>` becomes `{ name: number }`.
  *
  * Known non-source flags (--repo, --depth, etc.) are excluded.
  * Returns sources map + the query string (positional args).

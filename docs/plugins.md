@@ -18,9 +18,9 @@ const brain = new BrainBank({ repoPath: '.' })
 
 | Plugin | Package | Description |
 |--------|---------|-------------|
-| `code` | `@brainbank/code` | AST-aware code chunking via tree-sitter (20 languages). Source code only — does **not** index documents (.md, .mdx) |
+| `code` | `@brainbank/code` | AST-aware code chunking via tree-sitter (20+ languages), import graph, symbol index, call references |
 | `git` | `@brainbank/git` | Git commit history, diffs, co-edit relationships |
-| `docs` | `@brainbank/docs` | Document collections (markdown, wikis, .md/.mdx files) |
+| `docs` | `@brainbank/docs` | Document collections (markdown, wikis, .md/.mdx files), heading-aware smart chunking |
 
 ---
 
@@ -55,40 +55,61 @@ const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384
 1. brain.use(myPlugin)        →  Plugin registered (not initialized yet)
 2. await brain.initialize()   →  plugin.initialize(ctx) called
 3. brain.index()              →  plugin.index() called  (if IndexablePlugin)
-4. brain.search()             →  plugin.search() called (if SearchablePlugin)
+4. brain.search()             →  results from VectorSearchPlugin / SearchablePlugin
 5. brain.watch()              →  plugin.onFileChange()  (if WatchablePlugin)
 6. brain.close()              →  plugin.close()         (cleanup)
 ```
 
 ---
 
-## Typed Plugin Access
+## Capability Interfaces
 
-Access plugin methods directly via typed getters:
+Plugins implement zero or more capability interfaces discovered at runtime via type guards:
+
+| Interface | Type Guard | Method | What happens |
+|-----------|-----------|--------|-------------|
+| `IndexablePlugin` | `isIndexable()` | `index(options?)` | Participates in `brain.index()` |
+| `SearchablePlugin` | `isSearchable()` | `search(query, options?)` | Results merged via RRF in `brain.hybridSearch()` |
+| `WatchablePlugin` | `isWatchable()` | `watchPatterns()` + `onFileChange()` | Auto-re-index on file changes |
+| `VectorSearchPlugin` | `isVectorSearchPlugin()` | `createVectorSearch()` | Provides domain-specific vector strategy for CompositeVectorSearch |
+| `ContextFormatterPlugin` | `isContextFormatterPlugin()` | `formatContext(results, parts)` | Contributes sections to `brain.getContext()` output |
+| `ReembeddablePlugin` | `isReembeddable()` | `reembedConfig()` | Participates in `brain.reembed()` |
+| `HnswPlugin` | `isHnswPlugin()` | `hnsw` + `vecCache` | Exposes shared HNSW for reembed |
+| `CoEditPlugin` | `isCoEditPlugin()` | `coEdits.suggest()` | Provides co-edit suggestions |
+
+---
+
+## Plugin Access
+
+Access plugin instances via the typed `plugin<T>()` method:
 
 ```typescript
-// Built-in plugins — typed getters
-brain.docs!.addCollection({ name: 'wiki', path: './docs' });
-brain.docs!.search('getting started');
-brain.git!.suggestCoEdits('src/auth.ts');
+import type { DocsPlugin } from 'brainbank';
 
-// Custom plugins — generic access with type parameter
-const myPlugin = brain.plugin<MyPlugin>('my-plugin')!;
-await myPlugin.searchMyData('query');
+// Typed access
+const docsPlugin = brain.plugin<DocsPlugin>('docs');
+docsPlugin?.addCollection({ name: 'wiki', path: './docs' });
+docsPlugin?.search('getting started');
+
+// Check if a plugin is loaded (supports prefix matching)
+brain.has('code');    // true for 'code', 'code:frontend', 'code:backend'
+brain.has('docs');    // true if docs plugin loaded
 
 // List all plugins
-brain.plugins; // → ['code', 'git', 'docs', 'my-plugin']
+brain.plugins; // → ['code', 'git', 'docs']
 ```
 
 ---
 
 ## Document Collections
 
-The `docs` plugin manages collections of markdown and text files:
+The `docs` plugin manages collections of markdown and text files. It implements both `IndexablePlugin` (participates in `brain.index()`) and `SearchablePlugin` (participates in hybrid search).
 
 ```typescript
+const docsPlugin = brain.plugin<DocsPlugin>('docs');
+
 // Register a collection
-brain.docs!.addCollection({
+docsPlugin!.addCollection({
   name: 'docs',
   path: '~/project/docs',
   pattern: '**/*.md',
@@ -97,14 +118,17 @@ brain.docs!.addCollection({
 });
 
 // Index documents (incremental)
-await brain.docs!.indexDocs();
+await docsPlugin!.indexDocs();
+
+// Or index via brain.index() — docs participates automatically
+await brain.index({ modules: ['docs'] });
 
 // Add context metadata (helps LLM understand what documents are about)
-brain.docs!.addContext('docs', '/api', 'REST API reference');
-brain.docs!.addContext('docs', '/guides', 'Step-by-step tutorials');
+docsPlugin!.addContext('docs', '/api', 'REST API reference');
+docsPlugin!.addContext('docs', '/guides', 'Step-by-step tutorials');
 
-// Search documents
-const results = await brain.docs!.search('authentication flow', { collection: 'docs' });
+// Search documents (hybrid: vector + BM25 → RRF → dedup by file)
+const results = await docsPlugin!.search('authentication flow', { collection: 'docs' });
 ```
 
 ---

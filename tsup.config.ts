@@ -23,7 +23,6 @@ export default defineConfig({
         '@brainbank/code',
         '@brainbank/git',
         '@brainbank/docs',
-        '@brainbank/memory',
         '@brainbank/mcp',
     ],
     banner: {

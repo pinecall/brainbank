@@ -2,14 +2,14 @@
  * BrainBank — HNSW Loader
  *
  * Utilities for persisting and loading HNSW indexes to/from disk.
- * Extracted from bootstrap/initializer.ts to keep vector-related I/O
- * in the providers layer where it belongs.
+ * Used by BrainBank._runInitialize() and PluginContext.loadVectors().
  */
 
-import { dirname, join } from 'node:path';
 import type { Database } from '@/db/database.ts';
 import type { CountRow } from '@/db/rows.ts';
 import type { HNSWIndex } from './hnsw-index.ts';
+
+import { dirname, join } from 'node:path';
 
 /** Derive the HNSW index file path from the DB path. */
 export function hnswPath(dbPath: string, name: string): string {

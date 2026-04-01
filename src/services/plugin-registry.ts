@@ -20,14 +20,12 @@ const ALIASES: Readonly<Record<string, string>> = {
 export class PluginRegistry {
     private _map = new Map<string, Plugin>();
 
-    // ── Registration ────────────────────────────────
 
     /** Store a plugin. Duplicate names silently overwrite. */
     register(plugin: Plugin): void {
         this._map.set(plugin.name, plugin);
     }
 
-    // ── Lookup ──────────────────────────────────────
 
     /**
      * Check whether a plugin is registered.
@@ -83,7 +81,6 @@ export class PluginRegistry {
         return undefined;
     }
 
-    // ── Accessors ───────────────────────────────────
 
     /** All registered plugin names (insertion order). */
     get names(): string[] {
@@ -103,7 +100,6 @@ export class PluginRegistry {
         return this._map;
     }
 
-    // ── Lifecycle ───────────────────────────────────
 
     /** Remove all registered plugins. Called by BrainBank.close(). */
     clear(): void {

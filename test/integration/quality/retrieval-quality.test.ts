@@ -387,7 +387,7 @@ export const tests: Record<string, (assert: any) => Promise<void>> = {};
 tests['setup: index synthetic corpus'] = async (assert: any) => {
     await setupCorpus();
     const stats = brain.stats();
-    assert.ok((stats.code?.chunks ?? 0) >= 5, `indexed ${stats.code?.chunks ?? 0} chunks`);
+    assert.ok(Number(stats.code?.chunks ?? 0) >= 5, `indexed ${stats.code?.chunks ?? 0} chunks`);
 };
 
 tests['golden queries: recall@5 and MRR'] = async (assert: any) => {

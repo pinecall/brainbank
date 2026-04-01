@@ -16,18 +16,27 @@
  *   await errors.add('Fixed null check', { file: 'api.ts' });
  */
 
-// ── Public API ──────────────────────────────────────
 
 export { BrainBank } from './brainbank.ts';
 
-// Plugin types
-export type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, WatchablePlugin, HnswPlugin, CoEditPlugin, ReembeddablePlugin, ReembedTable } from './plugin.ts';
-export { isIndexable, isSearchable, isWatchable, isDocsPlugin, isHnswPlugin, isCoEditPlugin, isReembeddable } from './plugin.ts';
-export type { DocsPlugin } from './plugin.ts';
+// Plugin types + capability interfaces
+export type {
+    Plugin, PluginContext,
+    IndexablePlugin, SearchablePlugin, WatchablePlugin,
+    CoEditPlugin,
+    ReembeddablePlugin, ReembedTable,
+    DocsPlugin,
+    VectorSearchPlugin, ContextFormatterPlugin,
+} from './plugin.ts';
+export {
+    isIndexable, isSearchable, isWatchable,
+    isDocsPlugin, isCoEditPlugin, isReembeddable,
+    isVectorSearchPlugin, isContextFormatterPlugin,
+} from './plugin.ts';
 
-// Constants
-export { PLUGIN, HNSW } from './constants.ts';
-export type { PluginType, HnswKey } from './constants.ts';
+// Constants (core-only)
+export { HNSW } from './constants.ts';
+export type { HnswKey } from './constants.ts';
 
 // Collections
 export { Collection } from './services/collection.ts';
@@ -41,19 +50,18 @@ export type {
     VectorIndex, SearchHit,
     CodeChunk,
     GitCommitRecord,
-    LearningPattern, DistilledStrategy,
     SearchResult, SearchResultType,
-    CodeResult, CommitResult, PatternResult, DocumentResult, CollectionResult,
-    CodeResultMetadata, CommitResultMetadata, PatternResultMetadata, DocumentResultMetadata,
+    CodeResult, CommitResult, DocumentResult, CollectionResult,
+    CodeResultMetadata, CommitResultMetadata, DocumentResultMetadata,
     ContextOptions,
-    IndexStats, IndexResult,
+    IndexResult,
     ProgressCallback, StageProgressCallback,
     CoEditSuggestion,
     DocumentCollection, DocChunk,
 } from './types.ts';
 export {
     isCodeResult, isCommitResult, isDocumentResult,
-    isPatternResult, isCollectionResult,
+    isCollectionResult,
     matchResult,
 } from './types.ts';
 
@@ -79,8 +87,6 @@ export type { EmbeddingKey } from './providers/embeddings/resolve.ts';
 // Config
 export { resolveConfig, DEFAULTS } from './config.ts';
 
-// ── Internals (for plugin authors & power users) ────
-
 // Vector indices
 export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';
@@ -94,20 +100,16 @@ export { vecToBuffer, cosineSimilarity, normalize } from './lib/math.ts';
 // KV service (collection infrastructure)
 export { KVService } from './services/kv-service.ts';
 
-// Search internals
+// Search internals (plugins may use these)
 export { ContextBuilder } from './search/context-builder.ts';
 export { CompositeVectorSearch } from './search/vector/composite-vector-search.ts';
-export { CodeVectorSearch } from './search/vector/code-vector-search.ts';
-export { GitVectorSearch } from './search/vector/git-vector-search.ts';
-export { PatternVectorSearch } from './search/vector/pattern-vector-search.ts';
 export { KeywordSearch } from './search/keyword/keyword-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
 export { normalizeBM25 } from './lib/fts.ts';
 export { rerank } from './lib/rerank.ts';
 
 // Search types
-export type { SearchStrategy, SearchOptions, CodeGraphProvider, CodeChunkSummary } from './search/types.ts';
-export { SqlCodeGraphProvider } from './search/context/sql-code-graph.ts';
+export type { SearchStrategy, SearchOptions, DomainVectorSearch, CodeGraphProvider, CodeChunkSummary } from './search/types.ts';
 
 // Database (for plugin access)
 export type { Database } from './db/database.ts';

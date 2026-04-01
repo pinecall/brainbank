@@ -23,7 +23,8 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
     ]
   },
   "git": {
-    "depth": 200
+    "depth": 200,
+    "maxDiffBytes": 8192
   },
   "docs": {
     "embedding": "perplexity-context",
@@ -35,7 +36,15 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
 
   // Global defaults
   "embedding": "local",
-  "reranker": "qwen3"
+  "reranker": "qwen3",
+
+  // BrainBank constructor overrides
+  "brainbank": {
+    "maxFileSize": 512000,
+    "hnswM": 16,
+    "hnswEfConstruction": 200,
+    "hnswEfSearch": 50
+  }
 }
 ```
 
@@ -46,8 +55,12 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
 ```
 .brainbank/
 ├── brainbank.db        # SQLite database (auto-created)
+├── hnsw-kv.index       # HNSW graph for KV collections
+├── hnsw-code.index     # HNSW graph for code (shared across code:* plugins)
+├── hnsw-git.index      # HNSW graph for git (shared across git:* plugins)
+├── hnsw-doc.index      # HNSW graph for docs (private to DocsPlugin)
 ├── config.json         # Project config (optional)
-└── plugins/            # Custom plugin files (optional)
+└── plugins/            # Custom plugin files (optional, auto-discovered)
     ├── notes.ts
     └── csv.ts
 ```
@@ -71,7 +84,7 @@ Each plugin creates its own HNSW index with the correct dimensions. A plugin wit
 
 ```jsonc
 {
-  "embedding": "local",              // global default
+  "embedding": "local",              // global default (384d)
   "code": { "embedding": "openai" }, // code uses OpenAI (1536d)
   "git": {},                         // git uses local (384d)
   "docs": { "embedding": "perplexity-context" }  // docs uses Perplexity (2560d)

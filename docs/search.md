@@ -40,7 +40,7 @@ interface SearchOptions {
 }
 ```
 
-Built-in source keys: `"code"`, `"git"`, `"docs"`, `"memory"`. Any other key searches a KV collection with that name.
+Built-in source keys: `"code"`, `"git"`. Any other key searches a KV collection with that name. Plugins that implement `SearchablePlugin` contribute results automatically.
 
 ```typescript
 // Vector search filtered to code only
@@ -65,38 +65,39 @@ await brain.searchBM25('fix auth bug', { sources: { code: 0, git: 8 } });
 
 ## How Search Works
 
-BrainBank has **two levels** of search:
+BrainBank has **two levels** of search, orchestrated by `SearchAPI`:
 
 ```
 brain.hybridSearch('auth')
   │
-  ├── SearchAPI (centralized orchestration)
-  │     ├── VectorSearch ──── shared HNSW ──── code + git vectors
-  │     ├── KeywordSearch ─── FTS5 BM25 ────── code + git text
-  │     └── RRF fusion ────── merges all result lists
+  ├── CompositeVectorSearch (via VectorSearchPlugin discovery)
+  │     ├── Embed query once
+  │     └── Delegate to domain strategies (code, git)
   │
-  ├── Plugin search (per-plugin, via SearchablePlugin)
-  │     └── DocsPlugin.search() ── own HNSW ── doc vectors
+  ├── KeywordSearch (FTS5 BM25)
+  │     ├── fts_code (file_path×5, name×3, content×1)
+  │     └── fts_commits (message×5, author×2, diff×1)
   │
-  └── KV Collections ── per-collection HNSW+FTS5 ── custom data
-                        (included when named in `sources`)
+  ├── SearchablePlugins (per-plugin, not in vector search)
+  │     └── DocsPlugin.search() ── own HNSW + BM25 → RRF → dedup by file
+  │
+  ├── KV Collections (named in sources)
+  │     └── collection.searchAsResults() ── shared kvHnsw + fts_kv
+  │
+  └── Reciprocal Rank Fusion (k=60, maxResults=15)
+        └── Optional: Qwen3 Reranker (position-aware blend)
 ```
 
-**Centralized search** (`SearchAPI`) manages a shared multi-index HNSW that holds both code and git vectors.
-
-**Plugin-owned search** runs independently. The docs plugin has its own HNSW index and BM25 search, because document collections can use different embedding dimensions (via per-plugin `embeddingProvider`).
-
-**`hybridSearch()`** combines all of them — it queries the shared indices, plugin searches, and any named KV collections, then fuses everything with [Reciprocal Rank Fusion (RRF)](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf).
+**Plugin-based discovery:** `createSearchAPI()` iterates over all registered plugins. Plugins implementing `VectorSearchPlugin` provide domain strategies wired into `CompositeVectorSearch`. Plugins implementing `SearchablePlugin` (but not `VectorSearchPlugin`) contribute results that get fused via RRF.
 
 ### Method Reference
 
 | Method | Engine | What it searches |
 |--------|--------|-----------------|
-| `search(q, options?)` | VectorSearch | Code + git vectors (shared HNSW) |
-| `searchBM25(q, options?)` | KeywordSearch | Code + git text (FTS5) |
-| `brain.docs!.search(q)` | DocsPlugin | Document vectors (own HNSW + BM25) |
-| `hybridSearch(q, options?)` | All engines | **All sources** → RRF fusion |
-| `getContext(task, options?)` | All engines | All sources → formatted markdown |
+| `search(q, opts?)` | CompositeVectorSearch + SearchablePlugins | Vector strategies + plugin search → RRF |
+| `searchBM25(q, opts?)` | KeywordSearch | Code + git text (FTS5) |
+| `hybridSearch(q, opts?)` | All engines | Vector + BM25 + plugins + KV → RRF → rerank |
+| `getContext(task, opts?)` | ContextBuilder | All sources → formatted markdown |
 
 ---
 
@@ -116,7 +117,7 @@ const context = await brain.getContext('add rate limiting to the API', {
 
 ```typescript
 interface ContextOptions {
-  sources?: Record<string, number>; // { code: n, git: n, memory: n }
+  sources?: Record<string, number>; // { code: n, git: n }
   affectedFiles?: string[];         // improves co-edit suggestions
   minScore?: number;                // default: 0.25
   useMMR?: boolean;                 // default: true
@@ -124,13 +125,15 @@ interface ContextOptions {
 }
 ```
 
+The `ContextBuilder` assembles markdown from multiple sources. It discovers formatters from plugins implementing `ContextFormatterPlugin` — each plugin appends its own sections to the output. For `SearchablePlugin` plugins that aren't `ContextFormatterPlugin`, results are appended as bullet lists.
+
 Returns structured markdown with:
 
-- **Relevant Code** — grouped by file, with call graph annotations
-- **Related Files** — import graph (who imports what)
-- **Git History** — relevant commits with diffs
+- **Relevant Code** — grouped by file, with call graph annotations (from `code_refs`)
+- **Related Files** — import graph expansion (2-hop traversal of `code_imports`)
+- **Git History** — relevant commits with diff snippets
 - **Co-Edit Patterns** — files that tend to change together
-- **Relevant Documents** — matching doc chunks
+- **Relevant Documents** — matching doc chunks with collection context
 
 CLI equivalent:
 
@@ -157,6 +160,17 @@ Optional: Qwen3-Reranker (position-aware blend)
   ▼
 Final results (sorted by blended score)
 ```
+
+### RRF Key Generation
+
+Each result type produces a unique key for deduplication across search systems:
+
+| Type | Key format |
+|------|-----------|
+| `code` | `code:{filePath}:{startLine}-{endLine}` |
+| `commit` | `commit:{hash}` |
+| `document` | `document:{filePath}:{collection}:{seq}:{content[:80]}` |
+| `collection` | `collection:{id}` |
 
 ---
 

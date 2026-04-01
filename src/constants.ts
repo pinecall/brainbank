@@ -1,27 +1,13 @@
 /**
  * BrainBank — Constants
  *
- * Single source of truth for plugin type names and HNSW index keys.
- * Use these instead of raw strings to get compile-time safety.
+ * Core-only constants. Plugin names are NOT defined here — they belong
+ * to their respective packages. Only keys owned by the core live here.
  */
 
-/** Built-in plugin type identifiers. */
-export const PLUGIN = {
-    CODE:   'code',
-    GIT:    'git',
-    DOCS:   'docs',
-    MEMORY: 'memory',
-} as const;
-
-export type PluginType = typeof PLUGIN[keyof typeof PLUGIN];
-
-/** HNSW index keys (superset of plugin types — includes 'kv'). */
+/** HNSW index key for KV collections (core-owned). */
 export const HNSW = {
-    CODE:   'code',
-    GIT:    'git',
-    MEMORY: 'memory',
-    KV:     'kv',
-    DOCS:   'docs',
+    KV: 'kv',
 } as const;
 
 export type HnswKey = typeof HNSW[keyof typeof HNSW];

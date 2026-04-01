@@ -101,31 +101,7 @@ export function createSchema(db: Database.Database): void {
             embedding   BLOB    NOT NULL
         );
 
-        -- ── Agent memory ───────────────────────────────
-        CREATE TABLE IF NOT EXISTS memory_patterns (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_type    TEXT    NOT NULL,
-            task         TEXT    NOT NULL,
-            approach     TEXT    NOT NULL,
-            outcome      TEXT,
-            success_rate REAL    NOT NULL DEFAULT 0.5,
-            critique     TEXT,
-            tokens_used  INTEGER,
-            latency_ms   INTEGER,
-            created_at   INTEGER NOT NULL DEFAULT (unixepoch())
-        );
 
-        CREATE TABLE IF NOT EXISTS memory_vectors (
-            pattern_id  INTEGER PRIMARY KEY REFERENCES memory_patterns(id) ON DELETE CASCADE,
-            embedding   BLOB    NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS distilled_strategies (
-            task_type   TEXT PRIMARY KEY,
-            strategy    TEXT    NOT NULL,
-            confidence  REAL    NOT NULL DEFAULT 0.8,
-            updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
-        );
 
         -- ── Indices ────────────────────────────────────
         CREATE INDEX IF NOT EXISTS idx_cc_file      ON code_chunks(file_path);
@@ -137,9 +113,7 @@ export function createSchema(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_cf_path      ON commit_files(file_path);
         CREATE INDEX IF NOT EXISTS idx_gc_ts        ON git_commits(timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_gc_hash      ON git_commits(hash);
-        CREATE INDEX IF NOT EXISTS idx_mp_type      ON memory_patterns(task_type);
-        CREATE INDEX IF NOT EXISTS idx_mp_success   ON memory_patterns(success_rate);
-        CREATE INDEX IF NOT EXISTS idx_mp_created   ON memory_patterns(created_at);
+
 
         -- ── FTS5 Full-Text Search ─────────────────────
         -- Code chunks: search by file path, name, and content
@@ -162,16 +136,7 @@ export function createSchema(db: Database.Database): void {
             tokenize='porter unicode61'
         );
 
-        -- Memory patterns: search by task type, task, approach, and critique
-        CREATE VIRTUAL TABLE IF NOT EXISTS fts_patterns USING fts5(
-            task_type,
-            task,
-            approach,
-            critique,
-            content='memory_patterns',
-            content_rowid='id',
-            tokenize='porter unicode61'
-        );
+
 
         -- ── FTS5 Sync Triggers ────────────────────────
         -- Auto-sync FTS indices on INSERT/UPDATE/DELETE
@@ -194,14 +159,7 @@ export function createSchema(db: Database.Database): void {
             VALUES ('delete', old.id, old.message, old.author, COALESCE(old.diff, ''));
         END;
 
-        CREATE TRIGGER IF NOT EXISTS trg_fts_patterns_insert AFTER INSERT ON memory_patterns BEGIN
-            INSERT INTO fts_patterns(rowid, task_type, task, approach, critique)
-            VALUES (new.id, new.task_type, new.task, new.approach, COALESCE(new.critique, ''));
-        END;
-        CREATE TRIGGER IF NOT EXISTS trg_fts_patterns_delete AFTER DELETE ON memory_patterns BEGIN
-            INSERT INTO fts_patterns(fts_patterns, rowid, task_type, task, approach, critique)
-            VALUES ('delete', old.id, old.task_type, old.task, old.approach, COALESCE(old.critique, ''));
-        END;
+
 
 
         -- ── Document Collections ──────────────────────

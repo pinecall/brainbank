@@ -134,13 +134,11 @@ export class PerplexityEmbedding implements EmbeddingProvider {
     }
 }
 
-// ── Response Types ──────────────────────────────────
 
 interface PerplexityStandardResponse {
     data: Array<{ index: number; embedding: string }>;
 }
 
-// ── Base64 Int8 Decoding ────────────────────────────
 
 /**
  * Decode a base64-encoded signed int8 embedding to Float32Array.

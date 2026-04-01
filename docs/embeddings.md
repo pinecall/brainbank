@@ -40,7 +40,7 @@ const brain = new BrainBank({
 
 ## Per-Plugin Override
 
-Each plugin can use a different embedding provider:
+Each plugin can use a different embedding provider with different dimensions:
 
 ```typescript
 import { BrainBank, OpenAIEmbedding, PerplexityContextEmbedding } from 'brainbank';
@@ -54,7 +54,7 @@ const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384
   .use(docs({ embeddingProvider: new PerplexityContextEmbedding() }));  // docs: Perplexity (2560d)
 ```
 
-> Each plugin creates its own HNSW index with the correct dimensions.
+> Each plugin creates its own HNSW index with the correct dimensions. Code plugins use shared HNSW (`getOrCreateSharedHnsw('code')`), git plugins share another (`getOrCreateSharedHnsw('git')`), and docs uses a private HNSW (`createHnsw(dims, 'doc')`).
 
 ---
 
@@ -62,12 +62,14 @@ const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384
 
 ### Local (Default)
 
-Built-in, zero config, runs via WASM:
+Built-in, zero config, runs via WASM (`@xenova/transformers`, all-MiniLM-L6-v2):
 
 ```typescript
 // No import needed — it's the default
 const brain = new BrainBank({ repoPath: '.' });
 ```
+
+Downloads ~23MB model on first use, cached in `.model-cache/`. Batch size: 32 texts per inference call.
 
 ### OpenAI
 
@@ -76,12 +78,15 @@ import { OpenAIEmbedding } from 'brainbank';
 
 new OpenAIEmbedding();                        // uses OPENAI_API_KEY env var
 new OpenAIEmbedding({
-  model: 'text-embedding-3-large',
-  dims: 512,                                  // Matryoshka reduction
+  model: 'text-embedding-3-large',            // default: text-embedding-3-small
+  dims: 512,                                  // Matryoshka reduction (only 3-* models)
   apiKey: 'sk-...',
   baseUrl: 'https://my-proxy.com/v1/embeddings',
+  timeout: 30_000,                            // default: 30s
 });
 ```
+
+Batch size: 100 texts per API call. Auto-retries on token limit errors (truncates to 8k then 6k chars).
 
 ### Perplexity (Standard)
 
@@ -97,6 +102,8 @@ new PerplexityEmbedding({
 });
 ```
 
+Returns base64-encoded signed int8 vectors, decoded to Float32Array internally.
+
 ### Perplexity (Contextualized)
 
 Chunks share document context → better retrieval for related code/docs:
@@ -110,6 +117,8 @@ new PerplexityContextEmbedding({
   dims: 512,                                  // Matryoshka reduction
 });
 ```
+
+Input is `string[][]` (documents × chunks). `embed(text)` wraps as `[[text]]`. `embedBatch(texts)` splits into sub-documents at ~80k chars to stay under the 32k token/doc limit.
 
 ---
 
@@ -125,11 +134,6 @@ Real benchmarks on a production NestJS backend (1052 code chunks + git history):
 | **OpenAI** | 1536 | 106s | 202ms | $0.02/1M tok |
 | **Perplexity** | 2560 | **66s** ⚡ | 168ms | $0.02/1M tok |
 | **Perplexity Context** | 2560 | 78s | 135ms | $0.06/1M tok |
-
-- **Fastest indexing:** Perplexity standard — 38% faster than OpenAI
-- **Fastest search (API):** Perplexity Context — 33% faster than OpenAI
-- **Fastest search (total):** Local WASM — no network latency
-- **Best context awareness:** Perplexity Context — finds semantically related chunks others miss
 
 ### Retrieval Quality
 
@@ -149,17 +153,6 @@ Tested with BrainBank's hybrid pipeline (Vector + BM25 → RRF):
 | + Qwen3 Reranker | 83% | **+5pp** |
 
 > The hybrid pipeline improved R@5 by **+26pp over vector-only**, reducing misses from 6/20 to 1/20.
-
-### BrainBank vs QMD
-
-Compared against [QMD](https://github.com/tobi/qmd) (embeddinggemma 768d + query expansion). Same corpus, same 20 queries:
-
-| Metric | BrainBank | QMD |
-|--------|:---------:|:---:|
-| **R@5** | **83%** | 65% |
-| **R@3** | **63%** | 53% |
-| **MRR** | **0.57** | 0.45 |
-| **Misses** | **1/20** | 6/20 |
 
 > [!WARNING]
 > Switching embedding provider (e.g. local → OpenAI) changes vector dimensions. BrainBank will **refuse to initialize** if stored dimensions don't match. Use `initialize({ force: true })` and then `reembed()` to migrate.
@@ -209,7 +202,7 @@ brainbank hsearch "auth middleware" --reranker qwen3
 { "reranker": "qwen3" }
 ```
 
-Model cached at `~/.cache/brainbank/models/`.
+Model cached at `~/.cache/brainbank/models/`. Context size: 2048 tokens. Flash attention enabled with fallback.
 
 ### Position-Aware Score Blending
 
@@ -247,7 +240,7 @@ await brain.initialize({ force: true });
 const result = await brain.reembed({
   onProgress: (table, current, total) => console.log(`${table}: ${current}/${total}`),
 });
-// → { code: 1200, git: 500, docs: 80, kv: 45, total: 1837 }
+// → { counts: { code: 1200, git: 500, docs: 80, kv: 45 }, total: 1825 }
 ```
 
 ```bash
@@ -260,7 +253,7 @@ brainbank reembed
 | Parses git history | **Skipped** |
 | Re-chunks documents | **Skipped** |
 | Embeds text | ✓ |
-| Replaces vectors | ✓ |
+| Replaces vectors | ✓ (atomic swap via temp table) |
 | Rebuilds HNSW | ✓ |
 
 ---
