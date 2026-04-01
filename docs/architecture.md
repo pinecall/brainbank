@@ -144,8 +144,7 @@ brainbank/
 │   │   ├── types.ts                   ← SearchStrategy, DomainVectorSearch, SearchOptions
 │   │   ├── context-builder.ts         ← ContextBuilder: discovers ContextFormatterPlugins
 │   │   ├── keyword/
-│   │   │   ├── composite-bm25-search.ts ← Discovers BM25SearchPlugin instances from registry
-│   │   │   └── keyword-search.ts      ← DEPRECATED: hardcoded FTS5 (kept for backward compat)
+│   │   │   └── composite-bm25-search.ts ← Discovers BM25SearchPlugin instances from registry
 │   │   └── vector/
 │   │       ├── composite-vector-search.ts ← Generic: discovers DomainVectorSearch strategies
 │   │       └── mmr.ts                 ← Maximum Marginal Relevance diversification

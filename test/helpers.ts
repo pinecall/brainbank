@@ -8,7 +8,6 @@
 import { BrainBank } from '../src/brainbank.ts';
 import { Database } from '../src/db/database.ts';
 import { HNSWIndex } from '../src/providers/vector/hnsw-index.ts';
-import { KeywordSearch } from '../src/search/keyword/keyword-search.ts';
 import { runPluginMigrations } from '../src/db/migrations.ts';
 
 import { OpenAIEmbedding } from '../src/providers/embeddings/openai-embedding.ts';
@@ -156,7 +155,6 @@ export {
     BrainBank,
     Database,
     HNSWIndex,
-    KeywordSearch,
     runPluginMigrations,
 
     OpenAIEmbedding,

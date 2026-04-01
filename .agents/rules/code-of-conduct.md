@@ -163,7 +163,7 @@ collection(name: string): ICollection  // not Collection
 
 ## 7. Naming
 
-**Files:** `kebab-case` — `hnsw-loader.ts`, `keyword-search.ts`
+**Files:** `kebab-case` — `hnsw-loader.ts`, `composite-bm25-search.ts`
 
 **Classes:** `Service` (stateful), `API` (orchestrator), `Search` (strategy), `Provider` (external), `Builder`, `Registry`
 
@@ -228,3 +228,25 @@ grep -rn "JSON\.parse(" src/ --include="*.ts" | grep -v " as "
 # 6. Zero dynamic imports without module cast
 grep -rn "await import(" src/ --include="*.ts" | grep -v ") as "
 ```
+
+---
+
+## 11. Zero Backward Compatibility
+
+**When something is replaced, the old code is DELETED immediately. No exceptions.**
+
+- No deprecated wrappers ("kept for backward compat")
+- No legacy aliases (`export { Old as New }`)
+- No "kept for tests" — rewrite tests to use the replacement
+- No transitional shims that "will be removed later" — remove NOW
+
+```typescript
+// ❌ WRONG — keeping old code around
+/** @deprecated Use CompositeBM25Search instead. Kept for backward compat. */
+export class KeywordSearch { ... }
+
+// ✅ CORRECT — delete it, rewrite dependents
+// KeywordSearch deleted. Tests rewritten to use raw FTS5 or CompositeBM25Search.
+```
+
+**Rationale:** Backward-compat code is acknowledged debt that always grows. It confuses contributors, bloats the codebase, and silently survives long after the "temporary" period ends. Delete immediately, fix all dependents in the same PR.

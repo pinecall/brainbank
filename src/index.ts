@@ -110,7 +110,6 @@ export { KVService } from './services/kv-service.ts';
 export { ContextBuilder } from './search/context-builder.ts';
 export { CompositeVectorSearch } from './search/vector/composite-vector-search.ts';
 export { CompositeBM25Search } from './search/keyword/composite-bm25-search.ts';
-export { KeywordSearch } from './search/keyword/keyword-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
 export { sanitizeFTS, normalizeBM25, escapeLike } from './lib/fts.ts';
 export { rerank } from './lib/rerank.ts';

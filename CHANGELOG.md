@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+- **Config loading**: `loadConfig()` now resolves `.brainbank/config.json` relative to the target repo path, not the process CWD. This fixes ignore patterns, plugin lists, and per-plugin config not being applied when running `brainbank index <path>` from a different directory
+- **Docs collection paths**: `registerConfigCollections` now resolves relative collection paths against the repo path instead of CWD
+- **Initialization order**: `brain.initialize()` is now called before `registerConfigCollections` to ensure plugins have DB access for collection registration
+
 ### Breaking Changes
 - **Plugin decoupling** — removed typed accessors `brain.docs`, `brain.git`, `brain.code`. Use `brain.plugin<T>('name')` instead
 - Removed `PLUGIN` constant from core — plugin names are owned by their packages
@@ -14,7 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Removed `brain.indexCode()` and `brain.indexGit()` — use `brain.plugin('code')?.index()` directly
 - **`@brainbank/memory` removed** — deleted `packages/memory/` and all core references (`memory_patterns`, `memory_vectors`, `distilled_strategies` tables, `fts_patterns` FTS5, `PatternVectorSearch`, `MemoryPatternRow`, `LearningPattern`, `DistilledStrategy`, `PatternResult`, `HnswPlugin`, `isHnswPlugin`, `isPatternResult`, `formatPatternResults`). Memory/pattern storage should use `brain.collection()` KV collections instead
 - **Schema v7** — domain tables (code, git, docs) removed from core schema. Each plugin now creates its own tables via the migration system. Schema version bumped from 6 to 7
-- **`KeywordSearch` deprecated** — replaced by `CompositeBM25Search` which discovers BM25-capable plugins dynamically. `KeywordSearch` kept for backward compatibility but marked deprecated
+- **`KeywordSearch` removed** — deleted `src/search/keyword/keyword-search.ts` and its public export. All BM25 keyword search now goes through `CompositeBM25Search` which discovers `BM25SearchPlugin` instances from the registry. Tests rewritten to use raw FTS5 SQL + `sanitizeFTS`/`normalizeBM25` utilities
 - **`CodeGraphProvider`, `CodeChunkSummary` removed from core** — moved to `@brainbank/code` package
 - **Domain row types removed from core** — `CodeChunkRow`, `GitCommitRow`, `DocChunkRow`, `CollectionRow`, `ImportRow` removed from `db/rows.ts`. Each package defines its own row types
 
@@ -170,8 +175,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Split `factory.ts`** (376 → 46 lines) — config loading, plugin discovery, provider setup, and builtin registration extracted to `src/cli/factory/` with 4 focused modules
 - **Split `commands/system.ts`** — into 5 focused files: `stats.ts`, `reembed.ts`, `watch.ts`, `serve.ts`, `help.ts`
 - **Renamed `index-cmd.ts` → `index.ts`** — aligns with command naming convention
-
-## [0.8.0] — 2026-03-30 [UNRELEASED <- CHANGE THIS BEFORE>]
 
 ### Added
 - **Documentation refactor** — README.md rewritten as a concise landing page; all content moved to 13 focused `docs/` files (getting-started, cli, plugins, collections, search, custom-plugins, config, embeddings, multi-repo, mcp, memory, indexing, architecture). ARCHITECTURE.md moved to `docs/architecture.md`. CONTRIBUTING.md updated with current terminology and project structure

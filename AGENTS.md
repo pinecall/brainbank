@@ -188,9 +188,11 @@ import { BrainBank } from '@/brainbank.ts'; // WRONG — Layer 0 cannot import L
 import { CodeChunker } from '@/indexers/code/code-chunker.ts'; // WRONG — deleted
 import { git } from '@/indexers/git/git-plugin.ts';            // WRONG — use @brainbank/git
 
-// ❌ Backward compatibility aliases — no legacy code allowed
-export { VectorSearch as MultiIndexSearch };  // WRONG — removed
-export { KeywordSearch as BM25Search };       // WRONG — removed
+// ❌ Backward compatibility — NEVER keep deprecated code "for compat"
+// If something is replaced, DELETE the old code immediately.
+// No aliases, no deprecated wrappers, no "kept for tests".
+export { VectorSearch as MultiIndexSearch };  // WRONG — delete it
+function legacySearch() { return newSearch(); } // WRONG — delete it
 
 // ❌ Deprecated config fields
 builtins?: ('code' | 'git' | 'docs')[];  // WRONG — use "plugins" field

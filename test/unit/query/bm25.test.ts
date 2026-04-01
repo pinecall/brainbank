@@ -3,13 +3,16 @@
  *
  * Tests use createDomainSchema() to set up domain tables since
  * code/git/docs schemas are no longer in core.
+ * BM25 keyword search is validated via raw FTS5 SQL queries
+ * (the actual search path uses CompositeBM25Search + BM25SearchPlugin).
  */
 
-import { Database, KeywordSearch, SCHEMA_VERSION, tmpDb, createDomainSchema } from '../../helpers.ts';
+import { Database, SCHEMA_VERSION, tmpDb, createDomainSchema } from '../../helpers.ts';
+import { sanitizeFTS, normalizeBM25 } from '../../../src/lib/fts.ts';
 
 export const name = 'BM25 Full-Text Search';
 
-function freshDb(label: string): ReturnType<typeof Database.prototype.db extends infer D ? () => InstanceType<typeof Database> : never> {
+function freshDb(label: string) {
     const db = new Database(tmpDb(label));
     createDomainSchema(db);
     return db;
@@ -51,7 +54,7 @@ export const tests = {
         db.close();
     },
 
-    async 'KeywordSearch finds code by keyword'(assert: any) {
+    async 'FTS5 BM25 finds code by keyword'(assert: any) {
         const db = freshDb('bm25-search');
 
         db.prepare(`
@@ -67,17 +70,24 @@ export const tests = {
                     'typescript', 'hash2')
         `).run();
 
-        const bm25 = new KeywordSearch(db);
-        const results = await bm25.search('authenticate password');
+        const ftsQuery = sanitizeFTS('authenticate password');
+        const rows = db.prepare(`
+            SELECT c.file_path, bm25(fts_code, 5.0, 3.0, 1.0) AS score
+            FROM fts_code f
+            JOIN code_chunks c ON c.id = f.rowid
+            WHERE fts_code MATCH ?
+            ORDER BY score ASC
+            LIMIT 5
+        `).all(ftsQuery) as { file_path: string; score: number }[];
 
-        assert(results.length > 0, 'should find results for authenticate');
-        assert.equal(results[0].type, 'code');
-        assert.equal(results[0].filePath, 'src/auth.ts');
+        assert(rows.length > 0, 'should find results for authenticate');
+        assert.equal(rows[0].file_path, 'src/auth.ts');
+        assert(normalizeBM25(rows[0].score) > 0, 'normalized score should be positive');
 
         db.close();
     },
 
-    async 'KeywordSearch finds git commits'(assert: any) {
+    async 'FTS5 BM25 finds git commits'(assert: any) {
         const db = freshDb('bm25-git');
 
         db.prepare(`
@@ -85,37 +95,50 @@ export const tests = {
             VALUES ('abc123full', 'abc123', 'fix: resolve authentication bypass vulnerability', 'dev', '2024-01-15', 1705305600, '["src/auth.ts"]', 'diff here', 0)
         `).run();
 
-        const bm25 = new KeywordSearch(db);
-        const results = await bm25.search('authentication vulnerability');
+        const ftsQuery = sanitizeFTS('authentication vulnerability');
+        const rows = db.prepare(`
+            SELECT c.message, bm25(fts_commits, 5.0, 2.0, 1.0) AS score
+            FROM fts_commits f
+            JOIN git_commits c ON c.id = f.rowid
+            WHERE fts_commits MATCH ?
+            ORDER BY score ASC
+            LIMIT 5
+        `).all(ftsQuery) as { message: string; score: number }[];
 
-        assert(results.length > 0, 'should find commit');
-        assert.equal(results[0].type, 'commit');
-        assert.includes(results[0].content, 'authentication');
+        assert(rows.length > 0, 'should find commit');
+        assert.includes(rows[0].message, 'authentication');
 
         db.close();
     },
-
-
 
     async 'BM25 returns empty for no matches'(assert: any) {
         const db = freshDb('bm25-empty');
-        const bm25 = new KeywordSearch(db);
-        const results = await bm25.search('xyznonexistentterm');
 
-        assert.equal(results.length, 0);
+        const ftsQuery = sanitizeFTS('xyznonexistentterm');
+        const rows = db.prepare(`
+            SELECT rowid FROM fts_code WHERE fts_code MATCH ?
+        `).all(ftsQuery) as any[];
+
+        assert.equal(rows.length, 0);
         db.close();
     },
 
-    async 'BM25 sanitizes dangerous queries'(assert: any) {
+    async 'sanitizeFTS handles dangerous queries'(assert: any) {
         const db = freshDb('bm25-sanitize');
-        const bm25 = new KeywordSearch(db);
 
-        await bm25.search('test AND OR NOT');
-        await bm25.search('test {brackets} [square]');
-        await bm25.search('test^power ~fuzzy');
-        const empty = await bm25.search('');
+        // These should not throw
+        const q1 = sanitizeFTS('test AND OR NOT');
+        if (q1) db.prepare("SELECT rowid FROM fts_code WHERE fts_code MATCH ?").all(q1);
 
-        assert.equal(empty.length, 0);
+        const q2 = sanitizeFTS('test {brackets} [square]');
+        if (q2) db.prepare("SELECT rowid FROM fts_code WHERE fts_code MATCH ?").all(q2);
+
+        const q3 = sanitizeFTS('test^power ~fuzzy');
+        if (q3) db.prepare("SELECT rowid FROM fts_code WHERE fts_code MATCH ?").all(q3);
+
+        const empty = sanitizeFTS('');
+        assert.equal(empty, '');
+
         db.close();
     },
 };
