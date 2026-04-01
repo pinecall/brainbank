@@ -10,7 +10,7 @@ import type { BrainBankConfig, DocumentCollection } from '@/types.ts';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { c, getFlag } from '../utils.ts';
+import { c } from '../utils.ts';
 
 /** Full .brainbank/config.json schema. */
 export interface ProjectConfig {
@@ -29,11 +29,10 @@ const NOT_LOADED = Symbol('not-loaded');
 let _configCache: ProjectConfig | null | typeof NOT_LOADED = NOT_LOADED;
 
 /** Load .brainbank/config.json (or .ts fallback) if present. */
-export async function loadConfig(repoPath?: string): Promise<ProjectConfig | null> {
+export async function loadConfig(repoPath: string): Promise<ProjectConfig | null> {
     if (_configCache !== NOT_LOADED) return _configCache;
 
-    const rp = repoPath ?? getFlag('repo') ?? '.';
-    const brainbankDir = path.resolve(rp, '.brainbank');
+    const brainbankDir = path.resolve(repoPath, '.brainbank');
 
     for (const name of CONFIG_NAMES) {
         const configPath = path.join(brainbankDir, name);
@@ -61,7 +60,7 @@ export async function loadConfig(repoPath?: string): Promise<ProjectConfig | nul
 
 /** Get the loaded config (for use by commands). */
 export async function getConfig(repoPath?: string): Promise<ProjectConfig | null> {
-    return loadConfig(repoPath);
+    return loadConfig(repoPath ?? '.');
 }
 
 /** Reset config cache. Useful for tests. */

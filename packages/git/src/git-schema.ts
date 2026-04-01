@@ -7,15 +7,15 @@
 
 import type { PluginContext } from 'brainbank';
 
-type RawDb = PluginContext['db']['db'];
+type DbAdapter = PluginContext['db'];
 
 export const GIT_SCHEMA_VERSION = 1;
 
 export const GIT_MIGRATIONS = [
     {
         version: 1,
-        up(db: RawDb): void {
-            db.exec(`
+        up(adapter: DbAdapter): void {
+            adapter.exec(`
                 -- ── Git history ────────────────────────────────
                 CREATE TABLE IF NOT EXISTS git_commits (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,

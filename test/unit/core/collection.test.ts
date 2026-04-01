@@ -2,13 +2,13 @@
  * BrainBank — Collection Tests
  */
 
-import { BrainBank, Database, mockEmbedding, tmpDb } from '../../helpers.ts';
+import { BrainBank, SQLiteAdapter, mockEmbedding, tmpDb } from '../../helpers.ts';
 
 export const name = 'Collections';
 
 export const tests = {
     async 'kv tables exist'(assert: any) {
-        const db = new Database(tmpDb('kv-schema'));
+        const db = new SQLiteAdapter(tmpDb('kv-schema'));
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'kv_%'"
@@ -151,7 +151,7 @@ export const tests = {
     },
 
     async 'FTS trigger auto-syncs kv on insert'(assert: any) {
-        const db = new Database(tmpDb('kv-fts'));
+        const db = new SQLiteAdapter(tmpDb('kv-fts'));
 
         db.prepare(`
             INSERT INTO kv_data (collection, content, meta_json)

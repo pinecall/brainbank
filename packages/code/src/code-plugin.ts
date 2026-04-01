@@ -59,7 +59,7 @@ class CodePlugin implements Plugin {
 
     async initialize(ctx: PluginContext): Promise<void> {
         this.db = ctx.db;
-        runPluginMigrations(ctx.db.db, this.name, CODE_SCHEMA_VERSION, CODE_MIGRATIONS);
+        runPluginMigrations(ctx.db, this.name, CODE_SCHEMA_VERSION, CODE_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
         // Use shared HNSW so all code indexers (code, code:frontend, etc.) share one index

@@ -67,7 +67,9 @@ await brain.searchBM25('fix auth bug', { sources: { code: 0, git: 8 } });
 
 ## How Search Works
 
-BrainBank has **two levels** of search, orchestrated by `SearchAPI`:
+BrainBank has **two levels** of search, orchestrated by `SearchAPI`.
+
+> **Multi-process safety:** All search methods call `ensureFresh()` before executing. If another process (e.g. CLI `brainbank index`) has updated the HNSW indices, stale in-memory copies are hot-reloaded from disk automatically (~5μs version check).
 
 ```
 brain.hybridSearch('auth')

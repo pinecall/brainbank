@@ -6,7 +6,7 @@
  */
 
 import { BrainBank } from '../../../src/brainbank.ts';
-import { Database } from '../../../src/db/database.ts';
+import { SQLiteAdapter } from '../../../src/db/sqlite-adapter.ts';
 import { code } from '../src/index.js';
 import { CodeChunker } from '../src/code-chunker.js';
 import {
@@ -56,7 +56,7 @@ export function tmpDb(label: string): string {
 
 export {
     BrainBank,
-    Database,
+    SQLiteAdapter,
     code,
     CodeChunker,
     createDomainSchema,

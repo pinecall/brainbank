@@ -11,7 +11,7 @@ import type { ProjectConfig } from './config-loader.ts';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { c, getFlag } from '../utils.ts';
+import { c } from '../utils.ts';
 
 /** Plugin factory — accepts config, returns Plugin. */
 type PluginFactory = (opts: Record<string, unknown>) => Plugin;
@@ -51,10 +51,9 @@ const NOT_LOADED = Symbol('not-loaded');
 let _folderPluginsCache: Plugin[] | typeof NOT_LOADED = NOT_LOADED;
 
 /** Auto-discover plugins from .brainbank/plugins/ folder. */
-export async function discoverFolderPlugins(): Promise<Plugin[]> {
+export async function discoverFolderPlugins(repoPath: string): Promise<Plugin[]> {
     if (_folderPluginsCache !== NOT_LOADED) return _folderPluginsCache;
 
-    const repoPath = getFlag('repo') ?? '.';
     const pluginsDir = path.resolve(repoPath, '.brainbank', 'plugins');
 
     if (!fs.existsSync(pluginsDir)) {
@@ -101,14 +100,22 @@ export async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvide
 }
 
 /** Configure reranker and global embedding provider on brainOpts. */
-export async function setupProviders(brainOpts: Record<string, unknown>, config: ProjectConfig | null): Promise<void> {
-    const rerankerFlag = getFlag('reranker') ?? (config?.reranker as string | undefined);
+export async function setupProviders(
+    brainOpts: Record<string, unknown>,
+    config: ProjectConfig | null,
+    flags?: Record<string, string | undefined>,
+    env?: Record<string, string | undefined>,
+): Promise<void> {
+    const rerankerFlag = flags?.reranker ?? (config?.reranker as string | undefined);
     if (rerankerFlag === 'qwen3') {
         const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');
         brainOpts.reranker = new Qwen3Reranker();
     }
 
-    const embFlag = getFlag('embedding') ?? (config?.embedding as string | undefined) ?? process.env.BRAINBANK_EMBEDDING;
+    const embFlag = flags?.embedding
+        ?? (config?.embedding as string | undefined)
+        ?? env?.BRAINBANK_EMBEDDING
+        ?? process.env.BRAINBANK_EMBEDDING;
     if (embFlag) {
         const provider = await resolveEmbeddingKey(embFlag);
         brainOpts.embeddingProvider = provider;

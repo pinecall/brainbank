@@ -7,15 +7,15 @@
 
 import type { PluginContext } from 'brainbank';
 
-type RawDb = PluginContext['db']['db'];
+type DbAdapter = PluginContext['db'];
 
 export const CODE_SCHEMA_VERSION = 1;
 
 export const CODE_MIGRATIONS = [
     {
         version: 1,
-        up(db: RawDb): void {
-            db.exec(`
+        up(adapter: DbAdapter): void {
+            adapter.exec(`
                 -- ── Code chunks ────────────────────────────────
                 CREATE TABLE IF NOT EXISTS code_chunks (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,

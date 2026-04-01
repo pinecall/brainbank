@@ -2,7 +2,7 @@
  * BrainBank — Tags & TTL Tests
  */
 
-import { BrainBank, Database, mockEmbedding, tmpDb } from '../../helpers.ts';
+import { BrainBank, SQLiteAdapter, mockEmbedding, tmpDb } from '../../helpers.ts';
 
 export const name = 'Tags & TTL';
 
@@ -92,7 +92,7 @@ export const tests = {
         const col = brain.collection('test');
 
         // Insert already-expired item directly in DB
-        const db = new Database(brain.config.dbPath);
+        const db = new SQLiteAdapter(brain.config.dbPath);
         const pastExpiry = Math.floor(Date.now() / 1000) - 10;
         db.prepare(
             "INSERT INTO kv_data (collection, content, meta_json, tags_json, expires_at) VALUES (?, ?, ?, ?, ?)"
@@ -130,7 +130,7 @@ export const tests = {
     // ── Schema ───────────────────────────────────────
 
     async 'kv_data has tags_json and expires_at columns'(assert: any) {
-        const db = new Database(tmpDb('schema-kv-cols'));
+        const db = new SQLiteAdapter(tmpDb('schema-kv-cols'));
         const cols = db.prepare("PRAGMA table_info(kv_data)").all() as any[];
         const names = cols.map((c: any) => c.name);
 
@@ -150,7 +150,7 @@ export const tests = {
         await col.add('active item');
 
         // Insert already-expired item directly in DB
-        const db = new Database(brain.config.dbPath);
+        const db = new SQLiteAdapter(brain.config.dbPath);
         const pastExpiry = Math.floor(Date.now() / 1000) - 10;
         db.prepare(
             "INSERT INTO kv_data (collection, content, meta_json, tags_json, expires_at) VALUES (?, ?, ?, ?, ?)"

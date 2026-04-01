@@ -113,7 +113,7 @@ The CLI also merges ignore patterns: `config[pluginName].ignore` + `--ignore` fl
 
 ## MCP Multi-Workspace
 
-The MCP server maintains a pool of BrainBank instances — one per unique `repo` path:
+The MCP server manages workspace lifecycle via `WorkspacePool` — a memory-aware pool with automatic eviction. Each unique `repo` path gets its own BrainBank instance:
 
 ```typescript
 // Agent working in one workspace
@@ -123,7 +123,9 @@ brainbank_search({ query: "login form", repo: "/Users/you/projects" })
 brainbank_search({ query: "API routes", repo: "/Users/you/other-project" })
 ```
 
-Instances are cached in memory after first initialization (~480ms), so subsequent queries are fast.
+Instances are cached in memory after first initialization (~480ms). The pool evicts idle workspaces based on memory pressure (`BRAINBANK_MAX_MEMORY_MB`, default 2GB) and inactivity TTL (`BRAINBANK_TTL_MINUTES`, default 30 min). Active operations are tracked — the pool never evicts a workspace with in-flight queries.
+
+Use `brainbank_workspaces` tool for pool observability (list, evict, stats).
 
 ---
 

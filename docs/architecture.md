@@ -121,7 +121,8 @@ brainbank/
 │   │   └── reembed.ts                 ← reembedAll(): atomic vector swap without re-parsing
 │   │
 │   ├── db/
-│   │   ├── database.ts                ← better-sqlite3 wrapper (WAL, FK, transactions)
+│   │   ├── adapter.ts                 ← DatabaseAdapter interface + PreparedStatement<T>
+│   │   ├── sqlite-adapter.ts          ← SQLiteAdapter: better-sqlite3 implementation (WAL, FK, transactions)
 │   │   ├── schema.ts                  ← Core-only DDL: KV tables, embedding_meta, plugin_versions, index_state
 │   │   ├── index-state.ts             ← Cross-process version tracking (bumpVersion, getVersions)
 │   │   ├── migrations.ts              ← Plugin migration system (runPluginMigrations)
@@ -168,23 +169,24 @@ brainbank/
 │   │   ├── rrf.ts                     ← reciprocalRankFusion + fuseRankedLists<T>
 │   │   └── write-lock.ts             ← Advisory file lock (O_EXCL, stale PID detection)
 │   │
-│   └── cli/
-│       ├── index.ts                   ← CLI dispatcher
-│       ├── utils.ts                   ← Colors, arg parsing, result printer
-│       ├── factory/
-│       │   ├── index.ts               ← createBrain() orchestrator
-│       │   ├── config-loader.ts       ← .brainbank/config.json loader + cache
-│       │   ├── plugin-loader.ts       ← Dynamic @brainbank/* loading + folder discovery
-│       │   └── builtin-registration.ts ← Multi-repo detection + plugin registration
-│       └── commands/
-│           ├── index.ts               ← brainbank index (interactive scan → prompt → index)
-│           ├── scan.ts                ← scanRepo(): lightweight scanner (no BrainBank init)
-│           ├── search.ts              ← search / hsearch / ksearch
-│           ├── docs.ts                ← docs / dsearch
-│           ├── collection.ts          ← collection add/list/remove
-│           ├── context.ts             ← context [task] / context add / context list
-│           ├── kv.ts                  ← kv add/search/list/trim/clear
-│           ├── stats.ts, reembed.ts, watch.ts, serve.ts, help.ts
+│   ├── cli/
+│   │   ├── index.ts                   ← CLI dispatcher
+│   │   ├── utils.ts                   ← Colors, arg parsing, result printer
+│   │   ├── factory/
+│   │   │   ├── index.ts               ← createBrain(context?) orchestrator
+│   │   │   ├── brain-context.ts       ← BrainContext type + contextFromCLI() builder
+│   │   │   ├── config-loader.ts       ← .brainbank/config.json loader + cache
+│   │   │   ├── plugin-loader.ts       ← Dynamic @brainbank/* loading + folder discovery
+│   │   │   └── builtin-registration.ts ← Multi-repo detection + plugin registration
+│   │   └── commands/
+│   │       ├── index.ts               ← brainbank index (interactive scan → prompt → index)
+│   │       ├── scan.ts                ← scanRepo(): lightweight scanner (no BrainBank init)
+│   │       ├── search.ts              ← search / hsearch / ksearch
+│   │       ├── docs.ts                ← docs / dsearch
+│   │       ├── collection.ts          ← collection add/list/remove
+│   │       ├── context.ts             ← context [task] / context add / context list
+│   │       ├── kv.ts                  ← kv add/search/list/trim/clear
+│   │       └── stats.ts, reembed.ts, watch.ts, serve.ts, help.ts
 │
 └── packages/
     ├── code/                          ← @brainbank/code
@@ -233,7 +235,9 @@ brainbank/
     │
     └── mcp/                           ← @brainbank/mcp
         └── src/
-            └── mcp-server.ts          ← MCP stdio server (6 tools, LRU pool of 10 workspaces)
+            ├── mcp-server.ts          ← MCP stdio server (7 tools)
+            ├── workspace-pool.ts      ← Memory-pressure + TTL eviction pool
+            └── workspace-factory.ts   ← Delegates to core createBrain()
 ```
 
 **Package dependency graph:**
@@ -242,7 +246,8 @@ brainbank/
 @brainbank/code    ── peerDep ──► brainbank (core)
 @brainbank/git     ── peerDep ──► brainbank (core)
 @brainbank/docs    ── peerDep ──► brainbank (core)
-@brainbank/mcp     ── dep ─────► brainbank + @brainbank/code + @brainbank/git + @brainbank/docs
+@brainbank/mcp     ── dep ─────► brainbank (core)
+                   ── peerDep ──► @brainbank/code + @brainbank/git + @brainbank/docs (all optional)
 ```
 
 > **Schema ownership:** Core owns ONLY KV tables + metadata tables (`kv_data`,
@@ -269,7 +274,7 @@ no business logic itself.
 │  STATE                                                                 │
 │  ─────────────────────────────────────────────────────────────────    │
 │  _config:       ResolvedConfig           merged defaults + user cfg    │
-│  _db:           Database                 SQLite connection             │
+│  _db:           DatabaseAdapter           SQLite connection (via adapter)│
 │  _embedding:    EmbeddingProvider        active embedding model        │
 │  _registry:     PluginRegistry           all registered plugins        │
 │  _searchAPI:    SearchAPI | undefined    search + context ops          │
@@ -295,9 +300,10 @@ no business logic itself.
 │  .getContext(task, opts)    formatted markdown for LLM system prompt    │
 │  .ensureFresh()            hot-reload stale HNSW if another process    │
 │                            bumped versions in index_state              │
+│  .memoryHint()             estimated HNSW memory footprint (bytes)     │
 │  .rebuildFTS()             rebuild FTS5 indices                        │
 │  .reembed(opts)            re-generate all vectors (provider switch)   │
-│  .watch(opts)              start plugin-driven auto-reindex              │
+│  .watch(opts)              start plugin-driven auto-reindex            │
 │  .stats()                  stats from all loaded plugins               │
 │  .has(name)                check if plugin loaded (prefix-match)       │
 │  .plugin<T>(name)          typed plugin access, undefined if missing   │
@@ -374,7 +380,7 @@ so KVService is created in step 4, before plugins run in step 6.
 BrainBank._runInitialize({ force? })
 │
 ├── 1. Open Database
-│     new Database(config.dbPath)
+│     new SQLiteAdapter(config.dbPath)
 │     WAL mode, FK constraints, core-only schema via createSchema()
 │
 ├── 2. Resolve Embedding
@@ -597,8 +603,8 @@ Every plugin receives exactly one `PluginContext` during `initialize()`.
 ```
 PluginContext
 │
-├── db: Database
-│     ← shared SQLite (ALL plugins use the same file)
+├── db: DatabaseAdapter
+│     ← shared database adapter (ALL plugins use the same connection)
 │
 ├── embedding: EmbeddingProvider
 │     ← global embedding; plugins may override via opts.embeddingProvider ?? ctx.embedding
@@ -841,9 +847,9 @@ DocsPlugin.index(options?) → IndexResult
 
 ## 8. @brainbank/mcp Package
 
-**File:** `packages/mcp/src/mcp-server.ts` (514 lines)
+**Files:** `packages/mcp/src/` — 3 source files
 
-6 registered MCP tools via `@modelcontextprotocol/sdk`:
+7 registered MCP tools via `@modelcontextprotocol/sdk`:
 
 | Tool | Description |
 |------|------------|
@@ -853,27 +859,42 @@ DocsPlugin.index(options?) → IndexResult
 | `brainbank_stats` | Index stats + KV collection inventory |
 | `brainbank_history` | Git commit history for a file path |
 | `brainbank_collection` | KV operations: add, search, trim |
+| `brainbank_workspaces` | Pool observability: list, evict, stats |
 
-**Multi-workspace LRU pool:**
+**WorkspacePool** (`workspace-pool.ts`):
 
 ```
-_pool: Map<string, { brain: BrainBank, lastAccess: number }>
-MAX_POOL_SIZE = 10
+WorkspacePool(options: PoolOptions)
+  _pool: Map<string, PoolEntry>
+  _maxMemoryBytes  (BRAINBANK_MAX_MEMORY_MB env, default 2048 MB)
+  _ttlMs           (BRAINBANK_TTL_MINUTES env, default 30 min)
 
-getBrainBank(targetRepo?)
-  repo = targetRepo ?? BRAINBANK_REPO env ?? findRepoRoot(cwd)
-  if pool hit: health check + return
-  if pool full: evict oldest (LRU)
-  _createBrain(resolved):
-    read .brainbank/config.json
-    resolve embedding: config > BRAINBANK_EMBEDDING env > auto from DB
-    new BrainBank + use(code/git/docs)
-    brain.initialize()
-    ← corruption recovery: delete DB + retry fresh
+  get(repoPath):
+    if pool hit: ensureFresh() + return
+    _evictByMemoryPressure()  ← evict oldest idle until under memory limit
+    factory(repoPath) → brain.initialize()
 
-_sharedReranker: created once from BRAINBANK_RERANKER env
-                 shared across ALL pool entries
+  withBrain(repoPath, fn):
+    entry.activeOps++ → fn(brain) → entry.activeOps-- (prevents eviction)
+
+  _evictStale():  ← runs every 60s, evicts entries past TTL with zero activeOps
+  _evictByMemoryPressure(): ← sorts by lastAccess, evicts oldest idle first
+  stats(): PoolStats  ← per-entry memory, last access, active ops
 ```
+
+**WorkspaceFactory** (`workspace-factory.ts`):
+
+```
+createWorkspaceBrain(repoPath):
+  import('brainbank') → createBrain({ repoPath, env: process.env })
+  brain.initialize()
+  ← delegates to core factory: config loading, plugin discovery,
+     embedding resolution — zero hardcoded plugin imports
+```
+
+Plugin packages (`@brainbank/code`, `@brainbank/git`, `@brainbank/docs`) are
+optional `peerDependencies` — loaded dynamically by the core factory from
+`.brainbank/config.json`, not imported by the MCP server.
 
 ---
 
@@ -1124,25 +1145,39 @@ _getDocContext: walk path hierarchy → path_contexts → collection.context
 
 ## 11. Infrastructure
 
-### 11.1 Database
+### 11.1 Database Adapter
 
-**File:** `src/db/database.ts` (71 lines)
+**Files:** `src/db/adapter.ts` (81 lines), `src/db/sqlite-adapter.ts` (109 lines)
+
+All consumers depend on the `DatabaseAdapter` interface — never on a concrete
+driver. `SQLiteAdapter` is the built-in implementation.
 
 ```
-Database(dbPath):
-  fs.mkdirSync(dirname, { recursive: true })
-  new BetterSqlite3(dbPath)
-  PRAGMA journal_mode = WAL
-  PRAGMA busy_timeout = 5000
-  PRAGMA synchronous = NORMAL
-  PRAGMA foreign_keys = ON
-  createSchema(db)   ← core-only tables
+DatabaseAdapter (interface):
+  prepare<T>(sql) → PreparedStatement<T>   ← typed, no driver leak
+  exec(sql)                                ← DDL / multi-statement
+  transaction<T>(fn: () => T): T           ← auto-commit/rollback
+  batch<T>(sql, rows: T[])                 ← one txn, one stmt, many rows
+  close()
+  capabilities: AdapterCapabilities        ← fts, upsert, json, vectors
+  raw<T>(): T | undefined                  ← escape hatch (deprecated)
 
-transaction<T>(fn: () => T): T    ← auto-commit/rollback
-batch(sql, rows[][])              ← one txn, one stmt, many rows
-prepare(sql) → Statement
-exec(sql)
-close()
+PreparedStatement<T> (interface):
+  get(...params): T | undefined
+  all(...params): T[]
+  run(...params): ExecuteResult
+  iterate(...params): IterableIterator<T>
+
+SQLiteAdapter implements DatabaseAdapter:
+  constructor(dbPath):
+    fs.mkdirSync(dirname, { recursive: true })
+    new BetterSqlite3(dbPath)
+    PRAGMA journal_mode = WAL
+    PRAGMA busy_timeout = 5000
+    PRAGMA synchronous = NORMAL
+    PRAGMA foreign_keys = ON
+    createSchema(this)   ← core-only tables
+  capabilities: { fts: 'fts5', upsert: 'or-replace', json: true, vectors: false }
 ```
 
 ### 11.2 HNSWIndex
@@ -1408,20 +1443,20 @@ SearchAPI:
 ### 14.1 CLI Factory — createBrain()
 
 ```
-createBrain(repoPath?)  [src/cli/factory/index.ts]
-  rp = repoPath ?? getFlag('repo') ?? '.'
-  config = await loadConfig()   ← .brainbank/{config.json|.ts|.js|.mjs}
-  folderPlugins = await discoverFolderPlugins()  ← .brainbank/plugins/*.ts|js|mjs
-  brainOpts = { repoPath: rp, ...(config?.brainbank ?? {}) }
-  setupProviders(brainOpts, config):
-    --reranker qwen3 → Qwen3Reranker
-    --embedding | config.embedding | BRAINBANK_EMBEDDING → resolveEmbeddingKey
-  brain = new BrainBank(brainOpts)
+createBrain(contextOrRepo?)  [src/cli/factory/index.ts]
+  // Build context from CLI flags or accept BrainContext directly
+  ctx: BrainContext = contextOrRepo ?? contextFromCLI()
+  rp = ctx.repoPath
+  config = loadConfig(rp)
+  folderPlugins = discoverFolderPlugins(rp)
+  brainOpts = { repoPath, ...config?.brainbank }
+  setupProviders(brainOpts, config, ctx.flags, ctx.env)  ← embedding + reranker
   builtins = config?.plugins ?? ['code', 'git', 'docs']
-  registerBuiltins(brain, rp, builtins, config):
+  ignorePatterns = ctxFlag(ctx, 'ignore')?.split(',') ?? []
+  registerBuiltins(brain, rp, builtins, config, ignorePatterns):
     multi-repo detection: detectGitSubdirs() if no root .git
     per-plugin embedding: config[pluginName].embedding (generic)
-    merge ignore: config[pluginName].ignore + --ignore flag
+    merge ignore: config[pluginName].ignore + ignorePatterns array
     loadPlugin(name) from PLUGIN_LOADERS registry (dynamic import, null if not installed)
     multi-repo → {name}:{sub.name} per subdirectory for multi-repo-capable plugins
     single → factory({ repoPath, ...pluginConfig })
@@ -1430,7 +1465,19 @@ createBrain(repoPath?)  [src/cli/factory/index.ts]
   return brain   ← NOT initialized, .use() still allowed
 ```
 
-**Config priority:** CLI flags > config.json > DB meta > defaults
+**BrainContext** (`brain-context.ts`) — portable factory input:
+
+```typescript
+interface BrainContext {
+  repoPath: string;
+  flags?: Record<string, string | undefined>;  // CLI flags (--embedding, --ignore, etc.)
+  env?: Record<string, string | undefined>;    // environment overrides
+}
+
+contextFromCLI(repoOverride?)  → builds from getFlag() + process.env
+ctxFlag(ctx, key)              → ctx.flags?.[key]
+ctxEnv(ctx, key)               → ctx.env?.[key] ?? process.env[key]
+```
 
 ### 14.2 Commands
 
@@ -1628,7 +1675,7 @@ new BrainBank({ embeddingProvider: openai })
 brain.search("auth middleware")   ← auto-triggers initialize()
          │
     ┌────▼──────────────────────────────────────────────┐
-    │  1. new Database('.brainbank/brainbank.db')        │
+    │  1. new SQLiteAdapter('.brainbank/brainbank.db')   │
     │     ← core schema only: KV + metadata + migrations│
     │  2. resolveEmbedding → openai (explicit)           │
     │  3. detectProviderMismatch → check stored vs current│
@@ -1788,7 +1835,7 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
 | 19 | **Incremental Processing** | `CodeWalker`, `DocsIndexer`, `GitIndexer` | Content-hash skip; only changed content re-embedded |
 | 20 | **Discriminated Union** | `SearchResult` | `isCodeResult()`, `matchResult()` for exhaustive matching |
 | 21 | **Pipeline** | Hybrid search → RRF → rerank | Composable, independently testable stages |
-| 22 | **LRU Pool** | `@brainbank/mcp` workspace pool | Up to 10 instances; evict least-recently-used |
+| 22 | **Memory-Aware Pool** | `WorkspacePool` in `@brainbank/mcp` | Memory-pressure + TTL eviction, active-op tracking |
 | 23 | **Plugin Migrations** | `runPluginMigrations()` | Per-plugin versioned schema, idempotent `IF NOT EXISTS` |
 
 ---
@@ -1844,7 +1891,7 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
      ┌──────────────────────────────────────────────────────────────────┐
      │                       Infrastructure                             │
      │                                                                  │
-     │  Database ──── better-sqlite3 (WAL + FK + core schema only)      │
+     │  DatabaseAdapter ── interface (SQLiteAdapter wraps better-sqlite3)│
      │  Migrations ── runPluginMigrations() per plugin                   │
      │                                                                  │
      │  HNSWIndex ──── hnswlib-node                                     │
@@ -1880,9 +1927,10 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
      ┌──────────────────────────────────────────────────────────────────┐
      │                     @brainbank/mcp                               │
      │                                                                  │
-     │  LRU pool: Map<repoPath, { brain, lastAccess }> max=10          │
-     │  6 tools: search, context, index, stats, history, collection     │
-     │  findRepoRoot + corruption recovery + shared reranker            │
+     │  WorkspacePool: memory-pressure + TTL eviction, active-op guard │
+     │  7 tools: search, context, index, stats, history, collection,   │
+     │           workspaces (pool observability)                        │
+     │  WorkspaceFactory → createBrain() (no hardcoded plugins)        │
      └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1989,10 +2037,13 @@ KV index staleness is handled directly (always `kv_vectors` / `data_id`).
 
 #### 4. MCP Pool Invalidation
 
-`@brainbank/mcp` maintains a pool of `BrainBank` instances (LRU, max 10).
-On each tool request, the server calls `brain.ensureFresh()` to detect
+`@brainbank/mcp` manages a `WorkspacePool` of `BrainBank` instances with
+memory-pressure eviction (configurable via `BRAINBANK_MAX_MEMORY_MB`, default
+2GB) and TTL eviction for idle workspaces (`BRAINBANK_TTL_MINUTES`, default
+30min). Active operations are tracked to prevent mid-query eviction.
+On each pool hit, the server calls `brain.ensureFresh()` to detect
 whether another process has indexed since the pool entry was created.
-This replaces the previous fragile `hnswSize === 0` check.
+Eviction decisions use `brain.memoryHint()` — estimated HNSW memory footprint.
 
 #### 5. Worker Thread Embedding
 

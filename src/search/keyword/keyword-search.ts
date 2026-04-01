@@ -9,7 +9,7 @@
  * Kept for backward compatibility with tests.
  */
 
-import type { Database } from '@/db/database.ts';
+import type { DatabaseAdapter } from '@/db/adapter.ts';
 import type { SearchResult } from '@/types.ts';
 import type { SearchStrategy, SearchOptions } from '@/search/types.ts';
 import { sanitizeFTS, normalizeBM25, escapeLike } from '@/lib/fts.ts';
@@ -33,7 +33,7 @@ function isFTSError(e: unknown): boolean {
 }
 
 export class KeywordSearch implements SearchStrategy {
-    constructor(private _db: Database) {}
+    constructor(private _db: DatabaseAdapter) {}
 
     /**
      * Full-text keyword search across all FTS5 indices.

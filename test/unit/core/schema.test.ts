@@ -7,7 +7,8 @@
  */
 
 import * as fs from 'node:fs';
-import { Database } from '../../../src/db/database.ts';
+import { SQLiteAdapter } from '../../../src/db/sqlite-adapter.ts';
+import type { DatabaseAdapter } from '../../../src/db/adapter.ts';
 import { getSchemaVersion, SCHEMA_VERSION } from '../../../src/db/schema.ts';
 import { createDomainSchema } from '../../helpers.ts';
 
@@ -15,19 +16,19 @@ export const name = 'Schema & Database';
 
 const TEST_DB = '/tmp/brainbank-test-schema.db';
 
-function freshDb(): Database {
+function freshDb(): DatabaseAdapter {
     try { fs.unlinkSync(TEST_DB); } catch {}
     try { fs.unlinkSync(TEST_DB + '-wal'); } catch {}
     try { fs.unlinkSync(TEST_DB + '-shm'); } catch {}
-    return new Database(TEST_DB);
+    return new SQLiteAdapter(TEST_DB);
 }
 
 export const tests = {
     'creates core tables'(assert: any) {
         const db = freshDb();
-        const tables = db.db.prepare(
+        const tables = db.prepare(
             `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`
-        ).all().map((r: any) => r.name);
+        ).all().map((r: unknown) => (r as { name: string }).name);
 
         // Core tables
         assert.includes(tables, 'schema_version');
@@ -47,9 +48,9 @@ export const tests = {
         const db = freshDb();
         createDomainSchema(db);
 
-        const tables = db.db.prepare(
+        const tables = db.prepare(
             `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`
-        ).all().map((r: any) => r.name);
+        ).all().map((r: unknown) => (r as { name: string }).name);
 
         assert.includes(tables, 'code_chunks');
         assert.includes(tables, 'code_vectors');
@@ -72,28 +73,28 @@ export const tests = {
         const db = freshDb();
         // Constructor already runs createSchema; try instantiating with same DB
         db.close();
-        const db2 = new Database(TEST_DB);
+        const db2 = new SQLiteAdapter(TEST_DB);
         assert.ok(true, 'second init did not throw');
         db2.close();
     },
 
     'schema version is correct'(assert: any) {
         const db = freshDb();
-        const version = getSchemaVersion(db.db);
+        const version = getSchemaVersion(db);
         assert.equal(version, SCHEMA_VERSION);
         db.close();
     },
 
     'WAL mode is active'(assert: any) {
         const db = freshDb();
-        const mode = db.db.pragma('journal_mode') as any[];
+        const mode = db.raw<{ pragma(s: string): unknown[] }>()!.pragma('journal_mode') as { journal_mode: string }[];
         assert.equal(mode[0].journal_mode, 'wal');
         db.close();
     },
 
     'busy_timeout is set'(assert: any) {
         const db = freshDb();
-        const timeout = db.db.pragma('busy_timeout') as any[];
+        const timeout = db.raw<{ pragma(s: string): unknown[] }>()!.pragma('busy_timeout') as { timeout: number }[];
         assert.equal(timeout[0].timeout, 5000);
         db.close();
     },
@@ -159,7 +160,7 @@ export const tests = {
     'auto-creates parent directory'(assert: any) {
         const nested = '/tmp/brainbank-test-nested/sub/dir/test.db';
         try { fs.rmSync('/tmp/brainbank-test-nested', { recursive: true }); } catch {}
-        const db = new Database(nested);
+        const db = new SQLiteAdapter(nested);
         assert.ok(fs.existsSync(nested));
         db.close();
         try { fs.rmSync('/tmp/brainbank-test-nested', { recursive: true }); } catch {}

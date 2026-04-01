@@ -59,7 +59,7 @@ class GitPlugin implements Plugin {
 
     async initialize(ctx: PluginContext): Promise<void> {
         this.db = ctx.db;
-        runPluginMigrations(ctx.db.db, this.name, GIT_SCHEMA_VERSION, GIT_MIGRATIONS);
+        runPluginMigrations(ctx.db, this.name, GIT_SCHEMA_VERSION, GIT_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
         // Use shared HNSW so all git indexers share one index

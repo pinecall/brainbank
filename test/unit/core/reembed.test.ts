@@ -5,7 +5,7 @@
  * without re-parsing files, git, or documents.
  */
 
-import { BrainBank, Database, mockEmbedding, tmpDb } from '../../helpers.ts';
+import { BrainBank, SQLiteAdapter, mockEmbedding, tmpDb } from '../../helpers.ts';
 import type { EmbeddingProvider } from '../../helpers.ts';
 
 export const name = 'Re-embedding';
@@ -84,7 +84,7 @@ export const tests = {
         await brain.initialize();
 
         // Check metadata was stored
-        const db = new Database(dbPath);
+        const db = new SQLiteAdapter(dbPath);
         const provider = db.prepare("SELECT value FROM embedding_meta WHERE key = 'provider'").get() as any;
         const dims = db.prepare("SELECT value FROM embedding_meta WHERE key = 'dims'").get() as any;
 

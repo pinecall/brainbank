@@ -9,20 +9,20 @@
  * Migrations use `IF NOT EXISTS` so first run on an existing DB is a no-op.
  */
 
-import type Database from 'better-sqlite3';
+import type { DatabaseAdapter } from './adapter.ts';
 
 /** A single migration step. */
 export interface Migration {
     /** Version this migration brings the schema to. */
     version: number;
     /** Apply the migration. Must be idempotent (use IF NOT EXISTS). */
-    up(db: Database.Database): void;
+    up(adapter: DatabaseAdapter): void;
 }
 
 /** Get the currently stored schema version for a plugin. Returns 0 if no record. */
-export function getPluginVersion(db: Database.Database, pluginName: string): number {
+export function getPluginVersion(adapter: DatabaseAdapter, pluginName: string): number {
     try {
-        const row = db.prepare(
+        const row = adapter.prepare(
             'SELECT version FROM plugin_versions WHERE plugin_name = ?'
         ).get(pluginName) as { version: number } | undefined;
         return row?.version ?? 0;
@@ -32,8 +32,8 @@ export function getPluginVersion(db: Database.Database, pluginName: string): num
 }
 
 /** Set the schema version for a plugin. */
-export function setPluginVersion(db: Database.Database, pluginName: string, version: number): void {
-    db.prepare(`
+export function setPluginVersion(adapter: DatabaseAdapter, pluginName: string, version: number): void {
+    adapter.prepare(`
         INSERT OR REPLACE INTO plugin_versions (plugin_name, version, applied_at)
         VALUES (?, ?, unixepoch())
     `).run(pluginName, version);
@@ -45,12 +45,12 @@ export function setPluginVersion(db: Database.Database, pluginName: string, vers
  * Each migration runs in its own transaction.
  */
 export function runPluginMigrations(
-    db: Database.Database,
+    adapter: DatabaseAdapter,
     pluginName: string,
     schemaVersion: number,
     migrations: Migration[],
 ): void {
-    const current = getPluginVersion(db, pluginName);
+    const current = getPluginVersion(adapter, pluginName);
     if (current >= schemaVersion) return;
 
     const sorted = [...migrations].sort((a, b) => a.version - b.version);
@@ -58,9 +58,9 @@ export function runPluginMigrations(
     for (const m of sorted) {
         if (m.version <= current) continue;
 
-        db.transaction(() => {
-            m.up(db);
-            setPluginVersion(db, pluginName, m.version);
-        })();
+        adapter.transaction(() => {
+            m.up(adapter);
+            setPluginVersion(adapter, pluginName, m.version);
+        });
     }
 }

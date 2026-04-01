@@ -16,193 +16,50 @@
  *   }
  * }
  * 
- * Tools (6):
+ * Tools (7):
  *   brainbank_search     — Unified search (hybrid, vector, or keyword mode)
  *   brainbank_context    — Formatted knowledge context for a task
  *   brainbank_index      — Trigger code/git/docs indexing
  *   brainbank_stats      — Index statistics
  *   brainbank_history    — Git history for a specific file
  *   brainbank_collection — KV collection operations (add, search, trim)
+ *   brainbank_workspaces — Pool observability (list, evict, stats)
  */
+
+import type { SearchResult } from 'brainbank';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod/v3';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { BrainBank } from 'brainbank';
-import { code } from '@brainbank/code';
-import { git } from '@brainbank/git';
-import { docs } from '@brainbank/docs';
-
-// ── Configuration from env ──────────────────────────
-
-/**
- * Detect repo root by walking up from startDir until we find `.git/`.
- * Returns startDir itself if no `.git/` is found (mono-repo or non-git project).
- */
-function findRepoRoot(startDir: string): string {
-    let dir = path.resolve(startDir);
-    while (true) {
-        if (fs.existsSync(path.join(dir, '.git'))) return dir;
-        const parent = path.dirname(dir);
-        if (parent === dir) break; // filesystem root
-        dir = parent;
-    }
-    return path.resolve(startDir); // fallback: use startDir as-is
-}
-
-const defaultRepoPath = process.env.BRAINBANK_REPO || undefined;
-
-// ── Reranker (default: none, set BRAINBANK_RERANKER=qwen3 to enable) ──
-
-async function createReranker() {
-    const rerankerEnv = process.env.BRAINBANK_RERANKER ?? 'none';
-    if (rerankerEnv === 'none') return undefined;
-    if (rerankerEnv === 'qwen3') {
-        const { Qwen3Reranker } = await import('brainbank');
-        return new Qwen3Reranker();
-    }
-    return undefined;
-}
+import { WorkspacePool } from './workspace-pool.js';
+import { createWorkspaceBrain, resolveRepoPath } from './workspace-factory.js';
 
 // ── Multi-Workspace BrainBank Pool ─────────────────────
 
-const MAX_POOL_SIZE = 10;
+const pool = new WorkspacePool({
+    factory: createWorkspaceBrain,
+    maxMemoryMB: parseInt(process.env.BRAINBANK_MAX_MEMORY_MB ?? '2048', 10),
+    ttlMinutes: parseInt(process.env.BRAINBANK_TTL_MINUTES ?? '30', 10),
+    onError: (repo, err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`BrainBank pool error [${repo}]: ${msg}`);
+    },
+});
 
-interface PoolEntry {
-    brain: BrainBank;
-    lastAccess: number;
-}
-
-const _pool = new Map<string, PoolEntry>();
-let _sharedReranker: any = undefined;
-let _sharedReady = false;
-
-async function ensureShared() {
-    if (_sharedReady) return;
-    _sharedReranker = await createReranker();
-    _sharedReady = true;
-}
-
-async function getBrainBank(targetRepo?: string): Promise<BrainBank> {
-    // Priority: explicit param > BRAINBANK_REPO env > auto-detect from cwd
-    const rp = targetRepo ?? defaultRepoPath ?? findRepoRoot(process.cwd());
-    const resolved = rp.replace(/\/+$/, '');
-
-    if (_pool.has(resolved)) {
-        const entry = _pool.get(resolved)!;
-        try {
-            const codeStats = entry.brain.plugin('code')?.stats?.();
-            if (codeStats && codeStats.hnswSize === 0) {
-                const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
-                const dbSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
-                if (dbSize > 100_000) {
-                    evictPool(resolved);
-                } else {
-                    entry.lastAccess = Date.now();
-                    return entry.brain;
-                }
-            } else {
-                entry.lastAccess = Date.now();
-                return entry.brain;
-            }
-        } catch {
-            entry.lastAccess = Date.now();
-            return entry.brain;
-        }
-    }
-
-    await ensureShared();
-
-    if (_pool.size >= MAX_POOL_SIZE) {
-        let oldest: string | undefined;
-        let oldestTime = Infinity;
-        for (const [key, entry] of _pool) {
-            if (entry.lastAccess < oldestTime) {
-                oldestTime = entry.lastAccess;
-                oldest = key;
-            }
-        }
-        if (oldest) evictPool(oldest);
-    }
-
-    const brain = await _createBrain(resolved);
-    _pool.set(resolved, { brain, lastAccess: Date.now() });
-    return brain;
-}
-
-async function _createBrain(resolved: string): Promise<BrainBank> {
-    // Read .brainbank/config.json if present
-    const configPath = path.join(resolved, '.brainbank', 'config.json');
-    let projectConfig: Record<string, any> | null = null;
-    try {
-        if (fs.existsSync(configPath)) {
-            projectConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        }
-    } catch {}
-
-    const codeIgnore = projectConfig?.code?.ignore as string[] | undefined;
-    const plugins = (projectConfig?.plugins as string[] | undefined) ?? ['code', 'git', 'docs'];
-
-    // Resolve embedding: config.json > BRAINBANK_EMBEDDING env > auto from DB
-    const embKey = projectConfig?.embedding ?? process.env.BRAINBANK_EMBEDDING;
-    let embeddingProvider: any = undefined;
-    if (embKey) {
-        const { resolveEmbedding } = await import('brainbank');
-        embeddingProvider = resolveEmbedding(embKey);
-    }
-
-    const opts: Record<string, any> = {
-        repoPath: resolved,
-        reranker: _sharedReranker,
-        ...(embeddingProvider ? { embeddingProvider, embeddingDims: embeddingProvider.dims } : {}),
-    };
-    const brain = new BrainBank(opts);
-
-    if (plugins.includes('code')) brain.use(code({ repoPath: resolved, ignore: codeIgnore }));
-    if (plugins.includes('git')) brain.use(git({ repoPath: resolved }));
-    if (plugins.includes('docs')) brain.use(docs());
-
-    try {
-        await brain.initialize();
-    } catch (err: any) {
-        if (err?.message?.includes('Invalid the given array length')) {
-            const dbPath = path.join(resolved, '.brainbank', 'brainbank.db');
-            try { fs.unlinkSync(dbPath); } catch {}
-            try { fs.unlinkSync(dbPath + '-wal'); } catch {}
-            try { fs.unlinkSync(dbPath + '-shm'); } catch {}
-
-            const fresh = new BrainBank(opts);
-            if (plugins.includes('code')) fresh.use(code({ repoPath: resolved, ignore: codeIgnore }));
-            if (plugins.includes('git')) fresh.use(git({ repoPath: resolved }));
-            if (plugins.includes('docs')) fresh.use(docs());
-            await fresh.initialize();
-            return fresh;
-        }
-        throw err;
-    }
-
-    return brain;
-}
-
-function evictPool(resolved: string) {
-    const entry = _pool.get(resolved);
-    if (entry) {
-        try { entry.brain.close(); } catch {}
-        _pool.delete(resolved);
-    }
+/** Resolve repo and get a BrainBank from the pool. */
+async function getBrainBank(targetRepo?: string) {
+    return pool.get(resolveRepoPath(targetRepo));
 }
 
 // ── MCP Server Setup ────────────────────────────────
 
 const server = new McpServer({
     name: 'brainbank',
-    version: '0.2.0',
+    version: '0.3.0',
 });
 
 // ── Tool: brainbank_search ──────────────────────────
-// Replaces: brainbank_search, brainbank_hybrid_search, brainbank_keyword_search
 
 server.registerTool(
     'brainbank_search',
@@ -228,10 +85,10 @@ server.registerTool(
     async ({ query, mode, codeK, gitK, minScore, collections, repo }) => {
         const brainbank = await getBrainBank(repo);
 
-        // Merge codeK/gitK shorthands into sources for backward compat
+        // Merge codeK/gitK shorthands into sources
         const sources: Record<string, number> = { ...collections, code: codeK, git: gitK };
 
-        let results;
+        let results: SearchResult[];
         if (mode === 'keyword') {
             results = await brainbank.searchBM25(query, { sources });
         } else if (mode === 'vector') {
@@ -241,11 +98,11 @@ server.registerTool(
         }
 
         if (results.length === 0) {
-            return { content: [{ type: 'text', text: 'No results found.' }] };
+            return { content: [{ type: 'text' as const, text: 'No results found.' }] };
         }
 
         const modeLabel = mode === 'keyword' ? 'Keyword (BM25)' : mode === 'vector' ? 'Vector' : 'Hybrid (Vector + BM25 → RRF)';
-        return { content: [{ type: 'text', text: formatResults(results, modeLabel) }] };
+        return { content: [{ type: 'text' as const, text: formatResults(results, modeLabel) }] };
     },
 );
 
@@ -271,7 +128,7 @@ server.registerTool(
             sources: { code: codeResults, git: gitResults },
         });
 
-        return { content: [{ type: 'text', text: context }] };
+        return { content: [{ type: 'text' as const, text: context }] };
     },
 );
 
@@ -297,37 +154,49 @@ server.registerTool(
             const absPath = path.resolve(docsPath);
             const collName = path.basename(absPath);
             try {
-                (brainbank.docs as any)!.addCollection({
-                    name: collName,
-                    path: absPath,
-                    pattern: '**/*.md',
-                    ignore: ['deprecated/**', 'node_modules/**'],
-                });
+                const { isDocsPlugin } = await import('brainbank') as typeof import('brainbank');
+                const docsPlugin = brainbank.plugin('docs');
+                if (docsPlugin && isDocsPlugin(docsPlugin)) {
+                    await docsPlugin.addCollection({
+                        name: collName,
+                        path: absPath,
+                        pattern: '**/*.md',
+                        ignore: ['deprecated/**', 'node_modules/**'],
+                    });
+                }
             } catch {
-                // docs module not loaded
+                // docs plugin not loaded — skip
             }
         }
 
-        const result = await brainbank.index({ modules, forceReindex, gitDepth });
+        const result = await brainbank.index({ modules, forceReindex, pluginOptions: { gitDepth } });
 
         const lines = [
             '## Indexing Complete',
             '',
-            `**Code**: ${result.code?.indexed ?? 0} files indexed, ${result.code?.skipped ?? 0} skipped, ${result.code?.chunks ?? 0} chunks`,
-            `**Git**: ${result.git?.indexed ?? 0} commits indexed, ${result.git?.skipped ?? 0} skipped`,
         ];
 
-        if (result.docs) {
-            for (const [name, stat] of Object.entries(result.docs) as [string, { indexed: number; skipped: number; chunks: number }][]) {
+        const codeResult = result.code as { indexed?: number; skipped?: number; chunks?: number } | undefined;
+        const gitResult = result.git as { indexed?: number; skipped?: number } | undefined;
+
+        lines.push(`**Code**: ${codeResult?.indexed ?? 0} files indexed, ${codeResult?.skipped ?? 0} skipped, ${codeResult?.chunks ?? 0} chunks`);
+        lines.push(`**Git**: ${gitResult?.indexed ?? 0} commits indexed, ${gitResult?.skipped ?? 0} skipped`);
+
+        const docsResult = result.docs as Record<string, { indexed: number; skipped: number; chunks: number }> | undefined;
+        if (docsResult) {
+            for (const [name, stat] of Object.entries(docsResult)) {
                 lines.push(`**Docs [${name}]**: ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
             }
         }
 
         const stats = brainbank.stats();
+        const codeStats = stats.code as { chunks?: number } | undefined;
+        const gitStats = stats.git as { commits?: number } | undefined;
+        const docStats = stats.documents as { documents?: number } | undefined;
         lines.push('');
-        lines.push(`**Totals**: ${stats.code?.chunks ?? 0} code chunks, ${stats.git?.commits ?? 0} commits, ${stats.documents?.documents ?? 0} docs`);
+        lines.push(`**Totals**: ${codeStats?.chunks ?? 0} code chunks, ${gitStats?.commits ?? 0} commits, ${docStats?.documents ?? 0} docs`);
 
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     },
 );
 
@@ -348,15 +217,13 @@ server.registerTool(
 
         const lines = ['## BrainBank Stats', ''];
 
-        if (s.code) {
-            lines.push(`**Code**: ${s.code.files} files, ${s.code.chunks} chunks, ${s.code.hnswSize} vectors`);
-        }
-        if (s.git) {
-            lines.push(`**Git**: ${s.git.commits} commits, ${s.git.filesTracked} files, ${s.git.coEdits} co-edit pairs`);
-        }
-        if (s.documents) {
-            lines.push(`**Docs**: ${s.documents.collections} collections, ${s.documents.documents} documents`);
-        }
+        const code = s.code as { files?: number; chunks?: number; hnswSize?: number } | undefined;
+        const git = s.git as { commits?: number; filesTracked?: number; coEdits?: number } | undefined;
+        const docs = s.documents as { collections?: number; documents?: number } | undefined;
+
+        if (code) lines.push(`**Code**: ${code.files} files, ${code.chunks} chunks, ${code.hnswSize} vectors`);
+        if (git) lines.push(`**Git**: ${git.commits} commits, ${git.filesTracked} files, ${git.coEdits} co-edit pairs`);
+        if (docs) lines.push(`**Docs**: ${docs.collections} collections, ${docs.documents} documents`);
 
         const kvNames = brainbank.listCollectionNames();
         if (kvNames.length > 0) {
@@ -368,7 +235,7 @@ server.registerTool(
             }
         }
 
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     },
 );
 
@@ -387,23 +254,36 @@ server.registerTool(
     },
     async ({ filePath, limit, repo }) => {
         const brainbank = await getBrainBank(repo);
-        const history = await (brainbank.git as any)!.fileHistory(filePath, limit);
+        const gitPlugin = brainbank.plugin('git');
+        if (!gitPlugin) {
+            return { content: [{ type: 'text' as const, text: 'Git plugin not loaded for this workspace.' }] };
+        }
+
+        const history = await (gitPlugin as unknown as { fileHistory(fp: string, limit: number): Promise<GitHistoryEntry[]> }).fileHistory(filePath, limit);
 
         if (history.length === 0) {
-            return { content: [{ type: 'text', text: `No git history found for "${filePath}"` }] };
+            return { content: [{ type: 'text' as const, text: `No git history found for "${filePath}"` }] };
         }
 
         const lines = [`## Git History: ${filePath}`, ''];
-        for (const h of history as any[]) {
+        for (const h of history) {
             lines.push(`**[${h.short_hash}]** ${h.message} *(${h.author}, +${h.additions}/-${h.deletions})*`);
         }
 
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     },
 );
 
+/** Git history entry shape returned by the git plugin. */
+interface GitHistoryEntry {
+    short_hash: string;
+    message: string;
+    author: string;
+    additions: number;
+    deletions: number;
+}
+
 // ── Tool: brainbank_collection ──────────────────────
-// Replaces: brainbank_collection_add, brainbank_collection_search, brainbank_collection_trim
 
 server.registerTool(
     'brainbank_collection',
@@ -419,7 +299,7 @@ server.registerTool(
             collection: z.string().describe('Collection name (e.g. "errors", "decisions")'),
             content: z.string().optional().describe('Content to store (required for add)'),
             query: z.string().optional().describe('Search query (required for search)'),
-            metadata: z.record(z.any()).optional().default({}).describe('Metadata for add'),
+            metadata: z.record(z.string(), z.unknown()).optional().default({}).describe('Metadata for add'),
             k: z.number().optional().default(5).describe('Max results for search'),
             keep: z.number().optional().describe('Items to keep for trim'),
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
@@ -433,7 +313,7 @@ server.registerTool(
             if (!content) throw new Error('BrainBank: content is required for add action.');
             const id = await coll.add(content, metadata);
             return {
-                content: [{ type: 'text', text: `✓ Item #${id} added to '${collection}' (${coll.count()} total)` }],
+                content: [{ type: 'text' as const, text: `✓ Item #${id} added to '${collection}' (${coll.count()} total)` }],
             };
         }
 
@@ -442,7 +322,7 @@ server.registerTool(
             const results = await coll.search(query, { k });
 
             if (results.length === 0) {
-                return { content: [{ type: 'text', text: `No results in '${collection}' for "${query}"` }] };
+                return { content: [{ type: 'text' as const, text: `No results in '${collection}' for "${query}"` }] };
             }
 
             const lines = [`## Collection: ${collection}`, ''];
@@ -454,14 +334,14 @@ server.registerTool(
                 }
                 lines.push('');
             }
-            return { content: [{ type: 'text', text: lines.join('\n') }] };
+            return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
         }
 
         if (action === 'trim') {
             if (keep == null) throw new Error('BrainBank: keep is required for trim action.');
             const result = await coll.trim({ keep });
             return {
-                content: [{ type: 'text', text: `✓ Trimmed ${result.removed} items from '${collection}' (kept ${keep})` }],
+                content: [{ type: 'text' as const, text: `✓ Trimmed ${result.removed} items from '${collection}' (kept ${keep})` }],
             };
         }
 
@@ -469,9 +349,57 @@ server.registerTool(
     },
 );
 
+// ── Tool: brainbank_workspaces ──────────────────────
+
+server.registerTool(
+    'brainbank_workspaces',
+    {
+        title: 'BrainBank Workspaces',
+        description:
+            'Pool observability. Actions:\n' +
+            '- list: show loaded workspaces with memory usage and last access\n' +
+            '- evict: force-evict a workspace from the pool\n' +
+            '- stats: show total pool memory and configuration',
+        inputSchema: z.object({
+            action: z.enum(['list', 'evict', 'stats']).describe('Operation to perform'),
+            repo: z.string().optional().describe('Repository path (required for evict)'),
+        }),
+    },
+    async ({ action, repo }) => {
+        if (action === 'list' || action === 'stats') {
+            const s = pool.stats();
+            const lines = [
+                `## Workspace Pool`,
+                '',
+                `**Loaded**: ${s.size} workspace(s)`,
+                `**Total Memory**: ${s.totalMemoryMB} MB`,
+                '',
+            ];
+
+            if (s.entries.length > 0) {
+                lines.push('| Workspace | Memory | Last Access | Active Ops |');
+                lines.push('|---|---|---|---|');
+                for (const e of s.entries) {
+                    lines.push(`| ${e.repoPath} | ${e.memoryMB} MB | ${e.lastAccessAgo} | ${e.activeOps} |`);
+                }
+            }
+
+            return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        }
+
+        if (action === 'evict') {
+            if (!repo) throw new Error('BrainBank: repo is required for evict action.');
+            pool.evict(repo);
+            return { content: [{ type: 'text' as const, text: `✓ Evicted workspace: ${repo}` }] };
+        }
+
+        throw new Error(`BrainBank: Unknown workspace action "${action}".`);
+    },
+);
+
 // ── Shared result formatter ─────────────────────────
 
-function formatResults(results: any[], mode: string): string {
+function formatResults(results: SearchResult[], mode: string): string {
     const lines: string[] = [`## ${mode}`, ''];
     for (const r of results) {
         const score = Math.round(r.score * 100);
@@ -508,6 +436,7 @@ async function main() {
 }
 
 main().catch(err => {
-    console.error(`BrainBank MCP Server Error: ${err.message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`BrainBank MCP Server Error: ${message}`);
     process.exit(1);
 });

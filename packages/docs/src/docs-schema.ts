@@ -7,15 +7,15 @@
 
 import type { PluginContext } from 'brainbank';
 
-type RawDb = PluginContext['db']['db'];
+type DbAdapter = PluginContext['db'];
 
 export const DOCS_SCHEMA_VERSION = 1;
 
 export const DOCS_MIGRATIONS = [
     {
         version: 1,
-        up(db: RawDb): void {
-            db.exec(`
+        up(adapter: DbAdapter): void {
+            adapter.exec(`
                 -- ── Document Collections ──────────────────────
                 CREATE TABLE IF NOT EXISTS collections (
                     name        TEXT PRIMARY KEY,

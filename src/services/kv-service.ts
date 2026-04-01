@@ -6,7 +6,7 @@
  * Extracted from BrainBank to separate infrastructure from facade.
  */
 
-import type { Database } from '@/db/database.ts';
+import type { DatabaseAdapter } from '@/db/adapter.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { EmbeddingProvider, Reranker } from '@/types.ts';
 import { Collection } from './collection.ts';
@@ -15,7 +15,7 @@ export class KVService {
     private _collections = new Map<string, Collection>();
 
     constructor(
-        private _db: Database,
+        private _db: DatabaseAdapter,
         private _embedding: EmbeddingProvider,
         private _hnsw: HNSWIndex,
         private _vecs: Map<number, Float32Array>,

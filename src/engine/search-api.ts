@@ -8,7 +8,7 @@
  * via capability interfaces. No hardcoded plugin names.
  */
 
-import type { Database } from '@/db/database.ts';
+import type { DatabaseAdapter } from '@/db/adapter.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { SearchStrategy, SearchOptions, DomainVectorSearch } from '@/search/types.ts';
 import type { KVService } from '@/services/kv-service.ts';
@@ -38,7 +38,7 @@ export interface SearchAPIDeps {
  * Always returns an instance — handles search-less setups internally.
  */
 export function createSearchAPI(
-    _db: Database,
+    _db: DatabaseAdapter,
     embedding: EmbeddingProvider,
     config: ResolvedConfig,
     registry: PluginRegistry,

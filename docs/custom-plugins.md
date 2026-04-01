@@ -41,7 +41,7 @@ Every plugin receives a `PluginContext` during `initialize()`:
 | Property | What you use it for |
 |----------|---------------------|
 | `ctx.collection(name)` | **Start here.** Get/create a KV collection with built-in hybrid search |
-| `ctx.db` | Raw SQLite access (for custom tables or direct queries) |
+| `ctx.db` | Database adapter — `DatabaseAdapter` interface (for custom tables or direct queries) |
 | `ctx.embedding` | `embed(text)` / `embedBatch(texts)` — the global embedding provider |
 | `ctx.config` | `repoPath`, `dbPath`, `embeddingDims`, `hnswM`, etc. |
 | `ctx.createHnsw(max?, dims?, name?)` | Private HNSW index (persisted to `hnsw-{name}.index` if named) |

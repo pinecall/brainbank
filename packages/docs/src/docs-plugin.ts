@@ -39,7 +39,7 @@ class DocsPlugin implements Plugin {
 
     async initialize(ctx: PluginContext): Promise<void> {
         this._db = ctx.db;
-        runPluginMigrations(ctx.db.db, 'docs', DOCS_SCHEMA_VERSION, DOCS_MIGRATIONS);
+        runPluginMigrations(ctx.db, 'docs', DOCS_SCHEMA_VERSION, DOCS_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
         // Use shared HNSW so docs participates in CompositeVectorSearch

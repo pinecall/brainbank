@@ -10,7 +10,7 @@
  *   // → { code: 1200, git: 500, docs: 80, kv: 45, total: 1837 }
  */
 
-import type { Database } from '@/db/database.ts';
+import type { DatabaseAdapter } from '@/db/adapter.ts';
 import type { CountRow, VectorRow } from '@/db/rows.ts';
 import type { Plugin, ReembedTable } from '@/plugin.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
@@ -68,7 +68,7 @@ export interface ReembedOptions {
  * Does NOT re-parse files, git, or documents — only replaces vectors.
  */
 export async function reembedAll(
-    db: Database,
+    db: DatabaseAdapter,
     embedding: EmbeddingProvider,
     hnswMap: Map<string, { hnsw: HNSWIndex; vecs: Map<number, Float32Array> }>,
     plugins: Plugin[],
@@ -130,7 +130,7 @@ export async function reembedAll(
  * a destructive operation by design — re-run to completion if interrupted.
  */
 async function reembedTable(
-    db: Database,
+    db: DatabaseAdapter,
     embedding: EmbeddingProvider,
     table: ReembedTable,
     batchSize: number,
@@ -185,7 +185,7 @@ async function reembedTable(
 
 /** Rebuild HNSW index from vector table. */
 async function rebuildHnsw(
-    db: Database,
+    db: DatabaseAdapter,
     table: ReembedTable,
     hnsw: HNSWIndex,
     vecs: Map<number, Float32Array>,

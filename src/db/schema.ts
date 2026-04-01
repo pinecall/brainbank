@@ -3,20 +3,20 @@
  * 
  * Core-only schema creation. Domain-specific tables (code, git, docs)
  * are created by their respective plugins via the migration system.
- * Uses better-sqlite3 directly.
+ * Uses DatabaseAdapter — no direct better-sqlite3 dependency.
  */
 
-import type Database from 'better-sqlite3';
+import type { DatabaseAdapter } from './adapter.ts';
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /**
  * Create core tables and indices.
  * Safe to call multiple times — uses IF NOT EXISTS.
  * Domain tables are created by plugins via runPluginMigrations().
  */
-export function createSchema(db: Database.Database): void {
-    db.exec(`
+export function createSchema(adapter: DatabaseAdapter): void {
+    adapter.exec(`
         -- ── Schema versioning ──────────────────────────
         CREATE TABLE IF NOT EXISTS schema_version (
             version     INTEGER PRIMARY KEY,
@@ -72,15 +72,23 @@ export function createSchema(db: Database.Database): void {
             key     TEXT PRIMARY KEY,
             value   TEXT NOT NULL
         );
+
+        -- ── Index State (cross-process coordination) ─
+        CREATE TABLE IF NOT EXISTS index_state (
+            name       TEXT    PRIMARY KEY,
+            version    INTEGER NOT NULL DEFAULT 0,
+            writer_pid INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
     `);
 }
 
 /**
  * Get the current schema version from the database.
  */
-export function getSchemaVersion(db: Database.Database): number {
+export function getSchemaVersion(adapter: DatabaseAdapter): number {
     try {
-        const row = db.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number } | undefined;
+        const row = adapter.prepare('SELECT MAX(version) as v FROM schema_version').get() as { v: number } | undefined;
         return row?.v ?? 0;
     } catch {
         return 0;

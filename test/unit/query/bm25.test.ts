@@ -7,22 +7,22 @@
  * (the actual search path uses CompositeBM25Search + BM25SearchPlugin).
  */
 
-import { Database, SCHEMA_VERSION, tmpDb, createDomainSchema } from '../../helpers.ts';
+import { SQLiteAdapter, SCHEMA_VERSION, tmpDb, createDomainSchema } from '../../helpers.ts';
 import { sanitizeFTS, normalizeBM25 } from '../../../src/lib/fts.ts';
 
 export const name = 'BM25 Full-Text Search';
 
 function freshDb(label: string) {
-    const db = new Database(tmpDb(label));
+    const db = new SQLiteAdapter(tmpDb(label));
     createDomainSchema(db);
     return db;
 }
 
 export const tests = {
-    async 'FTS5 tables are created with schema v7'(assert: any) {
+    async 'FTS5 tables are created with schema v8'(assert: any) {
         const db = freshDb('bm25-test');
 
-        assert.equal(SCHEMA_VERSION, 7);
+        assert.equal(SCHEMA_VERSION, 8);
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_%'"

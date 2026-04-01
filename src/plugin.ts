@@ -13,7 +13,7 @@
  *     .use(code({ repoPath: '.' }));
  */
 
-import type { Database } from './db/database.ts';
+import type { DatabaseAdapter } from './db/adapter.ts';
 import type { Migration } from './db/migrations.ts';
 import type { HNSWIndex } from './providers/vector/hnsw-index.ts';
 import type { DomainVectorSearch } from './search/types.ts';
@@ -27,8 +27,8 @@ import type {
 // Provided to each plugin during initialization.
 
 export interface PluginContext {
-    /** SQLite database (shared across all plugins). */
-    db: Database;
+    /** Database adapter (shared across all plugins). */
+    db: DatabaseAdapter;
     /** Embedding provider (shared). */
     embedding: EmbeddingProvider;
     /** Resolved BrainBank config. */

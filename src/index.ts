@@ -126,6 +126,12 @@ export type { SearchStrategy, SearchOptions, DomainVectorSearch } from './search
 export { bumpVersion, getVersions, getVersion } from './db/index-state.ts';
 export { acquireLock, releaseLock, withLock } from './lib/write-lock.ts';
 
-// Database (for plugin access)
-export type { Database } from './db/database.ts';
+// Database adapter (for plugin access and custom adapters)
+export type { DatabaseAdapter, PreparedStatement, ExecuteResult, AdapterCapabilities } from './db/adapter.ts';
+export { SQLiteAdapter } from './db/sqlite-adapter.ts';
+
+// Factory (for programmatic BrainBank creation)
+export { createBrain, resetFactoryCache, contextFromCLI } from './cli/factory/index.ts';
+export type { BrainContext } from './cli/factory/brain-context.ts';
+export type { ProjectConfig } from './cli/factory/config-loader.ts';
 

@@ -7,13 +7,13 @@
  * they are no longer part of the core schema.
  */
 
-import { Database, tmpDb, createDomainSchema } from '../helpers.ts';
+import { SQLiteAdapter, tmpDb, createDomainSchema } from '../helpers.ts';
 
 export const name = 'Code Graph Schema';
 
 /** Create a fresh DB with domain tables. */
-function freshDb(label: string): InstanceType<typeof Database> {
-    const db = new Database(tmpDb(label));
+function freshDb(label: string): InstanceType<typeof SQLiteAdapter> {
+    const db = new SQLiteAdapter(tmpDb(label));
     createDomainSchema(db);
     return db;
 }

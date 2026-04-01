@@ -3,40 +3,54 @@
  *
  * Utilities for persisting and loading HNSW indexes to/from disk.
  * Used by BrainBank._runInitialize() and PluginContext.loadVectors().
+ *
+ * Includes cross-process write locking and hot-reload support
+ * for multi-process coordination.
  */
 
-import type { Database } from '@/db/database.ts';
+import type { DatabaseAdapter } from '@/db/adapter.ts';
 import type { CountRow } from '@/db/rows.ts';
 import type { HNSWIndex } from './hnsw-index.ts';
 
 import { dirname, join } from 'node:path';
+import { withLock } from '@/lib/write-lock.ts';
 
 /** Derive the HNSW index file path from the DB path. */
 export function hnswPath(dbPath: string, name: string): string {
     return join(dirname(dbPath), `hnsw-${name}.index`);
 }
 
+/** Derive the lock directory from the DB path. */
+export function lockDir(dbPath: string): string {
+    return dirname(dbPath);
+}
+
 /** Count rows in a vector table (fast, no data transfer). */
-export function countRows(db: Database, table: string): number {
+export function countRows(db: DatabaseAdapter, table: string): number {
     const row = db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as CountRow;
     return row?.c ?? 0;
 }
 
-/** Save all HNSW indexes to disk for fast startup next time. Returns false on failure. */
-export function saveAllHnsw(
+/**
+ * Save all HNSW indexes to disk with cross-process file locking.
+ * Prevents concurrent writes from corrupting `.index` files.
+ */
+export async function saveAllHnsw(
     dbPath: string,
     kvHnsw: HNSWIndex,
     sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>,
     privateHnsw: Map<string, HNSWIndex>,
-): boolean {
+): Promise<boolean> {
     try {
-        kvHnsw.save(hnswPath(dbPath, 'kv'));
-        for (const [name, { hnsw }] of sharedHnsw) {
-            hnsw.save(hnswPath(dbPath, name));
-        }
-        for (const [name, hnsw] of privateHnsw) {
-            hnsw.save(hnswPath(dbPath, name));
-        }
+        await withLock(lockDir(dbPath), 'hnsw', () => {
+            kvHnsw.save(hnswPath(dbPath, 'kv'));
+            for (const [name, { hnsw }] of sharedHnsw) {
+                hnsw.save(hnswPath(dbPath, name));
+            }
+            for (const [name, hnsw] of privateHnsw) {
+                hnsw.save(hnswPath(dbPath, name));
+            }
+        });
         return true;
     } catch {
         // Non-fatal: next startup rebuilds from SQLite (slower).
@@ -46,7 +60,7 @@ export function saveAllHnsw(
 
 /** Load vectors from SQLite into HNSW + cache. */
 export function loadVectors(
-    db: Database,
+    db: DatabaseAdapter,
     table: string,
     idCol: string,
     hnsw: HNSWIndex,
@@ -67,7 +81,7 @@ export function loadVectors(
 
 /** Populate only the vecCache from SQLite (HNSW already loaded from file). */
 export function loadVecCache(
-    db: Database,
+    db: DatabaseAdapter,
     table: string,
     idCol: string,
     cache: Map<number, Float32Array>,
@@ -81,5 +95,36 @@ export function loadVecCache(
             ),
         );
         cache.set(row[idCol] as number, vec);
+    }
+}
+
+/** Deps for reloading a single HNSW index from disk. */
+interface ReloadDeps {
+    dbPath: string;
+    db: DatabaseAdapter;
+    name: string;
+    hnsw: HNSWIndex;
+    vecCache: Map<number, Float32Array>;
+    vectorTable: string;
+    idCol: string;
+}
+
+/**
+ * Reload a single HNSW index from disk after detecting a stale version.
+ * Reinitializes the in-memory HNSW, loads the saved index file, and
+ * refreshes the vector cache from SQLite.
+ */
+export function reloadHnsw(deps: ReloadDeps): void {
+    const { dbPath, db, name, hnsw, vecCache, vectorTable, idCol } = deps;
+    const indexPath = hnswPath(dbPath, name);
+    const rowCount = countRows(db, vectorTable);
+
+    hnsw.reinit();
+    vecCache.clear();
+
+    if (hnsw.tryLoad(indexPath, rowCount)) {
+        loadVecCache(db, vectorTable, idCol, vecCache);
+    } else {
+        loadVectors(db, vectorTable, idCol, hnsw, vecCache);
     }
 }

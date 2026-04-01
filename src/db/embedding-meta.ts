@@ -7,7 +7,7 @@
  */
 
 import type { EmbeddingProvider } from '@/types.ts';
-import type { Database } from './database.ts';
+import type { DatabaseAdapter } from './adapter.ts';
 import type { EmbeddingMetaRow } from './rows.ts';
 
 import { providerKey } from '@/lib/provider-key.ts';
@@ -21,7 +21,7 @@ export interface EmbeddingMeta {
 }
 
 /** Get stored embedding metadata. Returns null if not set. */
-export function getEmbeddingMeta(db: Database): EmbeddingMeta | null {
+export function getEmbeddingMeta(db: DatabaseAdapter): EmbeddingMeta | null {
     try {
         const provider = db.prepare(
             "SELECT value FROM embedding_meta WHERE key = 'provider'"
@@ -45,7 +45,7 @@ export function getEmbeddingMeta(db: Database): EmbeddingMeta | null {
 }
 
 /** Store current provider info. */
-export function setEmbeddingMeta(db: Database, embedding: EmbeddingProvider): void {
+export function setEmbeddingMeta(db: DatabaseAdapter, embedding: EmbeddingProvider): void {
     const upsert = db.prepare(
         'INSERT OR REPLACE INTO embedding_meta (key, value) VALUES (?, ?)'
     );
@@ -57,7 +57,7 @@ export function setEmbeddingMeta(db: Database, embedding: EmbeddingProvider): vo
 
 /** Check if the configured provider differs from what's stored. */
 export function detectProviderMismatch(
-    db: Database,
+    db: DatabaseAdapter,
     embedding: EmbeddingProvider,
 ): { mismatch: boolean; stored: string; current: string } | null {
     const meta = getEmbeddingMeta(db);

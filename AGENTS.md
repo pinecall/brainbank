@@ -37,7 +37,7 @@ Layer 0 — Foundation (no deps, imported by everyone)
 ├── types.ts         ← All shared types and interfaces
 ├── config.ts        ← Defaults + resolver (flattened from config/)
 ├── lib/             ← Pure functions: math, rrf, fts
-└── db/              ← SQLite schema, database wrapper
+└── db/              ← DatabaseAdapter interface, SQLiteAdapter, schema, migrations
 
 Layer 1 — Infrastructure (depends on Layer 0 only)
 ├── providers/       ← Embeddings (local WASM, OpenAI), vector (HNSW), rerankers
@@ -81,7 +81,8 @@ packages/                ← All plugin implementations live here (NOT in src/)
 - `src/brainbank.ts` — Main orchestrator with inline initialization (`_runInitialize`).
 - `src/engine/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `src/cli/factory/index.ts` — CLI factory (delegates to config-loader, plugin-loader, builtin-registration).
-- `scripts/lint-imports.mjs` — Lint script: detects `@/` imports that should be `./` (same-directory).
+- `src/db/adapter.ts` — `DatabaseAdapter` interface + `PreparedStatement<T>` + `AdapterCapabilities`.
+- `src/db/sqlite-adapter.ts` — `SQLiteAdapter`: better-sqlite3 implementation of `DatabaseAdapter`.
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
 ## Code Conventions
@@ -113,8 +114,8 @@ packages/                ← All plugin implementations live here (NOT in src/)
 
 ```typescript
 // ✅ Correct — cross-directory with @/ (inside src/)
-import { Database } from '@/db/database.ts';
-import type { SearchResult } from '@/types.ts';
+import { SQLiteAdapter } from '@/db/sqlite-adapter.ts';
+import type { DatabaseAdapter } from '@/db/adapter.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 
 // ✅ Correct — same directory with ./
@@ -129,7 +130,7 @@ import { CodeWalker } from './code-walker.js';
 const mod = await import('@brainbank/code');
 
 // ❌ WRONG — never use ../
-import { Database } from '../db/database.ts';
+import { SQLiteAdapter } from '../db/sqlite-adapter.ts';
 import type { SearchResult } from '../../types.ts';
 
 // ❌ WRONG — never import plugin implementations in core
@@ -227,6 +228,7 @@ builtins?: ('code' | 'git' | 'docs')[];  // WRONG — use "plugins" field
 - **Global CLI + separate packages**: When `brainbank` is installed globally, `@brainbank/code` etc. must also be installed globally in the same prefix for `import('@brainbank/code')` to resolve.
 - **packages/ use `.js` extensions** for local imports (bundled by tsup), not `.ts` like `src/`.
 - **CLI dynamic imports**: `src/cli/factory.ts` loads plugins with `await import('@brainbank/code')`. If a plugin is not installed, the CLI prints a warning and skips it.
+- **`database.ts` is deleted** — all database access flows through `DatabaseAdapter` (interface) / `SQLiteAdapter` (implementation). Never import a concrete driver directly.
 
 ## Permissions
 

@@ -8,6 +8,7 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 - **Hybrid search** — vector + BM25 fused with Reciprocal Rank Fusion
 - **Dynamic collections** — `brain.collection('errors')` for any structured data
 - **Pluggable embeddings** — local WASM (free), OpenAI, or Perplexity
+- **Multi-process safe** — concurrent CLI, MCP, and watch processes with automatic hot-reload
 - **Portable** — single `.brainbank/brainbank.db` SQLite file
 - **Modular** — lightweight core + optional [`@brainbank/*`](#packages) packages
 

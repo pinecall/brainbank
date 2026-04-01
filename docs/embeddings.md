@@ -122,6 +122,22 @@ Input is `string[][]` (documents × chunks). `embed(text)` wraps as `[[text]]`. 
 
 ---
 
+## Worker Thread Proxy
+
+For long-running server processes (MCP, watch), embedding computation can block the event loop. `EmbeddingWorkerProxy` offloads `embed()` and `embedBatch()` to a `worker_threads.Worker`:
+
+```typescript
+import { EmbeddingWorkerProxy, LocalEmbedding } from 'brainbank';
+
+// Wraps any EmbeddingProvider — keeps the main event loop free
+const embedding = new EmbeddingWorkerProxy(new LocalEmbedding());
+const brain = new BrainBank({ embeddingProvider: embedding });
+```
+
+Vectors are transferred via `Transferable` `ArrayBuffer` for zero-copy. The proxy implements the full `EmbeddingProvider` interface — drop-in replacement.
+
+---
+
 ## Benchmarks
 
 Real benchmarks on a production NestJS backend (1052 code chunks + git history):

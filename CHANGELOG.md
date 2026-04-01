@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 ### Breaking Changes
+- **`DatabaseAdapter` replaces `Database`** — the core `Database` class (`src/db/database.ts`) has been replaced with a `DatabaseAdapter` interface (`src/db/adapter.ts`) + `SQLiteAdapter` implementation (`src/db/sqlite-adapter.ts`). All internal APIs, plugin schemas, and test helpers now use the adapter interface. Plugins should use `PluginContext['db']` type (which is now `DatabaseAdapter`). The `raw<T>()` escape hatch provides typed access to the underlying driver during the transition period. Public export changed: `Database` → `DatabaseAdapter` (type) + `SQLiteAdapter` (class)
+- **Plugin migration signatures changed** — `Migration.up(db: RawDb)` → `Migration.up(adapter: DatabaseAdapter)`. Plugin schemas updated to use `adapter.exec()` instead of raw `better-sqlite3` calls
+- **`PluginContext.db` type changed** — from concrete `Database` (with `.db` accessor) to `DatabaseAdapter` interface. Plugins that accessed `ctx.db.db` must use `ctx.db` directly or `ctx.db.raw<T>()` for driver-specific features
 - **`WatchablePlugin` interface replaced** — old `watchPatterns(): string[]` + `onFileChange(path, event): Promise<boolean>` removed. New contract: `watch(onEvent: WatchEventHandler): WatchHandle` + optional `watchConfig(): WatchConfig`. Plugins now drive their own watching
 - **`WatchOptions` simplified** — removed `paths` option (plugins handle their own paths). Callback renamed `onIndex(sourceId, pluginName)` (was `onIndex(file, indexer)`)
 - **`Watcher` constructor changed** — accepts `Plugin[]` instead of `Map<string, Plugin>` + `repoPath`
@@ -29,6 +32,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   - `EmbeddingWorkerProxy` — drop-in `EmbeddingProvider` that offloads embedding to a `worker_threads.Worker`, keeping the main event loop free for search requests
   - `embedding-worker-thread.ts` — worker script with zero-copy `ArrayBuffer` transfer
   - New exports from `brainbank` barrel: `bumpVersion`, `getVersions`, `getVersion`, `acquireLock`, `releaseLock`, `withLock`, `EmbeddingWorkerProxy`
+
+### Documentation
+- **Full docs audit** — updated all stale `Database`/`database.ts` references to `DatabaseAdapter`/`SQLiteAdapter` across `architecture.md` (7 fixes), `AGENTS.md` (5 fixes), `local-development.md`, and `custom-plugins.md`
 
 ### Changed
 - **`saveAllHnsw()` is now async** — wrapped with `withLock()` for cross-process file locking. Returns `Promise<boolean>` instead of `boolean`

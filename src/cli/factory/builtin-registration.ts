@@ -11,7 +11,7 @@ import type { ProjectConfig } from './config-loader.ts';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { c, getFlag } from '../utils.ts';
+import { c } from '../utils.ts';
 import { loadPlugin, isMultiRepoCapable, resolveEmbeddingKey } from './plugin-loader.ts';
 
 /** Read a nested property from a generic config section. */
@@ -40,15 +40,12 @@ function detectGitSubdirs(parentPath: string): { name: string; path: string }[] 
 
 /** Register plugins with multi-repo detection and per-plugin config. */
 export async function registerBuiltins(
-    brain: BrainBank, rp: string, pluginNames: string[], config: ProjectConfig | null,
+    brain: BrainBank, rp: string, pluginNames: string[],
+    config: ProjectConfig | null, ignorePatterns: string[] = [],
 ): Promise<void> {
     const resolvedRp = path.resolve(rp);
     const hasRootGit = fs.existsSync(path.join(resolvedRp, '.git'));
     const gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp) : [];
-
-    // CLI --ignore flag merged with per-plugin ignore config
-    const ignoreFlag = getFlag('ignore');
-    const cliIgnore = ignoreFlag ? ignoreFlag.split(',').map(s => s.trim()) : [];
 
     for (const name of pluginNames) {
         const factory = await loadPlugin(name);
@@ -68,7 +65,7 @@ export async function registerBuiltins(
         if (gitSubdirs.length > 0 && isMultiRepoCapable(name)) {
             console.log(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
             for (const sub of gitSubdirs) {
-                const mergedIgnore = [...(cfg.ignore as string[] ?? []), ...cliIgnore];
+                const mergedIgnore = [...(cfg.ignore as string[] ?? []), ...ignorePatterns];
                 brain.use(factory({
                     ...cfg,
                     repoPath: sub.path,
@@ -80,7 +77,7 @@ export async function registerBuiltins(
         } else {
             // Single repo: merge ignore patterns for plugins that support them
             const configIgnore = cfg.ignore as string[] | undefined ?? [];
-            const mergedIgnore = [...configIgnore, ...cliIgnore];
+            const mergedIgnore = [...configIgnore, ...ignorePatterns];
 
             brain.use(factory({
                 ...cfg,

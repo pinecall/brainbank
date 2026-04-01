@@ -3,15 +3,26 @@
  *
  * Orchestrates indexing across all registered plugins.
  * Plugin-agnostic — uses capability interfaces to discover what can be indexed.
+ *
+ * After each plugin finishes indexing, bumps the version in `index_state`
+ * and saves HNSW indices to disk (with cross-process file locking).
  */
 
+import type { DatabaseAdapter } from '@/db/adapter.ts';
+import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 import type { IndexResult, StageProgressCallback } from '@/types.ts';
 
+import { bumpVersion } from '@/db/index-state.ts';
 import { isIndexable } from '@/plugin.ts';
+import { saveAllHnsw } from '@/providers/vector/hnsw-loader.ts';
 
 /** Deps injected by BrainBank at init time. */
 export interface IndexDeps {
+    db: DatabaseAdapter;
+    dbPath: string;
+    sharedHnsw: Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>;
+    kvHnsw: HNSWIndex;
     registry: PluginRegistry;
     emit: (event: string, data: unknown) => void;
 }
@@ -54,7 +65,18 @@ export async function runIndex(deps: IndexDeps, options: {
         });
 
         results[baseType] = mergeResult(results[baseType] as IndexResult | undefined, r);
+
+        // Bump version so other processes detect staleness
+        bumpVersion(deps.db, baseType);
     }
+
+    // Save HNSW indices with file locking after all plugins complete
+    await saveAllHnsw(
+        deps.dbPath,
+        deps.kvHnsw,
+        deps.sharedHnsw,
+        new Map(),
+    );
 
     deps.emit('indexed', results);
     return results;

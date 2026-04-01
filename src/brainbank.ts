@@ -30,7 +30,8 @@ import type {
 import { EventEmitter } from 'node:events';
 import { resolveConfig } from './config.ts';
 import { HNSW } from './constants.ts';
-import { Database } from './db/database.ts';
+import type { DatabaseAdapter } from './db/adapter.ts';
+import { SQLiteAdapter } from './db/sqlite-adapter.ts';
 import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch } from './db/embedding-meta.ts';
 import { getVersions } from './db/index-state.ts';
 import { runIndex } from './engine/index-api.ts';
@@ -49,7 +50,7 @@ import { WebhookServer } from './services/webhook-server.ts';
 
 export class BrainBank extends EventEmitter {
     private _config: ResolvedConfig;
-    private _db!: Database;
+    private _db!: DatabaseAdapter;
     private _embedding!: EmbeddingProvider;
     private _registry = new PluginRegistry();
     private _searchAPI?: SearchAPI;
@@ -133,6 +134,24 @@ export class BrainBank extends EventEmitter {
             });
 
         return this._initPromise;
+    }
+
+    /**
+     * Estimated memory footprint of loaded HNSW indices (bytes).
+     * Counts only vector data: `vectorCount × dims × 4`.
+     * Returns 0 if not initialized.
+     */
+    memoryHint(): number {
+        if (!this._initialized) return 0;
+        const dims = this._config.embeddingDims;
+        const bytesPerVector = dims * 4;
+
+        let total = 0;
+        if (this._kvService) total += this._kvService.hnsw.size * bytesPerVector;
+        for (const { hnsw } of this._sharedHnsw.values()) {
+            total += hnsw.size * bytesPerVector;
+        }
+        return total;
     }
 
     /** Close database and release all resources. Synchronous. */
@@ -324,7 +343,7 @@ export class BrainBank extends EventEmitter {
     private async _runInitialize(options: { force?: boolean } = {}): Promise<void> {
         if (this._initialized) return;
 
-        this._db = new Database(this._config.dbPath);
+        this._db = new SQLiteAdapter(this._config.dbPath);
         this._embedding = await this._resolveEmbedding();
 
         const mismatch = detectProviderMismatch(this._db, this._embedding);

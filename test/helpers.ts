@@ -6,7 +6,8 @@
  */
 
 import { BrainBank } from '../src/brainbank.ts';
-import { Database } from '../src/db/database.ts';
+import { SQLiteAdapter } from '../src/db/sqlite-adapter.ts';
+import type { DatabaseAdapter } from '../src/db/adapter.ts';
 import { HNSWIndex } from '../src/providers/vector/hnsw-index.ts';
 import { runPluginMigrations } from '../src/db/migrations.ts';
 
@@ -92,9 +93,9 @@ export function tmpDb(label: string): string {
  * Runs the same migration SQL that plugins use, so tests
  * work without loading actual plugins.
  */
-export function createDomainSchema(db: Database): void {
+export function createDomainSchema(db: DatabaseAdapter): void {
     // Code tables
-    db.db.exec(`
+    db.exec(`
         CREATE TABLE IF NOT EXISTS code_chunks (
             id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL,
             chunk_type TEXT NOT NULL, name TEXT, start_line INTEGER NOT NULL,
@@ -117,7 +118,7 @@ export function createDomainSchema(db: Database): void {
         CREATE TRIGGER IF NOT EXISTS trg_fts_code_delete AFTER DELETE ON code_chunks BEGIN INSERT INTO fts_code(fts_code, rowid, file_path, name, content) VALUES ('delete', old.id, old.file_path, COALESCE(old.name, ''), old.content); END;
     `);
     // Git tables
-    db.db.exec(`
+    db.exec(`
         CREATE TABLE IF NOT EXISTS git_commits (
             id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT UNIQUE NOT NULL,
             short_hash TEXT NOT NULL, message TEXT NOT NULL, author TEXT NOT NULL,
@@ -135,7 +136,7 @@ export function createDomainSchema(db: Database): void {
         CREATE TRIGGER IF NOT EXISTS trg_fts_commits_delete AFTER DELETE ON git_commits BEGIN INSERT INTO fts_commits(fts_commits, rowid, message, author, diff) VALUES ('delete', old.id, old.message, old.author, COALESCE(old.diff, '')); END;
     `);
     // Docs tables
-    db.db.exec(`
+    db.exec(`
         CREATE TABLE IF NOT EXISTS collections (name TEXT PRIMARY KEY, path TEXT NOT NULL, pattern TEXT NOT NULL DEFAULT '**/*.md', ignore_json TEXT NOT NULL DEFAULT '[]', context TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()));
         CREATE TABLE IF NOT EXISTS doc_chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, collection TEXT NOT NULL REFERENCES collections(name) ON DELETE CASCADE, file_path TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, pos INTEGER NOT NULL DEFAULT 0, content_hash TEXT NOT NULL, indexed_at INTEGER NOT NULL DEFAULT (unixepoch()));
         CREATE TABLE IF NOT EXISTS doc_vectors (chunk_id INTEGER PRIMARY KEY REFERENCES doc_chunks(id) ON DELETE CASCADE, embedding BLOB NOT NULL);
@@ -153,7 +154,7 @@ export function createDomainSchema(db: Database): void {
 
 export {
     BrainBank,
-    Database,
+    SQLiteAdapter,
     HNSWIndex,
     runPluginMigrations,
 

@@ -9,7 +9,7 @@
  *   const hits = await errors.search('null pointer');
  */
 
-import type { Database } from '@/db/database.ts';
+import type { DatabaseAdapter } from '@/db/adapter.ts';
 import type { KvDataRow, CountRow } from '@/db/rows.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
@@ -53,7 +53,7 @@ export interface CollectionAddOptions {
 export class Collection {
     constructor(
         private _name: string,
-        private _db: Database,
+        private _db: DatabaseAdapter,
         private _embedding: EmbeddingProvider,
         private _hnsw: HNSWIndex,
         private _vecs: Map<number, Float32Array>,
