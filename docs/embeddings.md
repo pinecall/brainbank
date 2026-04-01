@@ -54,7 +54,7 @@ const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384
   .use(docs({ embeddingProvider: new PerplexityContextEmbedding() }));  // docs: Perplexity (2560d)
 ```
 
-> Each plugin creates its own HNSW index with the correct dimensions. Code plugins use shared HNSW (`getOrCreateSharedHnsw('code')`), git plugins share another (`getOrCreateSharedHnsw('git')`), and docs uses a private HNSW (`createHnsw(dims, 'doc')`).
+> Each plugin creates its own HNSW index with the correct dimensions. Code plugins use shared HNSW (`getOrCreateSharedHnsw('code')`), git plugins share another (`getOrCreateSharedHnsw('git')`), and docs plugins share another (`getOrCreateSharedHnsw('docs')`).
 
 ---
 

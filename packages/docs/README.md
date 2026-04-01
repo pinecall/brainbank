@@ -141,7 +141,9 @@ Hybrid search engine combining vector similarity and BM25 keyword search:
 | Interface | What it does |
 |-----------|-------------|
 | `IndexablePlugin` | Participates in `brain.index()` — heading-aware chunking + embedding |
-| `SearchablePlugin` | Provides hybrid search (own HNSW + BM25 → RRF) |
+| `VectorSearchPlugin` | Contributes `DocsVectorSearch` to `CompositeVectorSearch` via shared HNSW |
+| `BM25SearchPlugin` | Contributes FTS5 keyword search to `CompositeBM25Search` |
+| `SearchablePlugin` | Provides direct hybrid search with per-collection filtering |
 | `ContextFormatterPlugin` | Formats document results for `brain.getContext()` |
 | `MigratablePlugin` | Owns its schema — `collections`, `doc_chunks`, `doc_vectors`, `path_contexts`, `fts_docs` |
 | `ReembeddablePlugin` | Participates in `brain.reembed()` |

@@ -58,7 +58,7 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
 ├── hnsw-kv.index       # HNSW graph for KV collections
 ├── hnsw-code.index     # HNSW graph for code (shared across code:* plugins)
 ├── hnsw-git.index      # HNSW graph for git (shared across git:* plugins)
-├── hnsw-doc.index      # HNSW graph for docs (private to DocsPlugin)
+├── hnsw-docs.index     # HNSW graph for docs (shared across docs:* plugins)
 ├── config.json         # Project config (optional)
 └── plugins/            # Custom plugin files (optional, auto-discovered)
     ├── notes.ts
