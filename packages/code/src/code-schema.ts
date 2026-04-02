@@ -9,7 +9,7 @@ import type { PluginContext } from 'brainbank';
 
 type DbAdapter = PluginContext['db'];
 
-export const CODE_SCHEMA_VERSION = 1;
+export const CODE_SCHEMA_VERSION = 3;
 
 export const CODE_MIGRATIONS = [
     {
@@ -92,4 +92,50 @@ export const CODE_MIGRATIONS = [
             `);
         },
     },
+    {
+        version: 2,
+        up(adapter: DbAdapter): void {
+            adapter.exec(`
+                -- ── Dependency Graph v2 ───────────────────────
+                -- Recreate code_imports with import_kind + resolved columns.
+                -- Drop old table data (will be rebuilt on next index --force).
+                DROP TABLE IF EXISTS code_imports;
+
+                CREATE TABLE code_imports (
+                    file_path    TEXT    NOT NULL,
+                    imports_path TEXT    NOT NULL,
+                    import_kind  TEXT    NOT NULL DEFAULT 'static',
+                    resolved     INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (file_path, imports_path)
+                );
+
+                -- Forward lookup (existing)
+                CREATE INDEX IF NOT EXISTS idx_ci_imports ON code_imports(imports_path);
+                -- Reverse lookup (new — who imports a given file?)
+                CREATE INDEX IF NOT EXISTS idx_ci_reverse ON code_imports(imports_path, file_path);
+            `);
+        },
+    },
+    {
+        version: 3,
+        up(adapter: DbAdapter): void {
+            adapter.exec(`
+                -- ── Chunk-Level Call Graph v3 ─────────────────
+                -- Links caller chunks to callee chunks via symbol_name.
+                -- Built as a linking pass after all files are indexed.
+                CREATE TABLE IF NOT EXISTS code_call_edges (
+                    caller_chunk_id INTEGER NOT NULL,
+                    callee_chunk_id INTEGER NOT NULL,
+                    symbol_name     TEXT    NOT NULL,
+                    PRIMARY KEY (caller_chunk_id, callee_chunk_id, symbol_name),
+                    FOREIGN KEY (caller_chunk_id) REFERENCES code_chunks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (callee_chunk_id) REFERENCES code_chunks(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_cce_caller ON code_call_edges(caller_chunk_id);
+                CREATE INDEX IF NOT EXISTS idx_cce_callee ON code_call_edges(callee_chunk_id);
+            `);
+        },
+    },
 ];
+

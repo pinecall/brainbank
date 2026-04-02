@@ -64,6 +64,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **`plugin-loader.ts`** — merged `provider-setup.ts` functionality (`setupProviders`, `resolveEmbeddingKey`). Added `registerPluginLoader()` for custom plugin loaders
 
 ### Fixed
+- **TS5055 build error fixed** — `npm run build` no longer fails with "Cannot write file `dist/index.d.ts` because it would overwrite input file". Root cause: `node_modules/brainbank → ..` symlink caused tsup's DTS worker to follow the symlink and find `dist/index.d.ts` as both input and output. Fix: `preserveSymlinks: true` + `skipLibCheck: true` in `tsconfig.build.json`
 - **Config loading**: `loadConfig()` now resolves `.brainbank/config.json` relative to the target repo path, not the process CWD. This fixes ignore patterns, plugin lists, and per-plugin config not being applied when running `brainbank index <path>` from a different directory
 - **Docs collection paths**: `registerConfigCollections` now resolves relative collection paths against the repo path instead of CWD
 - **Initialization order**: `brain.initialize()` is now called before `registerConfigCollections` to ensure plugins have DB access for collection registration

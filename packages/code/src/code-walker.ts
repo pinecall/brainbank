@@ -10,7 +10,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
 import { CodeChunker } from './code-chunker.js';
-import { extractImports } from './import-extractor.js';
+import { extractImports, extractImportPaths } from './import-extractor.js';
+import { ImportResolver, isStdlib } from './import-resolver.js';
 import { extractSymbols, extractCallRefs, type SymbolDef } from './symbol-extractor.js';
 import { SUPPORTED_EXTENSIONS, isIgnoredDir, isIgnoredFile } from 'brainbank';
 import { vecToBuffer } from 'brainbank';
@@ -25,6 +26,16 @@ export interface CodeWalkerDeps {
     hnsw: HNSWIndex;
     vectorCache: Map<number, Float32Array>;
     embedding: EmbeddingProvider;
+}
+
+/** Loaded set of known files for import resolution. */
+function loadKnownFiles(db: CodeWalkerDeps['db']): Set<string> {
+    try {
+        const rows = db.prepare('SELECT file_path FROM indexed_files').all() as { file_path: string }[];
+        return new Set(rows.map((r: { file_path: string }) => r.file_path));
+    } catch {
+        return new Set<string>();
+    }
 }
 
 export interface CodeIndexOptions {
@@ -52,6 +63,12 @@ export class CodeWalker {
         const files = this._walkRepo(this._repoPath);
         let indexed = 0, skipped = 0, totalChunks = 0;
 
+        // Build known file set for import resolution (from existing index + current walk)
+        const knownFiles = loadKnownFiles(this._deps.db);
+        for (const f of files) {
+            knownFiles.add(path.relative(this._repoPath, f));
+        }
+
         for (let i = 0; i < files.length; i++) {
             const filePath = files[i];
             const rel = path.relative(this._repoPath, filePath);
@@ -71,9 +88,14 @@ export class CodeWalker {
                 continue;
             }
 
-            const chunkCount = await this._indexFile(filePath, rel, content, hash);
+            const chunkCount = await this._indexFile(filePath, rel, content, hash, knownFiles);
             indexed++;
             totalChunks += chunkCount;
+        }
+
+        // Linking pass: build chunk-to-chunk call edges from code_refs → code_symbols
+        if (indexed > 0) {
+            this._linkCallEdges();
         }
 
         return { indexed, skipped, chunks: totalChunks };
@@ -103,7 +125,7 @@ export class CodeWalker {
 
     /** Chunk, embed, and store a single file. Returns chunk count. */
     private async _indexFile(
-        filePath: string, rel: string, content: string, hash: string,
+        filePath: string, rel: string, content: string, hash: string, knownFiles: Set<string>,
     ): Promise<number> {
         const ext = path.extname(filePath).toLowerCase();
         const language = SUPPORTED_EXTENSIONS[ext] ?? 'text';
@@ -171,12 +193,28 @@ export class CodeWalker {
                 hnswToAdd.push({ id, vec: vecs[ci] });
             }
 
-            // Store import graph
+            // Store import graph — resolved file paths + kind
+            const importEdges = extractImportPaths(content, language);
+            const resolver = new ImportResolver(knownFiles, language);
             const insertImport = this._deps.db.prepare(
-                'INSERT OR IGNORE INTO code_imports (file_path, imports_path) VALUES (?, ?)'
+                'INSERT OR IGNORE INTO code_imports (file_path, imports_path, import_kind, resolved) VALUES (?, ?, ?, ?)'
             );
-            for (const imp of imports) {
-                insertImport.run(rel, imp);
+            for (const edge of importEdges) {
+                // Skip stdlib/builtin modules — they create noise edges
+                if (isStdlib(edge.specifier, language)) continue;
+
+                if (edge.isLocal) {
+                    const resolved = resolver.resolve(edge.specifier, rel);
+                    if (resolved) {
+                        insertImport.run(rel, resolved, edge.kind, 1);
+                    } else {
+                        // Store unresolved with raw specifier for fallback
+                        insertImport.run(rel, edge.specifier, edge.kind, 0);
+                    }
+                } else {
+                    // External package — store raw specifier
+                    insertImport.run(rel, edge.specifier, edge.kind, 0);
+                }
             }
 
             // Store symbols
@@ -226,6 +264,37 @@ export class CodeWalker {
             }
         }
         return null;
+    }
+
+    /** Linking pass: build code_call_edges from code_refs → code_symbols. */
+    private _linkCallEdges(): void {
+        try {
+            // Clear old edges (they'll be rebuilt from current refs/symbols)
+            this._deps.db.prepare('DELETE FROM code_call_edges').run();
+
+            // Pass 1: Exact name match (function → function)
+            this._deps.db.prepare(`
+                INSERT OR IGNORE INTO code_call_edges (caller_chunk_id, callee_chunk_id, symbol_name)
+                SELECT cr.chunk_id, cs.chunk_id, cr.symbol_name
+                FROM code_refs cr
+                JOIN code_symbols cs ON cs.name = cr.symbol_name
+                WHERE cs.chunk_id IS NOT NULL
+                  AND cr.chunk_id != cs.chunk_id
+            `).run();
+
+            // Pass 2: Method suffix match (on_turn_end → TurnController.on_turn_end)
+            // Handles the common case where call refs use short names but symbols
+            // are stored as Class.method (Python, Java, TS methods)
+            this._deps.db.prepare(`
+                INSERT OR IGNORE INTO code_call_edges (caller_chunk_id, callee_chunk_id, symbol_name)
+                SELECT cr.chunk_id, cs.chunk_id, cr.symbol_name
+                FROM code_refs cr
+                JOIN code_symbols cs ON cs.name LIKE '%.' || cr.symbol_name
+                WHERE cs.chunk_id IS NOT NULL
+                  AND cr.chunk_id != cs.chunk_id
+                  AND cr.symbol_name NOT IN ('__init__', 'get', 'set', 'run', 'start', 'stop', 'close', 'open', 'read', 'write', 'send', 'init', 'new', 'create', 'update', 'delete', 'toString', 'valueOf', 'next', 'then', 'catch', 'push', 'pop', 'append', 'add', 'remove', 'len', 'str', 'int', 'print', 'format')
+            `).run();
+        } catch { /* table might not exist yet (pre-v3) */ }
     }
 
     /** Extract symbols from file, swallowing errors gracefully. */

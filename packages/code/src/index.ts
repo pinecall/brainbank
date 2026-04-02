@@ -19,6 +19,10 @@ export { CodeWalker } from './code-walker.js';
 export type { CodeWalkerDeps, CodeIndexOptions } from './code-walker.js';
 export { GRAMMARS } from './grammars.js';
 export type { LangGrammar } from './grammars.js';
-export { extractImports } from './import-extractor.js';
+export { extractImports, extractImportPaths } from './import-extractor.js';
+export type { ImportEdge, ImportKind } from './import-extractor.js';
+export { ImportResolver } from './import-resolver.js';
 export { extractSymbols, extractCallRefs } from './symbol-extractor.js';
 export type { SymbolDef } from './symbol-extractor.js';
+export type { DependencyGraph, DependencyNode, DependencyEdge } from './sql-code-graph.js';
+

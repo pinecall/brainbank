@@ -21,7 +21,7 @@ import { runPluginMigrations, sanitizeFTS, normalizeBM25, escapeLike } from 'bra
 import { CodeWalker } from './code-walker.js';
 import { CodeVectorSearch } from './code-vector-search.js';
 import { SqlCodeGraphProvider } from './sql-code-graph.js';
-import { formatCodeResults, formatCodeGraph } from './code-context-formatter.js';
+import { formatCodeContext } from './code-context-formatter.js';
 import { CODE_SCHEMA_VERSION, CODE_MIGRATIONS } from './code-schema.js';
 import type { CodeChunkRow } from './code-vector-search.js';
 
@@ -97,14 +97,13 @@ class CodePlugin implements Plugin {
         });
     }
 
-    /** ContextFormatterPlugin — format code results with call graph. */
+    /** ContextFormatterPlugin — format code results as unified workflow trace. */
     formatContext(results: SearchResult[], parts: string[]): void {
         const codeHits = results.filter(r => r.type === 'code');
         if (codeHits.length === 0) return;
 
         const codeGraph = new SqlCodeGraphProvider(this.db);
-        formatCodeResults(codeHits, parts, codeGraph);
-        formatCodeGraph(codeHits, parts, codeGraph);
+        formatCodeContext(codeHits, parts, codeGraph);
     }
 
     /** BM25SearchPlugin — FTS5 keyword search across code chunks. */

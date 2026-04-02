@@ -104,7 +104,7 @@ export function createDomainSchema(db: DatabaseAdapter): void {
         );
         CREATE TABLE IF NOT EXISTS code_vectors (chunk_id INTEGER PRIMARY KEY REFERENCES code_chunks(id) ON DELETE CASCADE, embedding BLOB NOT NULL);
         CREATE TABLE IF NOT EXISTS indexed_files (file_path TEXT PRIMARY KEY, file_hash TEXT NOT NULL, indexed_at INTEGER NOT NULL DEFAULT (unixepoch()));
-        CREATE TABLE IF NOT EXISTS code_imports (file_path TEXT NOT NULL, imports_path TEXT NOT NULL, PRIMARY KEY (file_path, imports_path));
+        CREATE TABLE IF NOT EXISTS code_imports (file_path TEXT NOT NULL, imports_path TEXT NOT NULL, import_kind TEXT NOT NULL DEFAULT 'static', resolved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (file_path, imports_path));
         CREATE TABLE IF NOT EXISTS code_symbols (id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, line INTEGER NOT NULL, chunk_id INTEGER REFERENCES code_chunks(id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS code_refs (chunk_id INTEGER NOT NULL REFERENCES code_chunks(id) ON DELETE CASCADE, symbol_name TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_cc_file ON code_chunks(file_path);
