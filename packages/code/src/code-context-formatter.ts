@@ -17,7 +17,7 @@
 import type { SearchResult } from 'brainbank';
 import { isCodeResult } from 'brainbank';
 
-import type { CodeGraphProvider, CallTreeNode } from './sql-code-graph.js';
+import type { CodeGraphProvider, CallTreeNode, AdjacentPart } from './sql-code-graph.js';
 
 // ── Public API ──────────────────────────────────────
 
@@ -40,11 +40,14 @@ export function formatCodeContext(
     // 1. Collect seed chunk IDs from search hits
     const seedIds = _collectChunkIds(codeHits);
 
-    // 2. Build the full call tree (recursive, no trimming)
+    // 2. Expand multi-part hits: if "foo (part 2)" matched, fetch all parts of "foo"
+    const expandedHits = _expandAdjacentParts(codeHits, codeGraph);
+
+    // 3. Build the full call tree (recursive, no trimming)
     const callTree = seedIds.length > 0 ? codeGraph.buildCallTree(seedIds) : [];
 
-    // 3. Flatten everything into a single ordered list
-    const allChunks = _buildFlatList(codeHits, callTree);
+    // 4. Flatten everything into a single ordered list
+    const allChunks = _buildFlatList(expandedHits, callTree);
 
     // 4. Render as a single flat section
     let currentFile = '';
@@ -61,7 +64,7 @@ export function formatCodeContext(
             : `L${chunk.startLine}-${chunk.endLine}`;
 
         const annotations: string[] = [];
-        if (chunk.score !== undefined) {
+        if (chunk.score !== undefined && chunk.score >= 0) {
             annotations.push(`${Math.round(chunk.score * 100)}% match`);
         }
         if (chunk.calledBy) {
@@ -73,9 +76,10 @@ export function formatCodeContext(
 
         const suffix = annotations.length > 0 ? ` — ${annotations.join(', ')}` : '';
 
-        // Trivial wrapper check: call-tree chunks (no score = not a search hit)
+        // Trivial wrapper check: non-search-hit chunks (score undefined or -1)
         // with ≤2 meaningful code lines get a compact one-liner instead of full block
-        if (chunk.score === undefined && _isTrivialBody(chunk.content)) {
+        const isSearchHit = chunk.score !== undefined && chunk.score >= 0;
+        if (!isSearchHit && _isTrivialBody(chunk.content)) {
             const oneLiner = _extractOneLiner(chunk.content);
             parts.push(`**${label}**${suffix} → \`${oneLiner}\`\n`);
             continue;
@@ -257,6 +261,82 @@ function _collectChunkIds(codeHits: SearchResult[]): number[] {
         }
     }
     return ids;
+}
+
+/** Regex to detect multi-part chunk names: "foo (part N)" */
+const PART_RE = /^(.+) \(part \d+\)$/;
+
+/**
+ * Expand multi-part search hits: if "foo (part 2)" matched,
+ * fetch all sibling parts and insert them in order.
+ * Non-part hits pass through unchanged.
+ */
+function _expandAdjacentParts(
+    codeHits: SearchResult[],
+    codeGraph: CodeGraphProvider,
+): SearchResult[] {
+    const expanded: SearchResult[] = [];
+    const seenIds = new Set<number>();
+
+    for (const hit of codeHits) {
+        if (!isCodeResult(hit)) {
+            expanded.push(hit);
+            continue;
+        }
+
+        // Already seen (from a previous expansion)
+        if (hit.metadata.id && seenIds.has(hit.metadata.id)) continue;
+
+        const name = hit.metadata.name ?? '';
+        const match = PART_RE.exec(name);
+
+        if (!match) {
+            // Not a multi-part chunk — pass through
+            expanded.push(hit);
+            if (hit.metadata.id) seenIds.add(hit.metadata.id);
+            continue;
+        }
+
+        // Fetch all sibling parts from DB
+        const baseName = match[1];
+        const siblings = codeGraph.fetchAdjacentParts(hit.filePath, baseName);
+
+        if (siblings.length <= 1) {
+            // No siblings found — render as-is
+            expanded.push(hit);
+            if (hit.metadata.id) seenIds.add(hit.metadata.id);
+            continue;
+        }
+
+        // Insert all sibling parts in order (by start_line)
+        for (const sib of siblings) {
+            if (seenIds.has(sib.id)) continue;
+            seenIds.add(sib.id);
+
+            // Check if this sibling IS the original hit (keep its score)
+            if (sib.id === hit.metadata.id) {
+                expanded.push(hit);
+            } else {
+                // Synthesize a CodeResult for the adjacent part
+                expanded.push({
+                    type: 'code' as const,
+                    content: sib.content,
+                    filePath: sib.filePath,
+                    score: -1, // sentinel: adjacent part (not a search hit)
+                    metadata: {
+                        id: sib.id,
+                        name: sib.name,
+                        chunkType: sib.chunkType,
+                        startLine: sib.startLine,
+                        endLine: sib.endLine,
+                        language: sib.language,
+                    },
+                });
+            }
+        }
+    }
+
+    return expanded;
 }
 
 /**

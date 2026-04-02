@@ -6,7 +6,10 @@
  * Moved from core — domain-specific to code indexing.
  */
 
-import { expandViaImportGraph, fetchBestChunks } from './import-graph.js';
+import {
+    expandViaImportGraph, fetchBestChunks, buildDependencyGraph, fetchCalledChunks, buildCallTree,
+    type DependencyGraph, type DependencyNode, type DependencyEdge, type CalledChunk, type CallTreeNode,
+} from './import-graph.js';
 
 /** Summary of a code chunk for graph expansion results. */
 export interface CodeChunkSummary {
@@ -19,12 +22,32 @@ export interface CodeChunkSummary {
     language: string;
 }
 
-/** Provider for code graph queries (call info, import graph, chunk lookup). */
+/** Provider for code graph queries (call info, import graph, chunk lookup, dependency graph). */
 export interface CodeGraphProvider {
     getCallInfo(chunkId: number, symbolName?: string): { calls: string[]; calledBy: string[] } | null;
     expandImportGraph(seedFiles: Set<string>): Set<string>;
+    buildDependencyGraph(seedFiles: Set<string>): DependencyGraph;
     fetchBestChunks(filePaths: string[]): CodeChunkSummary[];
+    fetchCalledChunks(seedChunkIds: number[]): CalledChunk[];
+    buildCallTree(seedChunkIds: number[]): CallTreeNode[];
+    /** Fetch all sibling parts for a multi-part chunk (e.g. 'foo (part 2)' → all parts of foo). */
+    fetchAdjacentParts(filePath: string, baseName: string): AdjacentPart[];
 }
+
+/** A sibling part of a multi-part chunk. */
+export interface AdjacentPart {
+    id: number;
+    filePath: string;
+    name: string;
+    chunkType: string;
+    startLine: number;
+    endLine: number;
+    language: string;
+    content: string;
+}
+
+// Re-export graph types for consumers
+export type { DependencyGraph, DependencyNode, DependencyEdge, CalledChunk, CallTreeNode };
 
 /** Minimal DB interface for queries. */
 interface DbLike {
@@ -57,13 +80,44 @@ export class SqlCodeGraphProvider implements CodeGraphProvider {
         }
     }
 
-    /** 2-hop import graph expansion from seed files. */
+    /** Legacy 2-hop import graph expansion from seed files. */
     expandImportGraph(seedFiles: Set<string>): Set<string> {
         return expandViaImportGraph(this._db, seedFiles);
+    }
+
+    /** Full bidirectional dependency graph from seed files. */
+    buildDependencyGraph(seedFiles: Set<string>): DependencyGraph {
+        return buildDependencyGraph(this._db, seedFiles);
     }
 
     /** Fetch the most informative chunk per file (largest by line span). */
     fetchBestChunks(filePaths: string[]): CodeChunkSummary[] {
         return fetchBestChunks(this._db, filePaths);
+    }
+
+    /** Fetch chunks called by seed chunks via code_call_edges. */
+    fetchCalledChunks(seedChunkIds: number[]): CalledChunk[] {
+        return fetchCalledChunks(this._db, seedChunkIds);
+    }
+
+    /** Build a recursive call tree from seed chunks. */
+    buildCallTree(seedChunkIds: number[]): CallTreeNode[] {
+        return buildCallTree(this._db, seedChunkIds);
+    }
+
+    /** Fetch all sibling parts for a multi-part chunk. */
+    fetchAdjacentParts(filePath: string, baseName: string): AdjacentPart[] {
+        try {
+            const rows = this._db.prepare(
+                `SELECT id, file_path AS filePath, name, chunk_type AS chunkType,
+                        start_line AS startLine, end_line AS endLine, language, content
+                 FROM code_chunks
+                 WHERE file_path = ? AND name LIKE ? || ' (part %'
+                 ORDER BY start_line`
+            ).all(filePath, baseName) as AdjacentPart[];
+            return rows;
+        } catch {
+            return [];
+        }
     }
 }

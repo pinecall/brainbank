@@ -25,6 +25,7 @@ All notable changes to `@brainbank/code` will be documented in this file.
   - **V4:** Unified flat formatter — single `## Code Context` section replaces multi-section output. No sub-headers, no trimming, no truncation. Every chunk shows full source.
   - **V4:** `called by` annotations — each call-tree chunk shows which function calls it (e.g. `called by validate_token`). Uses `callerName` field on `CallTreeNode` populated by seed lookup in `buildCallTree`.
   - **V4:** Test file filtering — files matching `test/`, `tests/`, `__tests__`, `.test.`, `.spec.` excluded from call tree output.
+  - **V4:** Part adjacency boost — when a `(part N)` chunk matches, all sibling parts are auto-included in order. Eliminates gaps in multi-part function output.
 - Own schema creation via `MigratablePlugin` — `code_chunks`, `code_vectors`, `indexed_files`, `code_imports`, `code_symbols`, `code_refs`, `fts_code` tables are now created by the code plugin, not core
 - `VectorSearchPlugin` implementation — `CodeVectorSearch` with MMR diversity
 - `ContextFormatterPlugin` implementation — code results and import graph context formatting
