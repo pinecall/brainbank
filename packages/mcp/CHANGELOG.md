@@ -4,6 +4,14 @@ All notable changes to `@brainbank/mcp` will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+- **Removed 5 MCP tools**: `brainbank_search`, `brainbank_stats`, `brainbank_history`, `brainbank_collection`, `brainbank_workspaces`. Server now exposes only `brainbank_context` (primary) and `brainbank_index`
+- `brainbank_context` description updated to reference Workflow Trace output
+
+### Changed
+- Server reduced from 443 lines to 160 lines
+- Version bumped to 0.4.0
+
 ## [0.3.0]
 
 ### Breaking Changes

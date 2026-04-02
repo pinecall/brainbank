@@ -1,6 +1,6 @@
 # @brainbank/mcp
 
-[MCP](https://modelcontextprotocol.io/) server for [BrainBank](https://github.com/pinecall/brainbank) — exposes code search, git history, and collections as tools for AI agents via stdio transport.
+[MCP](https://modelcontextprotocol.io/) server for [BrainBank](https://github.com/pinecall/brainbank) — exposes code context as a single tool for AI agents via stdio transport.
 
 ## Install
 
@@ -73,15 +73,62 @@ The MCP server auto-detects everything:
 
 - **Repo path** — from `repo` tool param > `BRAINBANK_REPO` env > `findRepoRoot(cwd)`
 - **Embedding provider** — from `.brainbank/config.json` > `BRAINBANK_EMBEDDING` env > `provider_key` stored in DB > falls back to local
-- **Plugins** — reads `plugins` array from `config.json` (default: `['code', 'git', 'docs']`). Loaded dynamically by the core factory — no hardcoded imports
+- **Plugins** — reads `plugins` array from `config.json` (default: `['code']`). Loaded dynamically by the core factory — no hardcoded imports
 
-Index your repo once with the CLI to set up the embedding provider:
+Index your repo once with the CLI:
 
 ```bash
-brainbank index .   # interactive — prompts for modules and embedding provider
+brainbank index . --yes
 ```
 
 After that, the MCP server auto-resolves the correct provider — no env vars needed.
+
+## Tools (2)
+
+### `brainbank_context`
+
+**Primary tool.** Returns a Workflow Trace:
+
+```typescript
+brainbank_context({
+  task: string,              // what you're trying to understand or implement
+  affectedFiles?: string[],  // files you plan to modify (improves co-edit suggestions)
+  codeResults?: number,      // max code results (default: 6)
+  gitResults?: number,       // max git commit results (default: 5)
+  repo?: string,             // repository path (default: auto-detect)
+})
+```
+
+Returns a **Workflow Trace** — a single flat `## Code Context` section with:
+- Search hits with `% match` scores
+- Full call tree (3 levels deep) with `called by` annotations
+- Part adjacency boost (multi-part functions shown complete)
+- Trivial wrapper collapse (one-liners for delegation)
+- All source code included — no trimming, no truncation
+
+If the project is **not indexed**, the tool returns an error with the CLI command to run.
+
+### `brainbank_index`
+
+Re-index code/git/docs. Requires `.brainbank/config.json`. Incremental — only changed files are processed.
+
+```typescript
+brainbank_index({
+  forceReindex?: boolean,  // force full re-index (default: false)
+  repo?: string,           // repository path
+})
+```
+
+## Multi-Workspace
+
+The MCP server manages a `WorkspacePool` of BrainBank instances — one per unique `repo` path. The pool uses memory-pressure eviction (configurable max memory) and TTL eviction (configurable idle timeout):
+
+```typescript
+brainbank_context({ task: "login form", repo: "/project-a" })
+brainbank_context({ task: "API routes", repo: "/project-b" })
+```
+
+Instances are cached in memory after first initialization (~480ms). Active operations are tracked — the pool never evicts a workspace with in-flight queries.
 
 ## Environment Variables
 
@@ -89,50 +136,21 @@ All optional — the server works without any env vars.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BRAINBANK_REPO` | Fallback repo path (if `repo` param not provided and no `.git/` found) | auto-detect from cwd |
+| `BRAINBANK_REPO` | Fallback repo path | auto-detect from cwd |
 | `BRAINBANK_EMBEDDING` | Embedding provider key | from `config.json` or DB |
-| `BRAINBANK_RERANKER` | Reranker: `none`, `qwen3` | `none` |
 | `BRAINBANK_MAX_MEMORY_MB` | Maximum total pool memory in MB | `2048` |
 | `BRAINBANK_TTL_MINUTES` | Idle workspace eviction timeout in minutes | `30` |
 | `OPENAI_API_KEY` | Required when embedding provider is `openai` | — |
-| `PERPLEXITY_API_KEY` | Required when embedding provider is `perplexity` or `perplexity-context` | — |
-
-## Tools (7)
-
-| Tool | Description |
-|------|-------------|
-| `brainbank_search` | Unified search — `mode: hybrid` (default), `vector`, or `keyword` |
-| `brainbank_context` | Formatted context block for a task (code + git + co-edits + docs) |
-| `brainbank_index` | Trigger incremental code/git/docs indexing |
-| `brainbank_stats` | Index statistics (files, commits, chunks, collections) |
-| `brainbank_history` | Git history for a specific file |
-| `brainbank_collection` | KV collection ops — `action: add`, `search`, or `trim` |
-| `brainbank_workspaces` | Pool observability — `action: list`, `evict`, or `stats` |
-
-## Multi-Workspace
-
-The MCP server manages a `WorkspacePool` of BrainBank instances — one per unique `repo` path. The pool uses memory-pressure eviction (configurable max memory) and TTL eviction (configurable idle timeout):
-
-```typescript
-// Agent working in one workspace
-brainbank_search({ query: "login form", repo: "/Users/you/project-a" })
-
-// Agent switches to another project — new instance auto-created
-brainbank_search({ query: "API routes", repo: "/Users/you/project-b" })
-```
-
-Instances are cached in memory after first initialization (~480ms). Active operations are tracked — the pool never evicts a workspace with in-flight queries.
+| `PERPLEXITY_API_KEY` | Required when embedding provider is `perplexity` / `perplexity-context` | — |
 
 ## Architecture
 
 ```
 @brainbank/mcp
-├── mcp-server.ts          ← MCP stdio server (7 tools)
+├── mcp-server.ts          ← MCP stdio server (1 tool: brainbank_context)
 ├── workspace-pool.ts      ← Memory-pressure + TTL eviction, active-op tracking
 └── workspace-factory.ts   ← Delegates to core createBrain() — no plugin hardcoding
 ```
-
-The MCP server imports `createBrain()` from the core `brainbank` package. Plugin packages are optional `peerDependencies` — discovered and loaded dynamically by the core factory.
 
 ## How it works
 
@@ -140,12 +158,11 @@ The MCP server imports `createBrain()` from the core `brainbank` package. Plugin
 AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→  SQLite
 ```
 
-1. Agent sends an MCP tool call (e.g., `brainbank_search`)
+1. Agent sends `brainbank_context({ task: "..." })`
 2. `WorkspacePool` resolves `repo` → gets/creates a BrainBank instance
-3. Pool tracks active operations to prevent mid-query eviction
-4. BrainBank calls `ensureFresh()` → hot-reloads stale HNSW if needed
-5. BrainBank executes against its local SQLite database
-6. Results returned as structured markdown to the agent
+3. BrainBank calls `ensureFresh()` → hot-reloads stale HNSW if needed
+4. BrainBank executes search + call tree + formatting
+5. Workflow Trace returned as markdown to the agent
 
 ## License
 

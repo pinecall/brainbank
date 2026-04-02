@@ -195,11 +195,11 @@ brainbank/
     │       ├── code-schema.ts         ← code_chunks, code_vectors, indexed_files,
     │       │                            code_imports, code_symbols, code_refs, fts_code
     │       ├── code-walker.ts         ← File walker + incremental indexer (FNV-1a hash)
-    │       ├── code-chunker.ts        ← Tree-sitter AST chunker + sliding window fallback
+    │       ├── code-chunker.ts        ← AST-first chunker (tree-sitter always tried first)
     │       ├── code-vector-search.ts  ← CodeVectorSearch (DomainVectorSearch impl)
-    │       ├── code-context-formatter.ts ← Code result formatting + import graph
-    │       ├── sql-code-graph.ts      ← CodeGraphProvider: call info + import traversal
-    │       ├── import-graph.ts        ← 2-hop import traversal + sibling clustering
+    │       ├── code-context-formatter.ts ← Flat Workflow Trace formatter (V4)
+    │       ├── sql-code-graph.ts      ← CodeGraphProvider: call info + import traversal + part adjacency
+    │       ├── import-graph.ts        ← 2-hop import traversal + call tree builder with callerName
     │       ├── grammars.ts            ← Grammar registry (20+ languages, CJS/ESM fallback)
     │       ├── import-extractor.ts    ← Regex import extraction per language
     │       └── symbol-extractor.ts    ← AST symbol defs + call references per chunk
@@ -232,7 +232,7 @@ brainbank/
     │
     └── mcp/                           ← @brainbank/mcp
         └── src/
-            ├── mcp-server.ts          ← MCP stdio server (7 tools)
+            ├── mcp-server.ts          ← MCP stdio server (2 tools: context + index)
             ├── workspace-pool.ts      ← Memory-pressure + TTL eviction pool
             └── workspace-factory.ts   ← Delegates to core createBrain()
 ```
@@ -711,13 +711,13 @@ CodeWalker.index({ forceReindex?, onProgress? })
 CodeWalker._indexFile(filePath, rel, content, hash)
          │
          ├── CodeChunker.chunk(rel, content, language)
-         │     ├── small file (≤ MAX_LINES=80) → single 'file' chunk
-         │     ├── tree-sitter parse → _extractChunks():
-         │     │     export_statement unwrap, decorated_definition unwrap,
-         │     │     class > MAX → _splitClassIntoMethods(),
-         │     │     large block → _splitLargeBlock(overlap=5)
-         │     └── fallback → sliding window (unsupported grammar)
-         │
+          │     ├── AST-first: always tries tree-sitter extraction first
+          │     │     (no short-circuit for small files — ensures function-level chunks)
+          │     │     export_statement unwrap, decorated_definition unwrap,
+          │     │     class > MAX → _splitClassIntoMethods(),
+          │     │     large block → _splitLargeBlock(overlap=5) with '(part N)' naming
+          │     │     fallback → single 'file' chunk only if AST yields zero blocks
+          │     └── last resort → sliding window (unsupported grammar)         │
          ├── extractImports(content, language)  ← regex per 19 languages
          │
          ├── build embeddingTexts:
@@ -743,9 +743,18 @@ CodePlugin.createVectorSearch() → CodeVectorSearch
 CodePlugin.searchBM25(query, k) → SearchResult[]
   FTS5 on fts_code + file-path LIKE fallback
 
-CodePlugin.formatContext(results, parts)
-  formatCodeResults (grouped by file, call graph annotations)
-  formatCodeGraph (2-hop import graph expansion)
+CodePlugin.formatContext(results, parts, codeGraph)
+  V4 Workflow Trace — single flat `## Code Context` section:
+  1. Collect seed chunk IDs from search hits
+  2. Part adjacency boost: expand '(part N)' hits → all sibling parts via
+     SqlCodeGraphProvider.fetchAdjacentParts()
+  3. Build recursive call tree from seed IDs (3 levels deep)
+  4. _buildFlatList: topologically ordered, deduplicated, calledBy annotated
+  5. Trivial wrapper collapse: chunks ≤2 meaningful lines → one-liner
+  6. Test file filtering: _isTestFile() excludes test/ tests/ __tests__ .spec .test
+  Output per chunk:
+    **method `Foo.bar` (L123-145)** — 65% match
+    **method `Baz.qux` (L200-220)** — called by `Foo.bar`, calls 3 more
 
 CodePlugin.reembedConfig() → ReembedTable
   textBuilder: "File: {file_path}\n{chunk_type}: {name}\n{content}"
@@ -868,17 +877,17 @@ DocsPlugin.index(options?) → IndexResult
 
 **Files:** `packages/mcp/src/` — 3 source files
 
-7 registered MCP tools via `@modelcontextprotocol/sdk`:
+7 registered MCP tools via `@modelcontextprotocol/sdk`. As of V4, the server exposes **2 tools**: `brainbank_context` (primary) and
+`brainbank_index`. All other tools (search, stats, history, collection, workspaces)
+were removed — `context` subsumes search, call graph, and formatting.
 
 | Tool | Description |
 |------|------------|
-| `brainbank_search` | Unified: hybrid (default), vector, or keyword mode |
-| `brainbank_context` | Formatted context block (code + git + docs) |
-| `brainbank_index` | Trigger incremental indexing + optional docs path |
-| `brainbank_stats` | Index stats + KV collection inventory |
-| `brainbank_history` | Git commit history for a file path |
-| `brainbank_collection` | KV operations: add, search, trim |
-| `brainbank_workspaces` | Pool observability: list, evict, stats |
+| `brainbank_context` | Workflow Trace: search + call tree + `called by` annotations + part adjacency + trivial collapse |
+| `brainbank_index` | Trigger incremental code/git/docs indexing |
+
+> **For indexing**, use the CLI: `brainbank index . --force --yes`.
+> If the project is not indexed, `brainbank_context` returns an error with the CLI command.
 
 **WorkspacePool** (`workspace-pool.ts`):
 
@@ -1947,8 +1956,8 @@ brain.reembed()   (switch Local 384d → OpenAI 1536d)
      │                     @brainbank/mcp                               │
      │                                                                  │
      │  WorkspacePool: memory-pressure + TTL eviction, active-op guard │
-     │  7 tools: search, context, index, stats, history, collection,   │
-     │           workspaces (pool observability)                        │
+     │  2 tools: context (Workflow Trace), index (re-index)              │
+     │                                                               │
      │  WorkspaceFactory → createBrain() (no hardcoded plugins)        │
      └──────────────────────────────────────────────────────────────────┘
 ```
