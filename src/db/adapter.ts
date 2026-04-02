@@ -78,3 +78,35 @@ export interface DatabaseAdapter {
      */
     raw<T = unknown>(): T | undefined;
 }
+
+// ── Row Types ────────────────────────────────────────────────────────
+// Typed interfaces for rows returned by core SQLite queries.
+// Domain-specific row types live in their respective packages.
+
+export interface KvDataRow {
+    id: number;
+    collection: string;
+    content: string;
+    meta_json: string;
+    tags_json: string;
+    expires_at: number | null;
+    created_at: number;
+}
+
+export interface KvVectorRow {
+    data_id: number;
+    embedding: Buffer;
+}
+
+export interface EmbeddingMetaRow {
+    value: string;
+}
+
+export interface VectorRow {
+    id: number;
+    embedding: Buffer;
+}
+
+export interface CountRow {
+    c: number;
+}

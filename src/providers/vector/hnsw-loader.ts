@@ -8,8 +8,7 @@
  * for multi-process coordination.
  */
 
-import type { DatabaseAdapter } from '@/db/adapter.ts';
-import type { CountRow } from '@/db/rows.ts';
+import type { DatabaseAdapter, CountRow } from '@/db/adapter.ts';
 import type { HNSWIndex } from './hnsw-index.ts';
 
 import { dirname, join } from 'node:path';

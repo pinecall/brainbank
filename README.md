@@ -98,6 +98,7 @@ Extensions that connect BrainBank to external tools and workflows.
 | **[Multi-Repo](docs/multi-repo.md)** | Index multiple repositories into one DB |
 | **[MCP Server](docs/mcp.md)** | AI tool integration (stdio) |
 | **[Indexing](docs/indexing.md)** | Code graph, incremental indexing, re-embedding |
+| **[Migrations](docs/migrations.md)** | Plugin schema migrations, built-in schemas |
 | **[Architecture](docs/architecture.md)** | System internals, data flows, design patterns |
 
 ---

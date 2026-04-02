@@ -9,8 +9,7 @@
  *   const hits = await errors.search('null pointer');
  */
 
-import type { DatabaseAdapter } from '@/db/adapter.ts';
-import type { KvDataRow, CountRow } from '@/db/rows.ts';
+import type { DatabaseAdapter, KvDataRow, CountRow } from '@/db/adapter.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
 

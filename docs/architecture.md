@@ -121,13 +121,10 @@ brainbank/
 │   │   └── reembed.ts                 ← reembedAll(): atomic vector swap without re-parsing
 │   │
 │   ├── db/
-│   │   ├── adapter.ts                 ← DatabaseAdapter interface + PreparedStatement<T>
-│   │   ├── sqlite-adapter.ts          ← SQLiteAdapter: better-sqlite3 implementation (WAL, FK, transactions)
-│   │   ├── schema.ts                  ← Core-only DDL: KV tables, embedding_meta, plugin_versions, index_state
-│   │   ├── index-state.ts             ← Cross-process version tracking (bumpVersion, getVersions)
-│   │   ├── migrations.ts              ← Plugin migration system (runPluginMigrations)
-│   │   ├── embedding-meta.ts          ← Track/detect/compare embedding provider in DB
-│   │   └── rows.ts                    ← TypeScript interfaces for core DB row types
+│   │   ├── adapter.ts                 ← DatabaseAdapter interface + PreparedStatement<T> + core row types
+│   │   ├── sqlite-adapter.ts          ← SQLiteAdapter: better-sqlite3 implementation + core schema DDL
+│   │   ├── metadata.ts                ← Cross-process versioning + embedding provider tracking
+│   │   └── migrations.ts              ← Plugin migration system (runPluginMigrations)
 │   │
 │   ├── providers/
 │   │   ├── embeddings/
@@ -572,7 +569,26 @@ isMigratable(p)             → typeof schemaVersion === 'number' && Array.isArr
 isBM25SearchPlugin(p)       → typeof p.searchBM25 === 'function'
 ```
 
-### 6.2 Plugin Migrations
+### 6.2 Plugin Data Storage
+
+Plugins have **two** ways to store data:
+
+| Approach | SQL required? | When to use |
+|----------|:---:|------------|
+| `ctx.collection(name)` | **No** | Most plugins — store + search content with hybrid search, metadata, tags, TTL |
+| Custom tables + `runPluginMigrations()` | Yes | Complex schemas with FKs, domain-specific FTS5, specialized indices |
+
+**Collections** (`ctx.collection('errors')`) are the **recommended default**. They
+provide hybrid search (vector + BM25), metadata, tags, and TTL out of the box,
+with zero SQL. Most plugins — notes, logs, errors, decisions — should use them.
+
+**Custom tables** via the migration system are only needed when collections can't
+provide what the plugin requires: table relationships, weighted FTS5 columns,
+CASCADE deletes, or specialized query patterns. The built-in `@brainbank/code`,
+`@brainbank/git`, and `@brainbank/docs` use migrations because they have complex
+relational schemas (e.g. `code_imports` → `code_chunks` FK).
+
+#### Migration Runner
 
 **File:** `src/db/migrations.ts` (67 lines)
 
@@ -594,6 +610,9 @@ runPluginMigrations(db, name, targetVersion, migrations[]):
   for each migration where version > current:
     transaction: m.up(db) + setPluginVersion
 ```
+
+> See [Migrations](../docs/migrations.md) for the full guide, including built-in
+> plugin schemas, writing/evolving migrations, and best practices.
 
 ### 6.3 PluginContext — Dependency Injection Container
 
@@ -1356,7 +1375,7 @@ reembedAll(db, embedding, hnswMap, plugins, options?, persist?)
 
 ### 12.3 EmbeddingMeta
 
-**File:** `src/db/embedding-meta.ts` (75 lines)
+**File:** `src/db/metadata.ts`
 
 ```
 embedding_meta table (key/value):
@@ -1510,7 +1529,7 @@ NON_SOURCE_FLAGS excluded: repo, depth, collection, pattern, etc.
 
 ## 15. SQLite Schema
 
-### Core Schema (`src/db/schema.ts` — SCHEMA_VERSION = 8)
+### Core Schema (`src/db/sqlite-adapter.ts` — SCHEMA_VERSION = 8)
 
 Core creates ONLY infrastructure tables. All domain tables are created
 by plugins via `runPluginMigrations()`.

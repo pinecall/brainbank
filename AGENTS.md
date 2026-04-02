@@ -37,7 +37,7 @@ Layer 0 — Foundation (no deps, imported by everyone)
 ├── types.ts         ← All shared types and interfaces
 ├── config.ts        ← Defaults + resolver (flattened from config/)
 ├── lib/             ← Pure functions: math, rrf, fts
-└── db/              ← DatabaseAdapter interface, SQLiteAdapter, schema, migrations
+└── db/              ← DatabaseAdapter interface, SQLiteAdapter (+ schema), metadata, migrations
 
 Layer 1 — Infrastructure (depends on Layer 0 only)
 ├── providers/       ← Embeddings (local WASM, OpenAI), vector (HNSW), rerankers
@@ -81,8 +81,10 @@ packages/                ← All plugin implementations live here (NOT in src/)
 - `src/brainbank.ts` — Main orchestrator with inline initialization (`_runInitialize`).
 - `src/engine/search-api.ts` — Hybrid search orchestration (vector + keyword + RRF).
 - `src/cli/factory/index.ts` — CLI factory (delegates to config-loader, plugin-loader, builtin-registration).
-- `src/db/adapter.ts` — `DatabaseAdapter` interface + `PreparedStatement<T>` + `AdapterCapabilities`.
-- `src/db/sqlite-adapter.ts` — `SQLiteAdapter`: better-sqlite3 implementation of `DatabaseAdapter`.
+- `src/db/adapter.ts` — `DatabaseAdapter` interface + `PreparedStatement<T>` + `AdapterCapabilities` + core row types.
+- `src/db/sqlite-adapter.ts` — `SQLiteAdapter`: better-sqlite3 implementation + core schema DDL.
+- `src/db/metadata.ts` — `bumpVersion`/`getVersions` (index state) + `getEmbeddingMeta`/`setEmbeddingMeta` (provider tracking).
+- `src/db/migrations.ts` — `runPluginMigrations`: per-plugin versioned schema migrations.
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
 ## Code Conventions

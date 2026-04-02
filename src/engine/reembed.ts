@@ -10,13 +10,12 @@
  *   // → { code: 1200, git: 500, docs: 80, kv: 45, total: 1837 }
  */
 
-import type { DatabaseAdapter } from '@/db/adapter.ts';
-import type { CountRow, VectorRow } from '@/db/rows.ts';
+import type { DatabaseAdapter, CountRow, VectorRow } from '@/db/adapter.ts';
 import type { Plugin, ReembedTable } from '@/plugin.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { EmbeddingProvider, ProgressCallback } from '@/types.ts';
 
-import { setEmbeddingMeta } from '@/db/embedding-meta.ts';
+import { setEmbeddingMeta } from '@/db/metadata.ts';
 import { vecToBuffer } from '@/lib/math.ts';
 import { isReembeddable } from '@/plugin.ts';
 import { saveAllHnsw } from '@/providers/vector/hnsw-loader.ts';

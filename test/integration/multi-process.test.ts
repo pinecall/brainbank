@@ -12,7 +12,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BrainBank } from '../../src/brainbank.ts';
-import { bumpVersion, getVersions, getVersion } from '../../src/db/index-state.ts';
+import { bumpVersion, getVersions, getVersion } from '../../src/db/metadata.ts';
 import { SQLiteAdapter } from '../../src/db/sqlite-adapter.ts';
 import { withLock } from '../../src/lib/write-lock.ts';
 import { saveAllHnsw, lockDir } from '../../src/providers/vector/hnsw-loader.ts';

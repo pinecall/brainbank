@@ -9,7 +9,7 @@
 import * as fs from 'node:fs';
 import { SQLiteAdapter } from '../../../src/db/sqlite-adapter.ts';
 import type { DatabaseAdapter } from '../../../src/db/adapter.ts';
-import { getSchemaVersion, SCHEMA_VERSION } from '../../../src/db/schema.ts';
+import { getSchemaVersion, SCHEMA_VERSION } from '../../../src/db/sqlite-adapter.ts';
 import { createDomainSchema } from '../../helpers.ts';
 
 export const name = 'Schema & Database';

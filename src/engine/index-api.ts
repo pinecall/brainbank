@@ -13,7 +13,7 @@ import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 import type { IndexResult, StageProgressCallback } from '@/types.ts';
 
-import { bumpVersion } from '@/db/index-state.ts';
+import { bumpVersion } from '@/db/metadata.ts';
 import { isIndexable } from '@/plugin.ts';
 import { saveAllHnsw } from '@/providers/vector/hnsw-loader.ts';
 

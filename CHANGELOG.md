@@ -35,6 +35,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Documentation
 - **Full docs audit** — updated all stale `Database`/`database.ts` references to `DatabaseAdapter`/`SQLiteAdapter` across `architecture.md` (7 fixes), `AGENTS.md` (5 fixes), `local-development.md`, and `custom-plugins.md`
+- **`docs/migrations.md`** — new guide documenting the plugin migration system: core API, built-in schemas, writing/evolving migrations, best practices, and runner internals
+- **`docs/custom-plugins.md`** — fixed stale `MigratablePlugin` type signature (`Record<number, string[]>` → `Migration[]`)
+
+### Refactored
+- **`src/db/` consolidated** (7 → 4 files) — `rows.ts` merged into `adapter.ts`, `schema.ts` merged into `sqlite-adapter.ts`, `index-state.ts` + `embedding-meta.ts` merged into `metadata.ts`. `migrations.ts` unchanged
 
 ### Changed
 - **`saveAllHnsw()` is now async** — wrapped with `withLock()` for cross-process file locking. Returns `Promise<boolean>` instead of `boolean`

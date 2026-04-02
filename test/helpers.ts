@@ -16,7 +16,7 @@ import { PerplexityEmbedding, decodeBase64Int8 } from '../src/providers/embeddin
 import { PerplexityContextEmbedding } from '../src/providers/embeddings/perplexity-context-embedding.ts';
 import { Collection } from '../src/services/collection.ts';
 import { resolveConfig, DEFAULTS } from '../src/config.ts';
-import { SCHEMA_VERSION } from '../src/db/schema.ts';
+import { SCHEMA_VERSION } from '../src/db/sqlite-adapter.ts';
 import { reciprocalRankFusion } from '../src/lib/rrf.ts';
 import { searchMMR } from '../src/search/vector/mmr.ts';
 import {

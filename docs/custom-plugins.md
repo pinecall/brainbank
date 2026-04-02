@@ -48,6 +48,18 @@ Every plugin receives a `PluginContext` during `initialize()`:
 | `ctx.loadVectors(table, idCol, hnsw, cache)` | Load existing vectors from a SQLite vectors table into HNSW + cache. Skipped on dimension mismatch force-init. Tries disk file first (fast), falls back to row-by-row from SQLite. |
 | `ctx.getOrCreateSharedHnsw(type, max?, dims?)` | Shared HNSW across same-type plugins (e.g. all `code:*` share one). Returns `{ hnsw, vecCache, isNew }`. Only the first caller (isNew=true) should `loadVectors`. |
 
+### Data Storage Strategy
+
+> [!TIP]
+> **Start with collections.** Most plugins only need `ctx.collection('name')` — it gives you hybrid search (vector + BM25), metadata, tags, and TTL with zero SQL.
+
+| Approach | SQL? | Best for |
+|----------|:---:|---------|
+| `ctx.collection(name)` | **No** | Notes, errors, decisions, logs — store + search |
+| Custom tables + [migrations](migrations.md) | Yes | Relational schemas, custom FTS5, specialized indices |
+
+Use `ctx.db` and `MigratablePlugin` **only** when you need table relationships, weighted FTS5 columns, CASCADE deletes, or domain-specific query patterns.
+
 ### HNSW Allocation Strategy
 
 | Use case | Method | Example |
@@ -145,14 +157,29 @@ interface BM25SearchPlugin extends Plugin {
 Plugin owns its DB schema via versioned migrations. Tables are created on `initialize()` — the core schema stays domain-free:
 
 ```typescript
+import type { Migration } from 'brainbank';
+import { runPluginMigrations } from 'brainbank';
+
 interface MigratablePlugin extends Plugin {
-  readonly schemaVersion: number;
-  readonly migrations: Record<number, string[]>;
+  readonly schemaVersion: number;     // current version (e.g. 2)
+  readonly migrations: Migration[];   // ordered list [v1, v2, ...]
 }
-// migrations: { 1: ['CREATE TABLE ...', 'CREATE INDEX ...'], 2: ['ALTER TABLE ...'] }
+
+// Each migration is an object with { version, up(adapter) }
+const MIGRATIONS: Migration[] = [
+  {
+    version: 1,
+    up(adapter) {
+      adapter.exec(`CREATE TABLE IF NOT EXISTS my_items (...)`);
+    },
+  },
+];
+
+// Call at the top of initialize()
+runPluginMigrations(ctx.db, 'my-plugin', SCHEMA_VERSION, MIGRATIONS);
 ```
 
-> Plugins call `runPluginMigrations(db, pluginName, plugin.schemaVersion, plugin.migrations)` at the top of their `initialize()` method. The migration runner uses the `plugin_versions` table to track which version each plugin has been migrated to.
+> The migration runner reads the stored version from the `plugin_versions` table, runs only pending migrations (each in its own transaction), and stamps the new version. See [Migrations](migrations.md) for the full guide.
 
 ## Full Example: Notes Plugin
 

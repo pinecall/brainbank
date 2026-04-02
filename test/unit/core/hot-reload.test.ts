@@ -11,7 +11,7 @@
 import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
 import { BrainBank } from '../../../src/brainbank.ts';
-import { bumpVersion, getVersions, getVersion } from '../../../src/db/index-state.ts';
+import { bumpVersion, getVersions, getVersion } from '../../../src/db/metadata.ts';
 import { SQLiteAdapter } from '../../../src/db/sqlite-adapter.ts';
 import { docs } from '@brainbank/docs';
 import type { EmbeddingProvider } from '../../../src/types.ts';

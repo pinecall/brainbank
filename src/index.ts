@@ -123,11 +123,12 @@ export { rerank } from './lib/rerank.ts';
 export type { SearchStrategy, SearchOptions, DomainVectorSearch } from './search/types.ts';
 
 // Multi-process coordination
-export { bumpVersion, getVersions, getVersion } from './db/index-state.ts';
+export { bumpVersion, getVersions, getVersion } from './db/metadata.ts';
 export { acquireLock, releaseLock, withLock } from './lib/write-lock.ts';
 
 // Database adapter (for plugin access and custom adapters)
 export type { DatabaseAdapter, PreparedStatement, ExecuteResult, AdapterCapabilities } from './db/adapter.ts';
+export type { KvDataRow, KvVectorRow, EmbeddingMetaRow, VectorRow, CountRow } from './db/adapter.ts';
 export { SQLiteAdapter } from './db/sqlite-adapter.ts';
 
 // Factory (for programmatic BrainBank creation)

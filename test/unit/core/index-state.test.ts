@@ -8,7 +8,7 @@
 import * as fs from 'node:fs';
 import { SQLiteAdapter } from '../../../src/db/sqlite-adapter.ts';
 import type { DatabaseAdapter } from '../../../src/db/adapter.ts';
-import { bumpVersion, getVersions, getVersion } from '../../../src/db/index-state.ts';
+import { bumpVersion, getVersions, getVersion } from '../../../src/db/metadata.ts';
 
 export const name = 'Index State';
 
