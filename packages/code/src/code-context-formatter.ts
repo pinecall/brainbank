@@ -72,6 +72,15 @@ export function formatCodeContext(
         }
 
         const suffix = annotations.length > 0 ? ` — ${annotations.join(', ')}` : '';
+
+        // Trivial wrapper check: call-tree chunks (no score = not a search hit)
+        // with ≤2 meaningful code lines get a compact one-liner instead of full block
+        if (chunk.score === undefined && _isTrivialBody(chunk.content)) {
+            const oneLiner = _extractOneLiner(chunk.content);
+            parts.push(`**${label}**${suffix} → \`${oneLiner}\`\n`);
+            continue;
+        }
+
         parts.push(`**${label}**${suffix}`);
         parts.push('```' + (chunk.language || ''));
         parts.push(chunk.content);
@@ -248,4 +257,78 @@ function _collectChunkIds(codeHits: SearchResult[]): number[] {
         }
     }
     return ids;
+}
+
+/**
+ * Check if a chunk's body is trivial (≤2 meaningful code lines).
+ * Strips docstrings, comments, blank lines, decorators, type hints,
+ * and boilerplate like `pass` / `...` / `return`.
+ */
+function _isTrivialBody(content: string): boolean {
+    const lines = content.split('\n');
+
+    let inDocstring = false;
+    let meaningful = 0;
+
+    for (const raw of lines) {
+        const line = raw.trim();
+
+        // Toggle docstring blocks
+        if (line.startsWith('"""') || line.startsWith("'''")) {
+            // Single-line docstring: """text""" — skip it
+            const q = line.slice(0, 3);
+            const rest = line.slice(3);
+            if (rest.includes(q)) {
+                continue; // one-liner docstring
+            }
+            inDocstring = !inDocstring;
+            continue;
+        }
+        if (inDocstring) continue;
+
+        // Skip blanks, comments, decorators, type hints, def/class sigs
+        if (!line) continue;
+        if (line.startsWith('#') || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) continue;
+        if (line.startsWith('@')) continue;
+        if (line.startsWith('def ') || line.startsWith('async def ') || line.startsWith('class ')) continue;
+        if (line === 'pass' || line === '...' || line === 'pass  # no-op') continue;
+
+        meaningful++;
+        if (meaningful > 2) return false; // early exit
+    }
+
+    return meaningful <= 2;
+}
+
+/** Extract a compact one-liner from a trivial chunk body. */
+function _extractOneLiner(content: string): string {
+    const lines = content.split('\n');
+
+    let inDocstring = false;
+
+    for (const raw of lines) {
+        const line = raw.trim();
+
+        // Skip docstrings
+        if (line.startsWith('"""') || line.startsWith("'''")) {
+            const q = line.slice(0, 3);
+            const rest = line.slice(3);
+            if (rest.includes(q)) continue;
+            inDocstring = !inDocstring;
+            continue;
+        }
+        if (inDocstring) continue;
+
+        // Skip blanks, comments, decorators, sigs
+        if (!line) continue;
+        if (line.startsWith('#') || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) continue;
+        if (line.startsWith('@')) continue;
+        if (line.startsWith('def ') || line.startsWith('async def ') || line.startsWith('class ')) continue;
+        if (line === 'pass' || line === '...') continue;
+
+        // This is the first meaningful line — use it
+        return line.length > 80 ? line.slice(0, 77) + '...' : line;
+    }
+
+    return 'pass';
 }
