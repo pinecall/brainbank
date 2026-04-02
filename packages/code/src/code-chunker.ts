@@ -76,7 +76,34 @@ export class CodeChunker {
     async chunk(filePath: string, content: string, language: string): Promise<CodeChunk[]> {
         const lines = content.split('\n');
 
-        // Small file → single chunk
+        // Always try tree-sitter AST chunking first — even for small files.
+        // Function-level chunks are critical for call graph resolution.
+        const parser = this._ensureParser();
+        let langConfig: LangGrammar | null = null;
+
+        try {
+            langConfig = await this._loadGrammar(language);
+        } catch {
+            // Grammar package not installed — fall through
+        }
+
+        if (parser && langConfig) {
+            try {
+                parser.setLanguage(langConfig.grammar);
+                const tree = parser.parse(content);
+                const chunks = this._extractChunks(filePath, lines, tree.rootNode, langConfig, language);
+                const valid = chunks.filter(c => c.content.length > 20);
+
+                if (valid.length > 0) {
+                    return valid;
+                }
+            } catch {
+                // Tree-sitter parse failed — fall through
+            }
+        }
+
+        // No AST blocks found or no parser available.
+        // Small file → single file chunk (preserves old behavior for files with no top-level defs)
         if (lines.length <= this.MAX) {
             return [{
                 filePath,
@@ -88,31 +115,7 @@ export class CodeChunker {
             }];
         }
 
-        // Try tree-sitter AST chunking
-        const parser = this._ensureParser();
-        let langConfig: LangGrammar | null = null;
-
-        try {
-            langConfig = await this._loadGrammar(language);
-        } catch {
-            // Grammar package not installed — fall through to sliding window
-        }
-
-        if (parser && langConfig) {
-            try {
-                parser.setLanguage(langConfig.grammar);
-                const tree = parser.parse(content);
-                const chunks = this._extractChunks(filePath, lines, tree.rootNode, langConfig, language);
-
-                if (chunks.length > 0) {
-                    return chunks.filter(c => c.content.length > 20);
-                }
-            } catch {
-                // Tree-sitter parse failed — fall through to generic
-            }
-        }
-
-        // Fallback to sliding window (unsupported or missing grammar)
+        // Large file without AST → sliding window
         return this._chunkGeneric(filePath, lines, language);
     }
 
