@@ -58,8 +58,8 @@ export async function registerBuiltins(
     for (const name of pluginNames) {
         const factory = await loadPlugin(name);
         if (!factory) {
-            console.log(c.yellow(`  ⚠ @brainbank/${name} not installed — skipping ${name} indexing`));
-            console.log(c.dim(`    Install: npm i -g @brainbank/${name}`));
+            console.error(c.yellow(`  ⚠ @brainbank/${name} not installed — skipping ${name} indexing`));
+            console.error(c.dim(`    Install: npm i -g @brainbank/${name}`));
             continue;
         }
 
@@ -71,7 +71,7 @@ export async function registerBuiltins(
 
         // Multi-repo: create one plugin instance per git subdir
         if (gitSubdirs.length > 0 && isMultiRepoCapable(name)) {
-            console.log(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
+            console.error(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
             for (const sub of gitSubdirs) {
                 const mergedIgnore = [...(cfg.ignore as string[] ?? []), ...ignorePatterns];
                 brain.use(factory({

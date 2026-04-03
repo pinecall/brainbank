@@ -15,7 +15,7 @@ import * as path from 'node:path';
 
 // ── Schema ──────────────────────────────────────────────────────────
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /**
  * Create core tables and indices.
@@ -86,6 +86,15 @@ function createSchema(adapter: DatabaseAdapter): void {
             version    INTEGER NOT NULL DEFAULT 0,
             writer_pid INTEGER NOT NULL DEFAULT 0,
             updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        -- ── Plugin Tracking (incremental indexing) ────
+        CREATE TABLE IF NOT EXISTS plugin_tracking (
+            plugin       TEXT NOT NULL,
+            key          TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            indexed_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+            PRIMARY KEY (plugin, key)
         );
     `);
 }

@@ -46,10 +46,7 @@ export const SUPPORTED_EXTENSIONS: Record<string, string> = {
     '.svelte': 'svelte',
     '.vue': 'vue',
 
-    // Data / Config
-    '.json': 'json',
-    '.yaml': 'yaml',
-    '.yml': 'yaml',
+    // Data / Config (JSON + YAML excluded — config/CI files cause search noise)
     '.toml': 'toml',
     '.xml': 'xml',
     '.graphql': 'graphql',

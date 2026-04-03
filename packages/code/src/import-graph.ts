@@ -51,7 +51,7 @@ export interface DependencyGraph {
 
 // ── Constants ───────────────────────────────────────
 
-const MAX_NODES = 30;
+const MAX_NODES = 50;
 const BASE_HOPS = 2;
 const HUB_HOPS = 3;
 const HUB_DEGREE_THRESHOLD = 5;
@@ -72,8 +72,11 @@ export function buildDependencyGraph(
 
     for (const s of seedFiles) depthMap.set(s, 0);
 
+    // Cap forward BFS at 60% to reserve budget for reverse BFS
+    const forwardCap = seedFiles.size + Math.floor((maxNodes - seedFiles.size) * 0.6);
+
     // ── Forward BFS (downstream: what do seeds import?) ──────
-    _forwardBFS(db, seedFiles, nodeSet, depthMap, edges, edgeSet, maxNodes);
+    _forwardBFS(db, seedFiles, nodeSet, depthMap, edges, edgeSet, forwardCap);
 
     // ── Reverse BFS (upstream: what imports the seeds?) ───────
     _reverseBFS(db, seedFiles, nodeSet, depthMap, edges, edgeSet, maxNodes);

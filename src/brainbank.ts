@@ -33,6 +33,7 @@ import { resolveConfig } from './config.ts';
 import { HNSW } from './constants.ts';
 import type { DatabaseAdapter } from './db/adapter.ts';
 import { SQLiteAdapter } from './db/sqlite-adapter.ts';
+import { createTracker } from './db/tracker.ts';
 import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch, getVersions } from './db/metadata.ts';
 import { runIndex } from './engine/index-api.ts';
 import { reembedAll } from './engine/reembed.ts';
@@ -301,6 +302,7 @@ export class BrainBank extends EventEmitter {
             async () => { await this.index(); },
             this._registry.all,
             options,
+            this._config.repoPath,
         );
         return this._watcher;
     }
@@ -390,7 +392,7 @@ export class BrainBank extends EventEmitter {
             if (pluginDb !== this._db) {
                 setEmbeddingMeta(pluginDb, this._embedding);
             }
-            const ctx = this._buildPluginContext(skipVectorLoad, privateHnsw, pluginDb);
+            const ctx = this._buildPluginContext(skipVectorLoad, privateHnsw, pluginDb, mod.name);
             await mod.initialize(ctx);
         }
 
@@ -480,6 +482,7 @@ export class BrainBank extends EventEmitter {
         skipVectorLoad: boolean,
         privateHnsw: Map<string, HNSWIndex>,
         pluginDb: DatabaseAdapter,
+        pluginName: string,
     ): PluginContext {
         let autoId = 0;
         const dbPath = this._config.dbPath;
@@ -531,6 +534,8 @@ export class BrainBank extends EventEmitter {
             },
 
             collection: (name) => this._kvService!.collection(name),
+
+            createTracker: () => createTracker(pluginDb, pluginName),
 
             webhookServer: this._webhookServer,
         };

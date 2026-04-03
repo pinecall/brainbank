@@ -9,7 +9,7 @@ import type { PluginContext } from 'brainbank';
 
 type DbAdapter = PluginContext['db'];
 
-export const CODE_SCHEMA_VERSION = 4;
+export const CODE_SCHEMA_VERSION = 5;
 
 export const CODE_MIGRATIONS = [
     {
@@ -150,6 +150,23 @@ export const CODE_MIGRATIONS = [
                 CREATE TABLE code_vectors (
                     file_path   TEXT PRIMARY KEY,
                     embedding   BLOB NOT NULL
+                );
+            `);
+        },
+    },
+    {
+        version: 5,
+        up(adapter: DbAdapter): void {
+            adapter.exec(`
+                -- ── Chunk-Level Vectors v5 ────────────────────
+                -- Revert to chunk-level vectors for precise retrieval.
+                -- HNSW labels now use code_chunks.id.
+                -- Requires re-index (brainbank index --force).
+                DROP TABLE IF EXISTS code_vectors;
+
+                CREATE TABLE code_vectors (
+                    chunk_id  INTEGER PRIMARY KEY REFERENCES code_chunks(id) ON DELETE CASCADE,
+                    embedding BLOB NOT NULL
                 );
             `);
         },

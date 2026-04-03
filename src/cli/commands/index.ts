@@ -30,7 +30,12 @@ export async function cmdIndex(): Promise<void> {
     let modules: string[];
 
     if (onlyRaw) {
+        // --only flag: explicit module selection
         modules = onlyRaw.split(',').map(s => s.trim());
+    } else if (scan.config.plugins && scan.config.plugins.length > 0) {
+        // Config exists with plugins field — use it as source of truth
+        modules = scan.config.plugins;
+        console.log(c.dim(`\n  Using config: plugins = [${modules.join(', ')}]\n`));
     } else if (skipPrompt) {
         modules = buildDefaultModules(scan);
     } else {

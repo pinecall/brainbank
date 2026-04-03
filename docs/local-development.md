@@ -4,114 +4,147 @@ How to set up BrainBank for local development on a fresh machine.
 
 ## Prerequisites
 
-- **Node.js ≥18** (use whatever version you prefer via nvm or otherwise)
+- **Node.js ≥18** (nvm recommended)
 - **C++ toolchain** for native deps (`better-sqlite3`, `hnswlib-node`)
   - macOS: `xcode-select --install`
   - Linux: `build-essential`, `python3`
 
 ---
 
-## Setup (2 steps)
+## Setup
 
-### 1. Install all dependencies
+### 1. Install dependencies
 
 ```bash
 npm install --legacy-peer-deps
 ```
 
 This single command:
-- Installs root dependencies (`better-sqlite3`, `hnswlib-node`, `tsup`, `tsx`, etc.)
+- Installs root deps (`better-sqlite3`, `hnswlib-node`, `tsup`, `tsx`, etc.)
 - Auto-symlinks all `@brainbank/*` workspace packages in `node_modules/`
-- Runs `postinstall` to symlink `node_modules/brainbank` → local root (so plugins resolve the local dev build, not the npm-published version)
+- Runs `postinstall` → creates `node_modules/brainbank` symlink to local root
 
-> **Why `--legacy-peer-deps`?** The `@brainbank/code` package has tree-sitter peer dep conflicts. This flag resolves them without errors.
+> **Why `--legacy-peer-deps`?** Tree-sitter packages in `@brainbank/code` have conflicting peer deps that don't affect functionality.
 
-### 2. Build everything
+### 2. Build
 
 ```bash
 npm run build
 ```
 
-Builds the core (`tsup`) and all workspace packages (`npm run build --workspaces --if-present`).
+This runs:
+1. `rm -rf dist && tsup` — builds core (ESM + DTS)
+2. `npm run build --workspaces --if-present` — builds all `@brainbank/*` packages
 
----
+> **⚠️ Build order matters.** Core must build first because packages depend on `brainbank` peer dep. The `build` script handles this automatically. If building individually, always run `npm run build:core` before any `cd packages/* && npm run build`.
 
-## Verification
+### 3. Link the CLI globally
 
 ```bash
-# Type check (zero errors expected)
-npx tsc --noEmit
+npm link
+```
 
-# Unit tests
-npm test
+This creates a global `brainbank` command pointing to your local `dist/cli.js`. Every subsequent `npm run build:core` updates the CLI automatically — no reinstall needed.
 
-# Integration tests (downloads embedding model on first run, ~30s)
-npm run test:integration
+The workspace packages are also linked globally by npm:
 
-# Filter by name
-npm test -- --filter reembed
-npm test -- --integration --filter search
+```
+Global symlinks:
+  brainbank        → /path/to/brainbank/dist/cli.js
+  @brainbank/code  → /path/to/brainbank/packages/code
+  @brainbank/git   → /path/to/brainbank/packages/git
+  @brainbank/docs  → /path/to/brainbank/packages/docs
+  @brainbank/mcp   → /path/to/brainbank/packages/mcp
 ```
 
 ---
 
-## How it works
+## Day-to-day commands
 
-The project uses **npm workspaces** (`"workspaces": ["packages/*"]` in root `package.json`). This means:
+```bash
+# Rebuild core only (fast — ~2s)
+npm run build:core
+
+# Rebuild core + all packages
+npm run build
+
+# Dev mode (runs CLI directly via tsx, no build needed)
+npm run dev -- index .
+npm run dev -- context "auth flow"
+
+# Type check
+npx tsc --noEmit
+
+# Unit tests (230 tests, ~10s)
+npm test
+
+# Filter by name
+npm test -- --filter reembed
+
+# Integration tests (downloads embedding model, ~30s)
+npm run test:integration
+```
+
+---
+
+## How workspaces work
+
+The project uses **npm workspaces** (`"workspaces": ["packages/*"]`).
 
 | What | How |
 |------|-----|
 | `@brainbank/code`, `git`, `docs`, `mcp` | Auto-symlinked by npm to `node_modules/@brainbank/*` |
-| `brainbank` peer dep in plugins | Resolved by `postinstall` script → symlink to local root |
+| `brainbank` peer dep in plugins | `postinstall` script → symlink `node_modules/brainbank` to repo root |
 | Plugin builds | `npm run build` runs `tsup` in each workspace via `--workspaces` |
+| Global CLI | `npm link` → global bin points to local `dist/cli.js` |
 
-### Why the postinstall script?
+### Why the postinstall symlink?
 
-In npm workspaces, workspace packages auto-symlink. But `brainbank` itself is the **root** package, not a workspace member. When plugins declare `peerDependencies: { "brainbank": ">=0.7.0" }`, npm fetches the published version from the registry. The `postinstall` script replaces that with a symlink to the local root so plugins always build and run against the dev version.
+In npm workspaces, workspace packages auto-symlink. But `brainbank` itself is the **root** package, not a workspace member. When plugins declare `peerDependencies: { "brainbank": ">=0.7.0" }`, npm would fetch the published version from the registry. The `postinstall` script replaces that with a symlink to the local root so plugins always build and run against the dev version:
 
----
-
-## Project Structure
-
+```bash
+rm -rf node_modules/brainbank && ln -s .. node_modules/brainbank
 ```
-brainbank/
-├── src/                    ← Core library (published as "brainbank")
-│   ├── brainbank.ts        ← Main facade (BrainBank class)
-│   ├── plugin.ts           ← Plugin interfaces + type guards
-│   ├── types.ts            ← All TypeScript interfaces
-│   ├── engine/             ← IndexAPI, SearchAPI, reembed
-│   ├── db/                 ← DatabaseAdapter, SQLiteAdapter, metadata, migrations
-│   ├── providers/          ← Embeddings, rerankers, vector (HNSW)
-│   ├── search/             ← Vector search, keyword, context builder, MMR
-│   ├── services/           ← Collection, KVService, PluginRegistry, Watch
-│   ├── lib/                ← FTS, math, RRF, rerank, languages
-│   └── cli/                ← CLI dispatcher, factory, commands
-├── packages/
-│   ├── code/               ← @brainbank/code (tree-sitter chunking)
-│   ├── git/                ← @brainbank/git (commit indexing)
-│   ├── docs/               ← @brainbank/docs (markdown collections)
-│   └── mcp/                ← @brainbank/mcp (MCP server)
-├── test/                   ← Unit + integration tests
-└── docs/                   ← Documentation
-```
+
+### Why `rm -rf dist` in build scripts?
+
+The `postinstall` symlink creates a **circular reference**: `node_modules/brainbank → ..` (repo root). When `tsup` generates DTS output, TypeScript resolves `brainbank` through this symlink and follows `"types": "dist/index.d.ts"`. If that file exists from a prior build, TS throws `TS5055: Cannot write file because it would overwrite input file`. Pre-deleting `dist/` avoids this.
 
 ---
 
 ## Troubleshooting
 
+### `TS5055: Cannot write file 'dist/index.d.ts'`
+
+Stale `.d.ts` from a previous build conflicts with the postinstall symlink. Fix:
+```bash
+rm -rf dist && npm run build:core
+```
+This is already handled by the `build:core` script, but can happen if you run `npx tsup` directly.
+
 ### `npm install` shows peer dep conflicts
 
-Use `--legacy-peer-deps`. The tree-sitter packages in `@brainbank/code` have conflicting peer deps that don't affect functionality.
+Use `--legacy-peer-deps`. Tree-sitter packages have conflicting peer deps that don't affect functionality.
 
 ### `does not provide an export named 'X'`
 
-The plugin dist was built before the core was rebuilt. Fix:
+Plugin dist was built before core was rebuilt. Fix:
 ```bash
 npm run build
 ```
 
-### Native deps fail to build
+### Native deps fail to compile
 
-Ensure you have a C++ toolchain:
+Ensure C++ toolchain:
 - macOS: `xcode-select --install`
 - If `node-gyp` errors persist: `npm install -g node-gyp`
+
+### `brainbank` CLI shows old behavior
+
+The global `brainbank` command may point to an npm-published version instead of your local dev build. Fix:
+```bash
+npm uninstall -g brainbank
+npm link
+```
+
+Verify: `ls -la $(which brainbank)` — should show a symlink to your repo's `dist/cli.js`.

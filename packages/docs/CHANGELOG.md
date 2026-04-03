@@ -4,7 +4,13 @@ All notable changes to `@brainbank/docs` will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Orphan cleanup** — `indexCollection()` now removes chunks and vectors for files that were deleted from disk. Previously, deleting a file left stale entries in the DB forever
+- `indexCollection()` return type now includes `removed` count
+- **Docs always re-indexing** — `addCollection()` used `INSERT OR REPLACE INTO collections` which SQLite implements as DELETE+INSERT, triggering `ON DELETE CASCADE` on `doc_chunks` and wiping all indexed data on every startup. Changed to `INSERT … ON CONFLICT DO UPDATE` (true upsert)
+
 ### Changed
+- **Incremental tracking migrated to core** — Replaced custom `_isUnchanged` query (doc_chunks + doc_vectors join) with `PluginContext.createTracker()`. Uses shared `plugin_tracking` table for hash-based change detection and orphan cleanup
 - **BREAKING: search pipeline alignment** — DocsPlugin now implements `VectorSearchPlugin`, `BM25SearchPlugin`, and `ContextFormatterPlugin`, matching Code and Git plugin pattern. Docs results now flow through `CompositeVectorSearch` + `CompositeBM25Search` → central RRF instead of entering pre-fused via the `SearchablePlugin` catch-all path
 - Switched from private HNSW (`createHnsw()`) to shared HNSW (`getOrCreateSharedHnsw('docs')`) — docs vectors now load once and participate in the standard search pipeline
 - `searchBM25()` uses core `sanitizeFTS()` instead of a custom FTS query builder

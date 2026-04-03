@@ -1,18 +1,19 @@
 /**
  * @brainbank/code — Code Vector Search (File-Level Results)
  *
- * Two-tier hybrid search with file-level output:
- * 1. HNSW finds relevant FILES by vector similarity
- * 2. BM25 finds relevant CHUNKS by keyword match (boosts file ranking)
- * 3. RRF fuses both rankings at the FILE level
- * 4. Returns ONE result per file with full content
+ * Dual-level hybrid search with file-level output:
+ * 1. HNSW finds relevant CHUNKS + FILE SYNOPSES by vector similarity
+ * 2. Synopsis hits (file-level) and chunk hits (function-level) are aggregated separately
+ * 3. Files matching at BOTH levels get a cross-level boost; chunk-only hits are penalized
+ * 4. BM25 finds relevant chunks by keyword match → aggregated to file level
+ * 5. RRF fuses all rankings at the FILE level
+ * 6. Returns ONE result per file with full content (zero truncation)
  *
- * AST chunks are used internally for BM25 ranking and call graph,
- * but are NOT the output unit — files are.
+ * V5: Chunk-level HNSW with contextual headers + file synopsis vectors.
+ * Cross-level scoring eliminates false positives that match only at one level.
  */
 
 import type { SearchResult } from 'brainbank';
-import { searchMMR } from 'brainbank';
 
 /** Typed row shape for code_chunks table. */
 export interface CodeChunkRow {
@@ -37,15 +38,19 @@ export interface CodeVectorConfig {
 /** RRF constant — standard value from literature. */
 const RRF_K = 60;
 
-/** Max content chars per file result (~80 lines). */
-const MAX_FILE_CONTENT = 3000;
+/** Cross-level boost when a file matches at both synopsis AND chunk level. */
+const CROSS_LEVEL_BOOST = 1.4;
+
+/** Penalty when a file matches chunks but NOT the synopsis. */
+const CHUNK_ONLY_PENALTY = 0.7;
 
 export class CodeVectorSearch {
     constructor(private _c: CodeVectorConfig) {}
 
     /**
-     * File-level hybrid search: HNSW vectors + BM25 chunk boost.
-     * Returns one result per file, ranked by fused relevance.
+     * Dual-level hybrid search: synopsis + chunk vectors + BM25.
+     * Cross-level scoring: files matching at both levels get boosted,
+     * chunk-only matches get penalized (likely noise).
      */
     search(
         queryVec: Float32Array, k: number, minScore: number,
@@ -54,26 +59,56 @@ export class CodeVectorSearch {
     ): SearchResult[] {
         const { hnsw, vecs, db } = this._c;
 
-        // ── Tier 1: Vector search → candidate files ──────────────
-        const vectorFileScores = new Map<string, number>();
-        if (hnsw.size > 0) {
-            // Raw HNSW (no MMR) — diversity penalty kills similar files
-            const fileK = Math.min(k * 3, hnsw.size);
-            const fileHits = hnsw.search(queryVec, fileK);
+        // ── Tier 1: Vector search → split into synopsis and chunk hits ──
+        const synopsisFileScores = new Map<string, number>();
+        const chunkFileScores = new Map<string, number>();
 
-            if (fileHits.length > 0) {
-                const ids = fileHits.filter(h => h.score >= minScore).map(h => h.id);
+        if (hnsw.size > 0) {
+            const searchK = Math.min(k * 6, hnsw.size);
+            const allHits = hnsw.search(queryVec, searchK);
+
+            if (allHits.length > 0) {
+                const ids = allHits.filter(h => h.score >= minScore).map(h => h.id);
                 if (ids.length > 0) {
                     const ph = ids.map(() => '?').join(',');
                     const rows = db.prepare(
-                        `SELECT rowid, file_path FROM indexed_files WHERE rowid IN (${ph})`
-                    ).all(...ids) as { rowid: number; file_path: string }[];
+                        `SELECT id, file_path, chunk_type FROM code_chunks WHERE id IN (${ph})`
+                    ).all(...ids) as { id: number; file_path: string; chunk_type: string }[];
 
-                    const idToScore = new Map(fileHits.map(h => [h.id, h.score]));
+                    const idToScore = new Map(allHits.map(h => [h.id, h.score]));
                     for (const row of rows) {
-                        vectorFileScores.set(row.file_path, idToScore.get(row.rowid) ?? 0);
+                        const score = idToScore.get(row.id) ?? 0;
+                        if (row.chunk_type === 'synopsis') {
+                            // Synopsis hit → file-level match
+                            const current = synopsisFileScores.get(row.file_path) ?? 0;
+                            if (score > current) synopsisFileScores.set(row.file_path, score);
+                        } else {
+                            // Regular chunk hit → function-level match
+                            const current = chunkFileScores.get(row.file_path) ?? 0;
+                            if (score > current) chunkFileScores.set(row.file_path, score);
+                        }
                     }
                 }
+            }
+        }
+
+        // Merge vector scores with cross-level scoring
+        const vectorFileScores = new Map<string, number>();
+        const allVectorFiles = new Set([...synopsisFileScores.keys(), ...chunkFileScores.keys()]);
+
+        for (const fp of allVectorFiles) {
+            const synScore = synopsisFileScores.get(fp);
+            const chunkScore = chunkFileScores.get(fp);
+
+            if (synScore !== undefined && chunkScore !== undefined) {
+                // Both levels match → high confidence, boost
+                vectorFileScores.set(fp, Math.max(synScore, chunkScore) * CROSS_LEVEL_BOOST);
+            } else if (chunkScore !== undefined) {
+                // Only chunk matches, no synopsis → might be noise, penalize
+                vectorFileScores.set(fp, chunkScore * CHUNK_ONLY_PENALTY);
+            } else if (synScore !== undefined) {
+                // Only synopsis matches → broad relevance, keep as-is
+                vectorFileScores.set(fp, synScore);
             }
         }
 
@@ -89,6 +124,7 @@ export class CodeVectorSearch {
                         FROM fts_code f
                         JOIN code_chunks c ON c.id = f.rowid
                         WHERE fts_code MATCH ?
+                          AND c.chunk_type != 'synopsis'
                         ORDER BY score ASC
                         LIMIT ?
                     `).all(ftsQuery, k * 5) as { file_path: string; score: number }[];
@@ -103,9 +139,13 @@ export class CodeVectorSearch {
             }
         }
 
-        // ── Only keep files with vector match ────────────────────
-        // BM25 only boosts ranking, doesn't add new files
-        if (vectorFileScores.size === 0) return [];
+        // ── Union ALL candidates from both sources ───────────────
+        const allCandidateFiles = new Set([
+            ...vectorFileScores.keys(),
+            ...bm25FileScores.keys(),
+        ]);
+
+        if (allCandidateFiles.size === 0) return [];
 
         // ── RRF fusion at FILE level ─────────────────────────────
         const vectorRanked = [...vectorFileScores.entries()]
@@ -118,24 +158,24 @@ export class CodeVectorSearch {
             .map(([fp], i) => [fp, i + 1] as const);
         const bm25RankMap = new Map(bm25Ranked);
 
-        // Score each file with weighted RRF
+        // Score each file with balanced RRF — both sources contribute equally
         const fileRRF: { filePath: string; rrfScore: number; vecScore: number }[] = [];
-        for (const [filePath, vecScore] of vectorFileScores) {
-            const vecRank = vectorRankMap.get(filePath) ?? 999;
-            const bm25Rank = bm25RankMap.get(filePath);
+        for (const filePath of allCandidateFiles) {
+            const vecRank = vectorRankMap.get(filePath) ?? (vectorFileScores.size + RRF_K);
+            const bm25Rank = bm25RankMap.get(filePath) ?? (bm25FileScores.size + RRF_K);
 
-            const vecRRF = 2 / (RRF_K + vecRank);
-            const bm25RRF = bm25Rank ? 1 / (RRF_K + bm25Rank) : 0;
+            const vecRRF = 1 / (RRF_K + vecRank);
+            const bm25RRF = 1 / (RRF_K + bm25Rank);
             const rrfScore = vecRRF + bm25RRF;
 
+            const vecScore = vectorFileScores.get(filePath) ?? bm25FileScores.get(filePath) ?? 0;
             fileRRF.push({ filePath, rrfScore, vecScore });
         }
 
         // Sort files by RRF score
         fileRRF.sort((a, b) => b.rrfScore - a.rrfScore);
 
-        // ── Build file-level results ─────────────────────────────
-        // For each top file, fetch its chunks and build content
+        // ── Build file-level results — ZERO truncation ───────────
         const topFiles = fileRRF.slice(0, k);
         const filePaths = topFiles.map(f => f.filePath);
         const ph = filePaths.map(() => '?').join(',');
@@ -155,18 +195,20 @@ export class CodeVectorSearch {
             chunksByFile.set(chunk.file_path, list);
         }
 
-        // Build ONE SearchResult per file
+        // Build ONE SearchResult per file — full content, no truncation
         const results: SearchResult[] = [];
         for (const file of topFiles) {
-            const chunks = chunksByFile.get(file.filePath) ?? [];
+            // Filter out synopsis chunks — they're for scoring, not for output
+            const chunks = (chunksByFile.get(file.filePath) ?? [])
+                .filter(c => c.chunk_type !== 'synopsis');
             if (chunks.length === 0) continue;
 
-            // Build file content from chunks (sorted by start_line)
+            // Build full file content from all code chunks (sorted by start_line)
             const content = this._buildFileContent(chunks);
             const language = chunks[0]?.language ?? '';
             const lastLine = Math.max(...chunks.map(c => c.end_line));
 
-            // Collect ALL chunk IDs for call graph seeding
+            // Collect code chunk IDs for call graph seeding (no synopsis)
             const chunkIds = chunks.map(c => c.id);
 
             results.push({
@@ -190,30 +232,29 @@ export class CodeVectorSearch {
         return results;
     }
 
-    /** Concatenate chunk contents, deduplicating overlapping regions. */
+    /** Concatenate chunk contents, deduplicating overlapping regions. No truncation. */
     private _buildFileContent(chunks: CodeChunkRow[]): string {
         const parts: string[] = [];
-        let totalLen = 0;
         let lastEndLine = 0;
 
         for (const chunk of chunks) {
-            // Skip chunks fully overlapping with previous content
+            // Skip chunks fully contained within previous content
             if (chunk.end_line <= lastEndLine) continue;
 
-            if (totalLen + chunk.content.length > MAX_FILE_CONTENT) {
-                const remaining = MAX_FILE_CONTENT - totalLen;
-                if (remaining > 100) {
-                    parts.push(chunk.content.slice(0, remaining) + '\n// ... truncated');
+            if (chunk.start_line <= lastEndLine && lastEndLine > 0) {
+                // Partial overlap — trim lines already covered by previous chunks
+                const linesToSkip = lastEndLine - chunk.start_line + 1;
+                const lines = chunk.content.split('\n');
+                if (linesToSkip < lines.length) {
+                    parts.push(lines.slice(linesToSkip).join('\n'));
                 }
-                break;
+            } else {
+                // No overlap — add separator between non-adjacent chunks
+                if (parts.length > 0 && chunk.start_line > lastEndLine + 1) {
+                    parts.push('');
+                }
+                parts.push(chunk.content);
             }
-
-            // Add separator between non-adjacent chunks
-            if (parts.length > 0 && chunk.start_line > lastEndLine + 1) {
-                parts.push('');
-            }
-            parts.push(chunk.content);
-            totalLen += chunk.content.length;
             lastEndLine = chunk.end_line;
         }
 

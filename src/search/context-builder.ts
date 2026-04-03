@@ -36,9 +36,15 @@ export class ContextBuilder {
         // BM25 intersection boost: re-score vector results that also match keywords.
         // Items matching both vector AND keyword get a score bump, improving rank
         // for keyword-relevant files that scored lower on vector similarity.
-        const results = this._bm25
+        let results = this._bm25
             ? await _boostWithBM25(vectorResults, this._bm25, task, src)
             : vectorResults;
+
+        // Path scoping: keep only results whose filePath starts with the prefix
+        if (options.pathPrefix) {
+            const prefix = options.pathPrefix;
+            results = results.filter(r => r.filePath?.startsWith(prefix));
+        }
 
         const parts: string[] = [`# Context for: "${task}"\n`];
 
@@ -113,5 +119,7 @@ async function _boostWithBM25(
 
 /** Generate a dedup key for a search result. */
 function _resultKey(r: SearchResult): string {
-    return `${r.filePath ?? ''}:${r.metadata.startLine ?? ''}:${r.metadata.endLine ?? ''}`;
+    const sl = 'startLine' in r.metadata ? r.metadata.startLine : '';
+    const el = 'endLine' in r.metadata ? r.metadata.endLine : '';
+    return `${r.filePath ?? ''}:${sl}:${el}`;
 }

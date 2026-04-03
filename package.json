@@ -23,8 +23,8 @@
     ],
     "scripts": {
         "postinstall": "rm -rf node_modules/brainbank && ln -s .. node_modules/brainbank",
-        "build": "tsup && npm run build --workspaces --if-present",
-        "build:core": "tsup",
+        "build": "rm -rf dist && tsup && npm run build --workspaces --if-present",
+        "build:core": "rm -rf dist && tsup",
         "prepublishOnly": "npm run build:core",
         "test": "node --import tsx test/run.ts",
         "test:integration": "node --import tsx test/run.ts --integration",
@@ -54,6 +54,7 @@
     "author": "Bernardo Castro <bernardo@pinecall.io>",
     "license": "MIT",
     "dependencies": {
+        "@huggingface/transformers": "^4.0.1",
         "@inquirer/prompts": "^8.3.2",
         "better-sqlite3": "^11.8.1",
         "hnswlib-node": "^3.0.0",

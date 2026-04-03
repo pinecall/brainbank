@@ -85,6 +85,7 @@ packages/                ← All plugin implementations live here (NOT in src/)
 - `src/db/sqlite-adapter.ts` — `SQLiteAdapter`: better-sqlite3 implementation + core schema DDL.
 - `src/db/metadata.ts` — `bumpVersion`/`getVersions` (index state) + `getEmbeddingMeta`/`setEmbeddingMeta` (provider tracking).
 - `src/db/migrations.ts` — `runPluginMigrations`: per-plugin versioned schema migrations.
+- `src/db/tracker.ts` — `IncrementalTracker` interface + `createTracker()` factory. Standardized add/update/delete detection for plugin indexing via shared `plugin_tracking` table.
 - `typings/packages.d.ts` — Type declarations for `@brainbank/*` packages.
 
 ## Code Conventions

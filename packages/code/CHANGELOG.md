@@ -4,12 +4,23 @@ All notable changes to `@brainbank/code` will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Dependency graph budget starvation** — forward BFS was consuming the entire `MAX_NODES=30` budget, leaving zero capacity for reverse BFS (upstream dependents). Increased budget to 50 with 60/40 split, ensuring wiring files like `auth.module.ts` are always discovered
+- **DTS build type mismatch** — `_loadChunkVectors()` inline type required `iterate(): IterableIterator<Record<string, unknown>>` but `DatabaseAdapter.prepare<T=unknown>()` returns `IterableIterator<unknown>`. Fixed to accept `unknown`
+- **Context output: Dependencies vs Dependents** — split the monolithic "Dependencies" section into **Dependencies** (downstream imports) and **Dependents** (upstream importers) based on graph depth sign, surfacing architectural wiring files
+
 ### Changed
-- **File-level vector search** — embeddings now cover whole files (up to 3K chars) instead of individual chunks
-  - HNSW returns relevant *files* first, then chunks are extracted from matched files
-  - Eliminates noisy results from small method chunks that lack semantic context
-  - Schema migration v4: `code_vectors` keyed by `file_path` instead of `chunk_id`
+- **Chunk-level vector search v5** — HNSW vectors are now per-chunk with contextual headers instead of per-file with 3K truncation
+  - Each chunk is embedded with its file path, type, name, line range, and imports prepended as a contextual header
+  - HNSW labels use `code_chunks.id` instead of `indexed_files.rowid`
+  - Schema migration v5: `code_vectors` keyed by `chunk_id` instead of `file_path`
+  - Dramatically improves retrieval precision — embeddings capture function-level semantics, not just file imports
   - Requires `brainbank index --force` after upgrade
+- **BM25 as independent RRF source** — BM25 keyword results can now introduce new files that vector search missed
+  - Removed the `vectorFileScores.size === 0` guard that blocked BM25-only results
+  - RRF weights balanced 1:1 (was 2:1 vector-weighted)
+  - Candidates from both sources are unioned; missing-source files get a default rank penalty
+- **Zero truncation** — `MAX_FILE_CONTENT` deleted entirely, full file content always returned in search results
 
 ### Added
 - **Dependency Tracker** — full bidirectional import graph with resolved file paths

@@ -5,12 +5,25 @@ All notable changes to BrainBank will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Changed
+- **`DocsPlugin.indexDocs()` return type** — now includes `removed` count for orphan cleanup tracking
 ### Added
 - **`repos` config field** — whitelist specific sub-repos in multi-repo setups (`"repos": ["backend", "frontend"]`). Omit to auto-detect all (default)
 - **Per-repo DB isolation** — each sub-repo in multi-repo setups gets its own `.db` file (e.g., `servicehub-backend.db`) and HNSW index, ensuring search results represent all repos equally via round-robin interleaving
 - **Hybrid context search** — context builder uses BM25 intersection boost alongside vector search, promoting keyword-matching vector results
 - **Adjacency cap** — multi-part chunk expansion capped at ±2 parts around the hit
 - **Infrastructure noise filter** — call tree excludes generic infrastructure files (logging, config, middleware)
+- **`pathPrefix` context option** — filter context results to files under a given path prefix (e.g. `src/services/`). Available in `ContextOptions`, CLI (`--path <dir>`), and MCP tool (`path` param)
+- **`--path` CLI flag** — `brainbank context "task" --path src/services/` scopes results to a subdirectory
+
+### Fixed
+- **TS5055 rebuild race** — `build:core` script now runs `rm -rf dist` before `tsup` to prevent `Cannot write file 'dist/index.d.ts' because it would overwrite input file` caused by the `node_modules/brainbank -> ..` symlink seeing its own prior DTS output
+- **MCP stdout pollution** — `builtin-registration.ts` warning and multi-repo detection messages changed from `console.log` to `console.error` (stderr), keeping stdout clean for structured data output
+- **Watch silent crash** — `brainbank watch` exited immediately when no plugins implemented `WatchablePlugin`. Added fallback recursive `fs.watch` for `IndexablePlugin`s (e.g. `@brainbank/code`) with debounced re-indexing and a keepalive interval to prevent Node from exiting
+- **Watch multi-repo duplicate events** — In multi-repo setups, editing one file triggered all plugins (e.g., `code:servicehub-frontend` and `docs` both received events for `servicehub-backend/*.ts`). Refactored to use a single shared `fs.watch` tree with fan-out routing: sub-repo scope filtering (code plugins only get files under their prefix) and extension-based filtering (docs only gets `.md` files). Also fixed macOS double-fire dedup (100ms window)
+- **Docs always re-indexing** — `addCollection()` used `INSERT OR REPLACE` which SQLite implements as DELETE+INSERT, triggering `ON DELETE CASCADE` on `doc_chunks` and wiping all indexed data on every startup. Changed to `INSERT … ON CONFLICT DO UPDATE` (true upsert)
+- **IncrementalTracker** — New core primitive (`PluginContext.createTracker()`) that standardizes add/update/delete detection for plugin indexing. Shared `plugin_tracking` table with per-plugin namespacing. Docs plugin migrated to use it
+- **Index ignores config.plugins** — `brainbank index` now uses `config.plugins` from `.brainbank/config.json` as the source of truth for module selection, skipping the interactive prompt when a config exists
 
 ### Breaking Changes
 - **`DatabaseAdapter` replaces `Database`** — the core `Database` class (`src/db/database.ts`) has been replaced with a `DatabaseAdapter` interface (`src/db/adapter.ts`) + `SQLiteAdapter` implementation (`src/db/sqlite-adapter.ts`). All internal APIs, plugin schemas, and test helpers now use the adapter interface. Plugins should use `PluginContext['db']` type (which is now `DatabaseAdapter`). The `raw<T>()` escape hatch provides typed access to the underlying driver during the transition period. Public export changed: `Database` → `DatabaseAdapter` (type) + `SQLiteAdapter` (class)

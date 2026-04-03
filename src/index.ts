@@ -98,6 +98,10 @@ export { resolveConfig, DEFAULTS } from './config.ts';
 export type { Migration } from './db/migrations.ts';
 export { runPluginMigrations } from './db/migrations.ts';
 
+// Incremental indexing tracker
+export type { IncrementalTracker } from './db/tracker.ts';
+export { createTracker } from './db/tracker.ts';
+
 // Vector indices
 export { HNSWIndex } from './providers/vector/hnsw-index.ts';
 export { searchMMR } from './search/vector/mmr.ts';

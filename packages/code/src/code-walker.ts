@@ -101,20 +101,20 @@ export class CodeWalker {
         return { indexed, skipped, chunks: totalChunks };
     }
 
-    /** Remove old chunks, file vector, and HNSW entry for a file. */
+    /** Remove old chunks, chunk vectors, and HNSW entries for a file. */
     private _removeOldChunks(relPath: string): void {
-        // Remove file-level HNSW vector (keyed by indexed_files.rowid)
-        const fileRow = this._deps.db.prepare(
-            'SELECT rowid FROM indexed_files WHERE file_path = ?'
-        ).get(relPath) as { rowid: number } | undefined;
+        // Remove chunk-level HNSW vectors (keyed by code_chunks.id)
+        const chunkRows = this._deps.db.prepare(
+            'SELECT id FROM code_chunks WHERE file_path = ?'
+        ).all(relPath) as { id: number }[];
 
-        if (fileRow) {
-            this._deps.hnsw.remove(fileRow.rowid);
-            this._deps.vectorCache.delete(fileRow.rowid);
+        for (const row of chunkRows) {
+            this._deps.hnsw.remove(row.id);
+            this._deps.vectorCache.delete(row.id);
         }
 
         this._deps.db.prepare('DELETE FROM code_chunks WHERE file_path = ?').run(relPath);
-        this._deps.db.prepare('DELETE FROM code_vectors WHERE file_path = ?').run(relPath);
+        // code_vectors cascade-deletes when code_chunks are deleted (FK ON DELETE CASCADE)
         this._deps.db.prepare('DELETE FROM indexed_files WHERE file_path = ?').run(relPath);
     }
 
@@ -133,36 +133,51 @@ export class CodeWalker {
         const language = SUPPORTED_EXTENSIONS[ext] ?? 'text';
         const chunks = await this._chunker.chunk(rel, content, language);
 
-        // Extract imports for enriched embeddings + import graph
+        // Extract imports for contextual headers + import graph
         const imports = extractImports(content, language);
         const importsLine = imports.length > 0
             ? `Imports: ${imports.slice(0, 10).join(', ')}`
             : '';
 
-        // Build file-level embedding text (whole file, truncated to ~3K chars)
-        // Simpler format = better semantic signal (tested: JwtStrategy 52% vs 29% with TOC)
-        const fileEmbeddingText = `File: ${rel}\n${content.substring(0, 3000)}`;
-
-        const [fileVec] = await this._deps.embedding.embedBatch([fileEmbeddingText]);
-
         // Extract symbols from AST (if tree-sitter was used)
         const symbols = this._extractSymbolsSafe(content, rel, language);
 
-        // Collect old file vector ID for HNSW cleanup
-        const oldFileRow = this._deps.db.prepare(
-            'SELECT rowid FROM indexed_files WHERE file_path = ?'
-        ).get(rel) as { rowid: number } | undefined;
-        const oldFileId = oldFileRow?.rowid;
+        // Build contextual header for each chunk before embedding.
+        // Prepending file/type/imports context dramatically improves retrieval
+        // precision — the embedding captures WHERE the chunk lives, not just WHAT it contains.
+        const chunkEmbeddingTexts = chunks.map(chunk => {
+            const parts: string[] = [`File: ${rel}`];
+            if (chunk.name) {
+                parts.push(`${chunk.chunkType} ${chunk.name} (L${chunk.startLine}-${chunk.endLine})`);
+            }
+            if (importsLine) parts.push(importsLine);
+            parts.push('---');
+            parts.push(chunk.content);
+            return parts.join('\n');
+        });
+
+        // Batch-embed all chunks with their contextual headers
+        const chunkVecs = await this._deps.embedding.embedBatch(chunkEmbeddingTexts);
+
+        // ── File-level vector: embed the FULL file content ─────
+        // Whole-file vector captures broad file semantics for cross-level scoring.
+        // Files matching at BOTH file-level + chunk-level get a boost.
+        const fileEmbeddingText = `File: ${rel}\n${content}`;
+        const [fileVec] = await this._deps.embedding.embedBatch([fileEmbeddingText]);
+
+        // Collect old chunk IDs for HNSW cleanup (includes old synopsis)
+        const oldChunkRows = this._deps.db.prepare(
+            'SELECT id FROM code_chunks WHERE file_path = ?'
+        ).all(rel) as { id: number }[];
+        const oldChunkIds = oldChunkRows.map(r => r.id);
 
         // Transaction: delete old + insert new atomically (DB only — no HNSW)
-        let newFileId: number;
+        const newChunkIds: number[] = [];
+        let synopsisId: number;
         this._deps.db.transaction(() => {
-            // Remove old DB rows
+            // Remove old DB rows (code_vectors cascade-deletes with code_chunks)
             this._deps.db.prepare('DELETE FROM code_chunks WHERE file_path = ?').run(rel);
-            this._deps.db.prepare('DELETE FROM code_vectors WHERE file_path = ?').run(rel);
             this._removeOldGraph(rel);
-
-            const chunkIds: number[] = [];
 
             for (let ci = 0; ci < chunks.length; ci++) {
                 const chunk = chunks[ci];
@@ -172,8 +187,25 @@ export class CodeWalker {
                 ).run(rel, chunk.chunkType, chunk.name ?? null, chunk.startLine, chunk.endLine, chunk.content, language, hash);
 
                 const id = Number(result.lastInsertRowid);
-                chunkIds.push(id);
+                newChunkIds.push(id);
+
+                // Store chunk-level vector
+                this._deps.db.prepare(
+                    'INSERT INTO code_vectors (chunk_id, embedding) VALUES (?, ?)'
+                ).run(id, vecToBuffer(chunkVecs[ci]));
             }
+
+            // Insert file-level vector as a special chunk (chunk_type='synopsis')
+            const synResult = this._deps.db.prepare(
+                `INSERT INTO code_chunks (file_path, chunk_type, name, start_line, end_line, content, language, file_hash)
+                 VALUES (?, 'synopsis', ?, 1, ?, ?, ?, ?)`
+            ).run(rel, rel.split('/').pop() ?? rel, chunks.length > 0 ? chunks[chunks.length - 1].endLine : 1, fileEmbeddingText, language, hash);
+
+            synopsisId = Number(synResult.lastInsertRowid);
+
+            this._deps.db.prepare(
+                'INSERT INTO code_vectors (chunk_id, embedding) VALUES (?, ?)'
+            ).run(synopsisId, vecToBuffer(fileVec));
 
             // Store import graph — resolved file paths + kind
             const importEdges = extractImportPaths(content, language);
@@ -205,7 +237,7 @@ export class CodeWalker {
             );
             for (const sym of symbols) {
                 // Link symbol to the chunk that contains it
-                const chunkId = this._findChunkForLine(chunks, chunkIds, sym.line);
+                const chunkId = this._findChunkForLine(chunks, newChunkIds, sym.line);
                 insertSymbol.run(rel, sym.name, sym.kind, sym.line, chunkId);
             }
 
@@ -216,32 +248,28 @@ export class CodeWalker {
             for (let ci = 0; ci < chunks.length; ci++) {
                 const callRefs = this._extractCallRefsSafe(content, chunks[ci], language);
                 for (const ref of callRefs) {
-                    insertRef.run(chunkIds[ci], ref);
+                    insertRef.run(newChunkIds[ci], ref);
                 }
             }
 
-            // Upsert indexed_files and get its rowid for HNSW key
+            // Upsert indexed_files (tracking only — no vector here)
             this._deps.db.prepare(
                 'INSERT OR REPLACE INTO indexed_files (file_path, file_hash) VALUES (?, ?)'
             ).run(rel, hash);
-            const fileRow = this._deps.db.prepare(
-                'SELECT rowid FROM indexed_files WHERE file_path = ?'
-            ).get(rel) as { rowid: number };
-            newFileId = fileRow.rowid;
-
-            // Store file-level vector
-            this._deps.db.prepare(
-                'INSERT OR REPLACE INTO code_vectors (file_path, embedding) VALUES (?, ?)'
-            ).run(rel, vecToBuffer(fileVec));
         });
 
         // HNSW mutations AFTER successful commit
-        if (oldFileId != null) {
-            this._deps.hnsw.remove(oldFileId);
-            this._deps.vectorCache.delete(oldFileId);
+        for (const oldId of oldChunkIds) {
+            this._deps.hnsw.remove(oldId);
+            this._deps.vectorCache.delete(oldId);
         }
-        this._deps.hnsw.add(fileVec, newFileId!);
-        this._deps.vectorCache.set(newFileId!, fileVec);
+        for (let ci = 0; ci < newChunkIds.length; ci++) {
+            this._deps.hnsw.add(chunkVecs[ci], newChunkIds[ci]);
+            this._deps.vectorCache.set(newChunkIds[ci], chunkVecs[ci]);
+        }
+        // Add file-level vector to HNSW
+        this._deps.hnsw.add(fileVec, synopsisId!);
+        this._deps.vectorCache.set(synopsisId!, fileVec);
 
         return chunks.length;
     }

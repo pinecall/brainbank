@@ -317,6 +317,8 @@ export interface ContextOptions {
     useMMR?: boolean;
     /** MMR lambda (0 = diversity, 1 = relevance). Default: 0.7 */
     mmrLambda?: number;
+    /** Filter results to files under this path prefix (e.g. 'src/services/'). */
+    pathPrefix?: string;
 }
 
 

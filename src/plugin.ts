@@ -15,6 +15,7 @@
 
 import type { DatabaseAdapter } from './db/adapter.ts';
 import type { Migration } from './db/migrations.ts';
+import type { IncrementalTracker } from './db/tracker.ts';
 import type { HNSWIndex } from './providers/vector/hnsw-index.ts';
 import type { DomainVectorSearch } from './search/types.ts';
 import type { WebhookServer } from './services/webhook-server.ts';
@@ -49,6 +50,12 @@ export interface PluginContext {
     getOrCreateSharedHnsw(type: string, maxElements?: number, dims?: number): Promise<{ hnsw: HNSWIndex; vecCache: Map<number, Float32Array>; isNew: boolean }>;
     /** Get or create a dynamic collection. */
     collection(name: string): ICollection;
+    /**
+     * Create an incremental tracker scoped to this plugin.
+     * Provides `isUnchanged`, `markIndexed`, `findOrphans`, `remove`, `clear`
+     * for standardized add/update/delete detection during indexing.
+     */
+    createTracker(): IncrementalTracker;
     /** Optional webhook server for push-based watch plugins. undefined if not configured. */
     webhookServer?: WebhookServer;
 }
@@ -125,7 +132,7 @@ export interface DocsPlugin extends SearchablePlugin {
     addCollection(collection: DocumentCollection): void;
     removeCollection(name: string): void;
     listCollections(): DocumentCollection[];
-    indexDocs(options?: { onProgress?: (collection: string, file: string, current: number, total: number) => void }): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>>;
+    indexDocs(options?: { onProgress?: (collection: string, file: string, current: number, total: number) => void }): Promise<Record<string, { indexed: number; skipped: number; removed: number; chunks: number }>>;
     addContext(collection: string, path: string, context: string): void;
     listContexts(): PathContext[];
 }

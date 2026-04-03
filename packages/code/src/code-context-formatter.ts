@@ -244,7 +244,7 @@ function _renderHitsFlat(codeHits: SearchResult[], parts: string[]): void {
 
 // ── Dependency Summary ──────────────────────────────
 
-/** Compact dependency summary — just file list, no source code. */
+/** Compact dependency summary — split into downstream (imports) and upstream (dependents). */
 function _renderDependencySummary(
     codeHits: SearchResult[],
     parts: string[],
@@ -256,13 +256,25 @@ function _renderDependencySummary(
     const nonSeed = graph.nodes.filter(n => !n.isSeed);
     if (nonSeed.length === 0) return;
 
+    // Split by depth: positive = downstream (what matched code imports),
+    // negative = upstream (what imports the matched code), zero = siblings
+    const downstream = nonSeed.filter(n => n.depth >= 0);
+    const upstream = nonSeed.filter(n => n.depth < 0);
+
     parts.push('---\n');
 
-    const fileList = nonSeed
-        .sort((a, b) => (b.inDegree + b.outDegree) - (a.inDegree + a.outDegree))
-        .map(n => `\`${n.filePath}\``).join(', ');
+    const sortByDegree = (a: { inDegree: number; outDegree: number }, b: { inDegree: number; outDegree: number }) =>
+        (b.inDegree + b.outDegree) - (a.inDegree + a.outDegree);
 
-    parts.push(`**Dependencies** (${nonSeed.length} files imported by matched code): ${fileList}\n`);
+    if (downstream.length > 0) {
+        const fileList = downstream.sort(sortByDegree).map(n => `\`${n.filePath}\``).join(', ');
+        parts.push(`**Dependencies** (${downstream.length} files imported by matched code): ${fileList}\n`);
+    }
+
+    if (upstream.length > 0) {
+        const fileList = upstream.sort(sortByDegree).map(n => `\`${n.filePath}\``).join(', ');
+        parts.push(`**Dependents** (${upstream.length} files that import matched code): ${fileList}\n`);
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────

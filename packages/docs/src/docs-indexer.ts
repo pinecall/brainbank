@@ -12,7 +12,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 
-import type { EmbeddingProvider } from 'brainbank';
+import type { EmbeddingProvider, IncrementalTracker } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 
 // ── Break Point Scoring (qmd-inspired) ──────────────
@@ -59,6 +59,7 @@ export class DocsIndexer {
         private _embedding: EmbeddingProvider,
         private _hnsw: HNSWIndex,
         private _vecCache: Map<number, Float32Array>,
+        private _tracker: IncrementalTracker,
     ) {}
 
     /**
@@ -73,7 +74,7 @@ export class DocsIndexer {
             ignore?: string[];
             onProgress?: (file: string, current: number, total: number) => void;
         } = {},
-    ): Promise<{ indexed: number; skipped: number; chunks: number }> {
+    ): Promise<{ indexed: number; skipped: number; removed: number; chunks: number }> {
         const absDir = path.resolve(dirPath);
         if (!fs.existsSync(absDir)) {
             throw new Error(`Collection path does not exist: ${absDir}`);
@@ -89,19 +90,35 @@ export class DocsIndexer {
             const absPath = path.join(absDir, relPath);
             const content = fs.readFileSync(absPath, 'utf-8');
             const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
+            const trackingKey = `${collection}:${relPath}`;
 
-            if (this._isUnchanged(collection, relPath, hash)) {
+            if (this._tracker.isUnchanged(trackingKey, hash)) {
                 skipped++;
                 continue;
             }
 
             this._removeOldChunks(collection, relPath);
             const chunkCount = await this._indexFile(collection, relPath, content, hash);
+            this._tracker.markIndexed(trackingKey, hash);
             indexed++;
             totalChunks += chunkCount;
         }
 
-        return { indexed, skipped, chunks: totalChunks };
+        // Clean up orphaned entries for files deleted from disk
+        const currentKeys = new Set(files.map(f => `${collection}:${f}`));
+        const orphanKeys = this._tracker.findOrphans(currentKeys);
+
+        let removed = 0;
+        for (const key of orphanKeys) {
+            // Only process orphans from this collection
+            if (!key.startsWith(`${collection}:`)) continue;
+            const orphanPath = key.slice(collection.length + 1);
+            this._removeOldChunks(collection, orphanPath);
+            this._tracker.remove(key);
+            removed++;
+        }
+
+        return { indexed, skipped, removed, chunks: totalChunks };
     }
 
     /** Walk directory tree and collect matching files. */
@@ -144,18 +161,7 @@ export class DocsIndexer {
         });
     }
 
-    /** Check if all chunks for a file match the current hash and have vectors. */
-    private _isUnchanged(collection: string, relPath: string, hash: string): boolean {
-        const existing = this._db.prepare(
-            `SELECT dc.id, dc.content_hash, dv.chunk_id AS has_vector
-             FROM doc_chunks dc
-             LEFT JOIN doc_vectors dv ON dv.chunk_id = dc.id
-             WHERE dc.collection = ? AND dc.file_path = ?`
-        ).all(collection, relPath) as any[];
 
-        return existing.length > 0 &&
-            existing.every((c: any) => c.content_hash === hash && c.has_vector != null);
-    }
 
     /** Remove old chunks and their HNSW vectors for a file. */
     private _removeOldChunks(collection: string, relPath: string): void {

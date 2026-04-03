@@ -65,16 +65,24 @@ server.registerTool(
         inputSchema: z.object({
             task: z.string().describe('Description of the task you need context for'),
             affectedFiles: z.array(z.string()).optional().default([]).describe('Files you plan to modify (improves co-edit suggestions)'),
-            codeResults: z.number().optional().default(6).describe('Max code results'),
+            codeResults: z.number().optional().default(20).describe('Max code results'),
             gitResults: z.number().optional().default(5).describe('Max git commit results'),
+            docsResults: z.number().optional().describe('Max document results (omit to skip docs)'),
+            sources: z.record(z.number()).optional().describe('Per-source result limits, overrides codeResults/gitResults/docsResults (e.g. { code: 10, git: 0, docs: 5 })'),
+            path: z.string().optional().describe('Filter results to files under this path prefix (e.g. src/services/)'),
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ task, affectedFiles, codeResults, gitResults, repo }) => {
+    async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, repo }) => {
         const brainbank = await getBrainBank(repo);
+        // Build sources from explicit params, then let `sources` override
+        const base: Record<string, number> = { code: codeResults, git: gitResults };
+        if (docsResults !== undefined) base.docs = docsResults;
+        const resolvedSources = sources ? { ...base, ...sources } : base;
         const context = await brainbank.getContext(task, {
             affectedFiles,
-            sources: { code: codeResults, git: gitResults },
+            sources: resolvedSources,
+            pathPrefix: path,
         });
 
         return { content: [{ type: 'text' as const, text: context }] };

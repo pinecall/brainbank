@@ -1,15 +1,19 @@
 /**
  * BrainBank — Watcher
  *
- * Thin coordinator for plugin-driven watching. The core does NOT do fs.watch
- * or know about file patterns — each plugin drives its own watching.
+ * Thin coordinator for plugin-driven watching. Each plugin CAN drive its own
+ * watching via WatchablePlugin.watch(). For IndexablePlugins that don't
+ * implement WatchablePlugin, the Watcher provides a single shared fs.watch
+ * tree with fan-out routing so each plugin only receives relevant events.
  *
  * Responsibilities:
  *   1. Call `plugin.watch(onEvent)` for each WatchablePlugin
- *   2. Collect the WatchHandle instances returned
- *   3. Apply per-plugin debounce from `plugin.watchConfig()`
- *   4. On event: call `plugin.indexItems([id])` or `plugin.index()` for re-indexing
- *   5. Call `handle.stop()` on `close()`
+ *   2. For IndexablePlugins without watch(), share one recursive fs.watch tree
+ *   3. Route events to the correct plugin based on sub-repo scope
+ *   4. Dedup macOS double-fire events (change+rename per save)
+ *   5. Apply per-plugin debounce from `plugin.watchConfig()`
+ *   6. On event: call `plugin.indexItems([id])` or `plugin.index()` for re-indexing
+ *   7. Call `handle.stop()` on `close()`
  *
  *   const watcher = brain.watch({ debounceMs: 2000 });
  *   watcher.close(); // stop watching
@@ -18,7 +22,13 @@
 import type { Plugin } from '@/plugin.ts';
 import type { WatchEvent, WatchHandle } from '@/types.ts';
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { isIndexable, isWatchable } from '@/plugin.ts';
+import { isSupported, isIgnoredDir } from '@/lib/languages.ts';
+
+/** Doc file extensions that the docs plugin indexes. */
+const DOC_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.rst']);
 
 
 export interface WatchOptions {
@@ -47,15 +57,17 @@ export class Watcher {
     private _batches = new Map<string, PluginBatch>();
     private _reindexFn: () => Promise<void>;
     private _options: WatchOptions;
+    private _keepalive: ReturnType<typeof setInterval> | null = null;
 
     constructor(
         reindexFn: () => Promise<void>,
         plugins: Plugin[],
         options: WatchOptions = {},
+        repoPath?: string,
     ) {
         this._reindexFn = reindexFn;
         this._options = options;
-        this._startWatching(plugins);
+        this._startWatching(plugins, repoPath);
     }
 
     /** Whether the watcher is active. */
@@ -64,6 +76,11 @@ export class Watcher {
     /** Stop all plugin watchers. */
     async close(): Promise<void> {
         this._active = false;
+
+        if (this._keepalive) {
+            clearInterval(this._keepalive);
+            this._keepalive = null;
+        }
 
         for (const batch of this._batches.values()) {
             if (batch.timer) clearTimeout(batch.timer);
@@ -77,27 +94,169 @@ export class Watcher {
     }
 
 
-    /** Start watching for each WatchablePlugin. */
-    private _startWatching(plugins: Plugin[]): void {
+    /** Start watching for each WatchablePlugin, with shared fs.watch fallback. */
+    private _startWatching(plugins: Plugin[], repoPath?: string): void {
+        let hasAnyWatcher = false;
+        const fallbackPlugins: Plugin[] = [];
+
         for (const plugin of plugins) {
-            if (!isWatchable(plugin)) continue;
+            if (isWatchable(plugin)) {
+                // Plugin-driven watching
+                try {
+                    const handle = plugin.watch((event) => this._onEvent(plugin, event));
 
-            try {
-                const handle = plugin.watch((event) => this._onEvent(plugin, event));
-
-                this._batches.set(plugin.name, {
-                    plugin,
-                    handle,
-                    events: [],
-                    timer: null,
-                    flushing: false,
-                });
-            } catch (err) {
-                // One plugin failing to start doesn't block others
-                this._options.onError?.(err instanceof Error ? err : new Error(String(err)));
+                    this._batches.set(plugin.name, {
+                        plugin,
+                        handle,
+                        events: [],
+                        timer: null,
+                        flushing: false,
+                    });
+                    hasAnyWatcher = true;
+                } catch (err) {
+                    this._options.onError?.(err instanceof Error ? err : new Error(String(err)));
+                }
+            } else if (isIndexable(plugin) && repoPath) {
+                // Collect for shared fs.watch fallback
+                fallbackPlugins.push(plugin);
             }
         }
+
+        // Create a SINGLE shared fs.watch tree for all fallback plugins
+        if (fallbackPlugins.length > 0 && repoPath) {
+            const sharedHandle = this._startSharedFsWatch(fallbackPlugins, repoPath);
+            if (sharedHandle) {
+                // Register batches for each fallback plugin with the shared handle
+                for (const plugin of fallbackPlugins) {
+                    this._batches.set(plugin.name, {
+                        plugin,
+                        handle: sharedHandle,
+                        events: [],
+                        timer: null,
+                        flushing: false,
+                    });
+                }
+                hasAnyWatcher = true;
+            }
+        }
+
+        // Keep the Node event loop alive even if no native watchers are active
+        if (hasAnyWatcher) {
+            this._keepalive = setInterval(() => {}, 60_000);
+            this._keepalive.unref?.(); // allow graceful exit on SIGINT
+        }
     }
+
+
+    /**
+     * Single shared recursive fs.watch that fans out events to multiple plugins.
+     * Each event is routed based on: sub-repo prefix (code:backend → servicehub-backend/),
+     * file extension (docs → .md only), and code support (code → isSupported).
+     */
+    private _startSharedFsWatch(plugins: Plugin[], repoPath: string): WatchHandle | null {
+        const watchers: fs.FSWatcher[] = [];
+
+        // Dedup: macOS fs.watch fires both 'change' + 'rename' for a single save.
+        const recentEvents = new Map<string, number>();
+        const DEDUP_MS = 100;
+
+        // Pre-compute routing info per plugin
+        const routes = plugins.map(plugin => {
+            const baseName = plugin.name.split(':')[0];
+            const subRepo = plugin.name.includes(':')
+                ? plugin.name.split(':').slice(1).join(':')
+                : null;
+            return { plugin, baseName, subRepo };
+        });
+
+        const watchDir = (dir: string): void => {
+            try {
+                const watcher = fs.watch(dir, { persistent: true }, (_eventType, filename) => {
+                    if (!filename || !this._active) return;
+                    const fullPath = path.join(dir, filename);
+                    const relPath = path.relative(repoPath, fullPath);
+                    const ext = path.extname(fullPath).toLowerCase();
+
+                    // Dedup: skip if we already saw this file within DEDUP_MS
+                    const now = Date.now();
+                    const lastSeen = recentEvents.get(relPath);
+                    if (lastSeen && now - lastSeen < DEDUP_MS) return;
+                    recentEvents.set(relPath, now);
+
+                    const event: WatchEvent = {
+                        type: 'update',
+                        sourceId: relPath,
+                        sourceName: 'file',
+                    };
+
+                    // Fan out to matching plugins
+                    for (const { plugin, baseName, subRepo } of routes) {
+                        // Sub-repo routing: skip files outside this plugin's scope
+                        if (subRepo && !relPath.startsWith(subRepo + '/')) continue;
+
+                        // Extension-based routing
+                        if (baseName === 'docs') {
+                            // Docs plugin only cares about doc files
+                            if (!DOC_EXTENSIONS.has(ext)) continue;
+                        } else {
+                            // Code/git plugins only care about supported source files
+                            if (!isSupported(fullPath)) continue;
+                        }
+
+                        this._onEvent(plugin, event);
+                    }
+                });
+
+                watcher.on('error', (err) => {
+                    this._options.onError?.(err instanceof Error ? err : new Error(String(err)));
+                });
+
+                watchers.push(watcher);
+            } catch {
+                // Directory might not exist or be inaccessible — skip
+            }
+
+            // Recurse into subdirectories
+            try {
+                for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                    if (!entry.isDirectory()) continue;
+                    if (isIgnoredDir(entry.name)) continue;
+                    if (entry.name.startsWith('.')) continue;
+                    watchDir(path.join(dir, entry.name));
+                }
+            } catch {
+                // Directory read failed — skip
+            }
+        };
+
+        watchDir(repoPath);
+
+        if (watchers.length === 0) return null;
+
+        // Periodically clean up stale dedup entries to prevent memory leak
+        const cleanupInterval = setInterval(() => {
+            const cutoff = Date.now() - 10_000;
+            for (const [key, ts] of recentEvents) {
+                if (ts < cutoff) recentEvents.delete(key);
+            }
+        }, 30_000);
+        cleanupInterval.unref?.();
+
+        let stopped = false;
+        return {
+            get active() { return !stopped; },
+            async stop() {
+                if (stopped) return;
+                stopped = true;
+                clearInterval(cleanupInterval);
+                for (const w of watchers) {
+                    try { w.close(); } catch { /* safe to ignore */ }
+                }
+                watchers.length = 0;
+            },
+        };
+    }
+
 
     /** Handle an incoming event from a plugin. */
     private _onEvent(plugin: Plugin, event: WatchEvent): void {

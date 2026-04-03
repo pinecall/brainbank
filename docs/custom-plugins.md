@@ -47,6 +47,7 @@ Every plugin receives a `PluginContext` during `initialize()`:
 | `ctx.createHnsw(max?, dims?, name?)` | Private HNSW index (persisted to `hnsw-{name}.index` if named) |
 | `ctx.loadVectors(table, idCol, hnsw, cache)` | Load existing vectors from a SQLite vectors table into HNSW + cache. Skipped on dimension mismatch force-init. Tries disk file first (fast), falls back to row-by-row from SQLite. |
 | `ctx.getOrCreateSharedHnsw(type, max?, dims?)` | Shared HNSW across same-type plugins (e.g. all `code:*` share one). Returns `{ hnsw, vecCache, isNew }`. Only the first caller (isNew=true) should `loadVectors`. |
+| `ctx.createTracker()` | Returns an `IncrementalTracker` scoped to the plugin name. Standardizes add/update/delete detection during indexing. See [Incremental Tracking](#incremental-tracking). |
 
 ### Data Storage Strategy
 
@@ -59,6 +60,59 @@ Every plugin receives a `PluginContext` during `initialize()`:
 | Custom tables + [migrations](migrations.md) | Yes | Relational schemas, custom FTS5, specialized indices |
 
 Use `ctx.db` and `MigratablePlugin` **only** when you need table relationships, weighted FTS5 columns, CASCADE deletes, or domain-specific query patterns.
+
+### Incremental Tracking
+
+Use `ctx.createTracker()` to detect file changes without writing custom hash-checking logic. The tracker uses a shared `plugin_tracking` table with per-plugin namespacing — no custom tables needed.
+
+```typescript
+import type { Plugin, PluginContext, IndexablePlugin, IndexResult, IncrementalTracker } from 'brainbank';
+import { createHash } from 'node:crypto';
+
+async index(): Promise<IndexResult> {
+    const tracker = this._ctx.createTracker();
+    const files = walkFiles();
+    let indexed = 0, skipped = 0;
+
+    for (const file of files) {
+        const content = readFile(file);
+        const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
+
+        // Skip unchanged files
+        if (tracker.isUnchanged(file, hash)) {
+            skipped++;
+            continue;
+        }
+
+        // Index the file
+        await this._processFile(file, content);
+        tracker.markIndexed(file, hash);
+        indexed++;
+    }
+
+    // Detect deleted files
+    const currentFiles = new Set(files);
+    for (const orphan of tracker.findOrphans(currentFiles)) {
+        this._removeFile(orphan);
+        tracker.remove(orphan);
+    }
+
+    return { indexed, skipped };
+}
+```
+
+#### IncrementalTracker API
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `isUnchanged(key, hash)` | `boolean` | `true` if the key exists with the same hash — skip indexing |
+| `markIndexed(key, hash)` | `void` | Record that a key was indexed with this hash |
+| `findOrphans(currentKeys)` | `string[]` | Tracked keys NOT in the current set — files that were deleted |
+| `remove(key)` | `void` | Delete tracking for a single key |
+| `clear()` | `void` | Delete all tracking entries for this plugin |
+
+> [!TIP]
+> The tracker key can be any string. Use file paths for simple cases, or `collection:path` for multi-collection plugins (like `@brainbank/docs` does).
 
 ### HNSW Allocation Strategy
 
@@ -183,12 +237,14 @@ runPluginMigrations(ctx.db, 'my-plugin', SCHEMA_VERSION, MIGRATIONS);
 
 ## Full Example: Notes Plugin
 
-A plugin that reads `.txt` files and makes them searchable:
+A plugin that reads `.txt` files and makes them searchable, with **incremental indexing**:
 
 ```typescript
-import type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin, SearchResult, IndexResult } from 'brainbank';
+import type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin,
+             SearchResult, IndexResult, IncrementalTracker } from 'brainbank';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 
 function notesPlugin(dir: string): Plugin & IndexablePlugin & SearchablePlugin {
   let ctx: PluginContext;
@@ -202,14 +258,30 @@ function notesPlugin(dir: string): Plugin & IndexablePlugin & SearchablePlugin {
 
     async index(): Promise<IndexResult> {
       const col = ctx.collection('notes');
+      const tracker = ctx.createTracker();
       const files = fs.readdirSync(dir).filter(f => f.endsWith('.txt'));
+      let indexed = 0, skipped = 0;
 
       for (const file of files) {
         const content = fs.readFileSync(path.join(dir, file), 'utf-8');
+        const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
+
+        if (tracker.isUnchanged(file, hash)) {
+          skipped++;
+          continue;
+        }
+
         await col.add(content, { metadata: { file } });
+        tracker.markIndexed(file, hash);
+        indexed++;
       }
 
-      return { indexed: files.length, skipped: 0 };
+      // Clean up deleted files
+      for (const orphan of tracker.findOrphans(new Set(files))) {
+        tracker.remove(orphan);
+      }
+
+      return { indexed, skipped };
     },
 
     async search(query: string, options?: { k?: number }): Promise<SearchResult[]> {
@@ -229,7 +301,8 @@ const brain = new BrainBank({ repoPath: '.' })
   .use(notesPlugin('./notes'));
 
 await brain.initialize();
-await brain.index();
+await brain.index();  // → { indexed: 10, skipped: 0 }   first run
+await brain.index();  // → { indexed: 0, skipped: 10 }   second run
 const results = await brain.hybridSearch('meeting notes about auth');
 ```
 

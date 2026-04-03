@@ -68,9 +68,9 @@ class CodePlugin implements Plugin {
         this.hnsw = shared.hnsw;
         this.vecCache = shared.vecCache;
 
-        // Load file-level vectors for this repo's HNSW (keyed by indexed_files.rowid)
+        // Load chunk-level vectors for this repo's HNSW (keyed by code_chunks.id)
         if (shared.isNew) {
-            this._loadFileVectors(ctx.db);
+            this._loadChunkVectors(ctx.db);
         }
 
         const repoPath = this.opts.repoPath ?? ctx.config.repoPath;
@@ -98,13 +98,12 @@ class CodePlugin implements Plugin {
         });
     }
 
-    /** Load file-level vectors from code_vectors joined with indexed_files.rowid. */
-    private _loadFileVectors(db: { prepare(sql: string): { all(...p: unknown[]): unknown[]; iterate(): IterableIterator<Record<string, unknown>> } }): void {
+    /** Load chunk-level vectors from code_vectors → HNSW (keyed by code_chunks.id). */
+    private _loadChunkVectors(db: { prepare(sql: string): { all(...p: unknown[]): unknown[]; iterate(...p: unknown[]): IterableIterator<unknown> } }): void {
         const rows = db.prepare(`
-            SELECT i.rowid as file_id, v.embedding
+            SELECT v.chunk_id, v.embedding
             FROM code_vectors v
-            JOIN indexed_files i ON i.file_path = v.file_path
-        `).iterate() as IterableIterator<{ file_id: number; embedding: Buffer }>;
+        `).iterate() as IterableIterator<{ chunk_id: number; embedding: Buffer }>;
 
         for (const row of rows) {
             const vec = new Float32Array(
@@ -113,8 +112,8 @@ class CodePlugin implements Plugin {
                     row.embedding.byteOffset + row.embedding.byteLength,
                 ),
             );
-            this.hnsw.add(vec, row.file_id);
-            this.vecCache.set(row.file_id, vec);
+            this.hnsw.add(vec, row.chunk_id);
+            this.vecCache.set(row.chunk_id, vec);
         }
     }
 
@@ -169,11 +168,11 @@ class CodePlugin implements Plugin {
     reembedConfig(): ReembedTable {
         return {
             name: 'code',
-            textTable: 'indexed_files',
+            textTable: 'code_chunks',
             vectorTable: 'code_vectors',
-            idColumn: 'rowid',
-            fkColumn: 'file_path',
-            textBuilder: (r) => `File: ${r.file_path}`,
+            idColumn: 'id',
+            fkColumn: 'chunk_id',
+            textBuilder: (r: Record<string, unknown>) => `File: ${r.file_path}\n${r.chunk_type} ${r.name ?? 'anonymous'}\n---\n${r.content}`,
         };
     }
 

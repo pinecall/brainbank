@@ -1538,7 +1538,7 @@ NON_SOURCE_FLAGS excluded: repo, depth, collection, pattern, etc.
 
 ## 15. SQLite Schema
 
-### Core Schema (`src/db/sqlite-adapter.ts` — SCHEMA_VERSION = 8)
+### Core Schema (`src/db/sqlite-adapter.ts` — SCHEMA_VERSION = 9)
 
 Core creates ONLY infrastructure tables. All domain tables are created
 by plugins via `runPluginMigrations()`.
@@ -1584,6 +1584,16 @@ index_state
   version INTEGER DEFAULT 0     ← monotonic, bumped after indexing
   writer_pid INTEGER            ← PID of last writing process
   updated_at INTEGER            ← unixepoch() of last bump
+
+
+━━━ CORE: INCREMENTAL TRACKING (schema v9) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+plugin_tracking
+  plugin TEXT NOT NULL          ← plugin name ('docs', 'code:frontend')
+  key TEXT NOT NULL             ← tracking key (file path or composite key)
+  content_hash TEXT NOT NULL    ← hash of last indexed content
+  indexed_at INTEGER            ← unixepoch() of last index
+  PRIMARY KEY (plugin, key)
 ```
 
 ### Plugin Schemas (created by migrations during initialize())

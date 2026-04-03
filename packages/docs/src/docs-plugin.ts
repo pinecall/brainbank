@@ -51,7 +51,7 @@ class DocsPlugin implements Plugin {
             ctx.loadVectors('doc_vectors', 'chunk_id', this.hnsw, this.vecCache);
         }
 
-        this.indexer = new DocsIndexer(ctx.db, embedding, this.hnsw, this.vecCache);
+        this.indexer = new DocsIndexer(ctx.db, embedding, this.hnsw, this.vecCache, ctx.createTracker());
         this._search = new DocumentSearch({
             db: ctx.db,
             embedding,
@@ -64,9 +64,17 @@ class DocsPlugin implements Plugin {
     /** Register a document collection. */
     addCollection(collection: DocumentCollection): void {
         const absPath = path.resolve(collection.path);
+        // IMPORTANT: Do NOT use INSERT OR REPLACE — SQLite implements it as
+        // DELETE + INSERT, which triggers ON DELETE CASCADE on doc_chunks and
+        // wipes all indexed data. Use a true upsert (ON CONFLICT DO UPDATE) instead.
         this._db.prepare(`
-            INSERT OR REPLACE INTO collections (name, path, pattern, ignore_json, context)
+            INSERT INTO collections (name, path, pattern, ignore_json, context)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                path = excluded.path,
+                pattern = excluded.pattern,
+                ignore_json = excluded.ignore_json,
+                context = excluded.context
         `).run(
             collection.name,
             absPath,
@@ -119,13 +127,13 @@ class DocsPlugin implements Plugin {
     async indexDocs(options: {
         collections?: string[];
         onProgress?: (collection: string, file: string, current: number, total: number) => void;
-    } = {}): Promise<Record<string, { indexed: number; skipped: number; chunks: number }>> {
+    } = {}): Promise<Record<string, { indexed: number; skipped: number; removed: number; chunks: number }>> {
         const allCollections = this.listCollections();
         const toIndex = options.collections
             ? allCollections.filter(c => options.collections!.includes(c.name))
             : allCollections;
 
-        const results: Record<string, { indexed: number; skipped: number; chunks: number }> = {};
+        const results: Record<string, { indexed: number; skipped: number; removed: number; chunks: number }> = {};
 
         for (const coll of toIndex) {
             results[coll.name] = await this.indexer.indexCollection(

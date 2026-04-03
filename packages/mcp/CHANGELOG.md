@@ -8,6 +8,14 @@ All notable changes to `@brainbank/mcp` will be documented in this file.
 - **Removed 5 MCP tools**: `brainbank_search`, `brainbank_stats`, `brainbank_history`, `brainbank_collection`, `brainbank_workspaces`. Server now exposes only `brainbank_context` (primary) and `brainbank_index`
 - `brainbank_context` description updated to reference Workflow Trace output
 
+### Added
+- **`docsResults` param** on `brainbank_context` — explicit max document results, ensuring docs filtering works reliably across all MCP clients
+- **`sources` param** on `brainbank_context` — per-source result limits (e.g. `{ code: 10, git: 0, docs: 5 }`), overrides named params when present
+- **`path` param** on `brainbank_context` — filter results to files under a path prefix (e.g. `src/services/`)
+
+### Fixed
+- **Sources filtering** — `sources` Record param was silently dropped by some MCP clients. Named params (`codeResults`, `gitResults`, `docsResults`) now serve as the reliable base, with `sources` as an optional override
+
 ### Changed
 - Server reduced from 443 lines to 160 lines
 - Version bumped to 0.4.0

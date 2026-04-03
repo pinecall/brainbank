@@ -44,6 +44,7 @@ export function showHelp(): void {
     console.log(`  ${c.dim('--pattern <glob>')}        Collection glob (default: **/*.md)`);
     console.log(`  ${c.dim('--context <desc>')}        Context description`);
     console.log(`  ${c.dim('--<source> <n>')}          Source filter: max results from <source> (0 = skip)`);
+    console.log(`  ${c.dim('--path <dir>')}            Filter context results to files under this path prefix`);
     console.log(`  ${c.dim('--ignore <globs>')}        Ignore glob patterns for code indexing (comma-separated)`);
     console.log(`  ${c.dim('--yes / -y')}              Skip interactive prompt (auto-select all available)`);
     console.log(`  ${c.dim('--reranker <name>')}       Reranker to use (qwen3)`);
@@ -60,5 +61,6 @@ export function showHelp(): void {
     console.log(c.dim('  brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only'));
     console.log(c.dim('  brainbank hsearch "bug" --notes 5 --git 3            # custom plugin'));
     console.log(c.dim('  brainbank context "add rate limiting to the API"'));
+    console.log(c.dim('  brainbank context "auth flow" --path src/services/'));
     console.log(c.dim('  brainbank serve'));
 }

@@ -24,8 +24,9 @@ export async function cmdDocs(): Promise<void> {
     const results = await docsPlugin.indexDocs(opts);
 
     console.log('\n');
-    for (const [name, stat] of Object.entries(results) as [string, { indexed: number; skipped: number; chunks: number }][]) {
-        console.log(`  ${c.green(name)}: ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
+    for (const [name, stat] of Object.entries(results) as [string, { indexed: number; skipped: number; removed: number; chunks: number }][]) {
+        const removedStr = stat.removed > 0 ? `, ${c.red(String(stat.removed) + ' removed')}` : '';
+        console.log(`  ${c.green(name)}: ${stat.indexed} indexed, ${stat.skipped} skipped${removedStr}, ${stat.chunks} chunks`);
     }
 
     brain.close();

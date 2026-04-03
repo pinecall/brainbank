@@ -105,25 +105,38 @@ The docs plugin also implements `IndexablePlugin`, so it participates in `brain.
 
 ## Incremental Indexing
 
-All indexing is **incremental by default** — only new or changed content is processed:
+All indexing is **incremental by default** — only new or changed content is processed.
 
-| Plugin | Change detection | What gets skipped |
-|--------|-----------------|-------------------|
-| **Code** | FNV-1a file hash (fast, 32-bit) | Unchanged files |
-| **Git** | Unique commit hash + vector existence check | Already-indexed commits with vectors |
-| **Docs** | SHA-256 content hash (16 chars) | Unchanged documents with vectors |
+### IncrementalTracker (recommended)
+
+The core `IncrementalTracker` provides a shared `plugin_tracking` table that any plugin can use for change detection without creating custom tables:
 
 ```typescript
-await brain.index();  // → { indexed: 500, skipped: 0 }   first run
-await brain.index();  // → { indexed: 0, skipped: 500 }   second run
-await brain.index();  // → { indexed: 1, skipped: 499 }   changed 1 file
+const tracker = ctx.createTracker();  // scoped to plugin name
+
+for (const file of files) {
+    const hash = sha256(content);
+    if (tracker.isUnchanged(file, hash)) { skipped++; continue; }
+    await indexFile(file, content);
+    tracker.markIndexed(file, hash);
+}
+
+// Detect deleted files
+for (const orphan of tracker.findOrphans(new Set(files))) {
+    removeData(orphan);
+    tracker.remove(orphan);
+}
 ```
 
-Use `--force` to re-index everything:
+See [Custom Plugins — Incremental Tracking](custom-plugins.md#incremental-tracking) for the full API.
 
-```bash
-brainbank index --force
-```
+### Per-plugin strategies
+
+| Plugin | Tracker | Hash algorithm | What gets skipped |
+|--------|---------|---------------|-------------------|
+| **Code** | Custom `indexed_files` table | FNV-1a (fast, 32-bit) | Unchanged files |
+| **Git** | Unique commit hash + vector existence | SHA | Already-indexed commits |
+| **Docs** | `IncrementalTracker` | SHA-256 (16 chars) | Unchanged documents |
 
 ### HNSW Consistency
 
@@ -171,7 +184,7 @@ Tables are deduplicated by `vectorTable` name (important for multi-repo where `c
 
 Each project has its own `.brainbank/` database. In multi-repo setups (same DB, different `code:frontend` / `code:backend` plugins), file paths are relative to each repo root — no collisions. Same-type plugins share a single HNSW index (e.g. all `code:*` share `hnsw-code.index`).
 
-> **Current schema version: v8.** Domain tables (`code_chunks`, `git_commits`, `doc_chunks`, etc.) are now created by their respective plugins via the per-plugin migration system (`runPluginMigrations()`). The core schema contains only framework tables (`schema_version`, `plugin_versions`, `kv_data`, `kv_vectors`, `embedding_meta`, `index_state`). Plugin schema versions are tracked in the `plugin_versions` table.
+> **Current schema version: v9.** Domain tables (`code_chunks`, `git_commits`, `doc_chunks`, etc.) are now created by their respective plugins via the per-plugin migration system (`runPluginMigrations()`). The core schema contains only framework tables (`schema_version`, `plugin_versions`, `kv_data`, `kv_vectors`, `embedding_meta`, `index_state`, `plugin_tracking`). Plugin schema versions are tracked in the `plugin_versions` table.
 
 ---
 
