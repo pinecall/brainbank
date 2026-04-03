@@ -270,7 +270,12 @@ function _renderDependencySummary(
 function _collectChunkIds(codeHits: SearchResult[]): number[] {
     const ids: number[] = [];
     for (const r of codeHits) {
-        if (isCodeResult(r) && r.metadata.id) {
+        if (!isCodeResult(r)) continue;
+        // File-level results carry all chunk IDs in metadata.chunkIds
+        const chunkIds = r.metadata.chunkIds as number[] | undefined;
+        if (chunkIds && Array.isArray(chunkIds)) {
+            ids.push(...chunkIds);
+        } else if (r.metadata.id) {
             ids.push(r.metadata.id);
         }
     }
