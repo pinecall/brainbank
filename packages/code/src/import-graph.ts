@@ -318,6 +318,12 @@ export function buildCallTree(db: DbLike, seedChunkIds: number[]): CallTreeNode[
                  JOIN code_chunks callee ON callee.id = ce.callee_chunk_id
                  WHERE ce.caller_chunk_id = ?
                    AND callee.file_path != caller.file_path
+                   AND EXISTS (
+                     SELECT 1 FROM code_imports ci
+                     WHERE ci.file_path = caller.file_path
+                       AND ci.imports_path = callee.file_path
+                       AND ci.resolved = 1
+                   )
                  ORDER BY callee.file_path, callee.start_line
                  LIMIT 15`
             ).all(callerChunkId) as Array<{
@@ -344,6 +350,7 @@ export function buildCallTree(db: DbLike, seedChunkIds: number[]): CallTreeNode[
                 if (qualName && seenNames.has(qualName)) continue;
 
                 // Skip generic CRUD methods that appear in many services
+                if (GENERIC_METHODS.has(row.symbol_name)) continue;
                 if (qualName && GENERIC_METHODS.has(qualName)) continue;
 
                 seenChunks.add(row.callee_chunk_id);
