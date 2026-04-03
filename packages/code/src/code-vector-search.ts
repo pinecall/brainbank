@@ -127,21 +127,21 @@ export class CodeVectorSearch {
 
         const results: SearchResult[] = [];
         for (const chunk of allChunks) {
-            // RRF: 1/(k + rank) from each source
+            // RRF: 1/(k + rank) from each source, vector weighted 2x
             const vecRank = vectorRankMap.get(chunk.file_path);
             const bm25Rank = bm25RankMap.get(chunk.id);
 
-            const vecRRF = vecRank ? 1 / (RRF_K + vecRank) : 0;
+            // Skip BM25-only results — files must have vector match to appear
+            if (!vecRank) continue;
+
+            const vecRRF = 2 / (RRF_K + vecRank);
             const bm25RRF = bm25Rank ? 1 / (RRF_K + bm25Rank) : 0;
             const rrfScore = vecRRF + bm25RRF;
 
             if (rrfScore <= 0) continue;
 
-            // Display score: prefer vector cosine (stable, meaningful %)
-            // BM25 only contributes to RRF ranking, not user-facing %
-            const displayScore = vectorFileScores.get(chunk.file_path) 
-                ?? bm25ChunkScores.get(chunk.id) 
-                ?? 0;
+            // Display score: vector cosine (stable, meaningful %)
+            const displayScore = vectorFileScores.get(chunk.file_path) ?? 0;
 
             results.push({
                 type: 'code',
