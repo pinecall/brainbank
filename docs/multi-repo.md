@@ -43,6 +43,22 @@ brainbank hsearch "cancel job confirmation" --repo ~/projects
 
 The CLI's `builtin-registration.ts` checks for a root `.git/` directory. If absent, it scans immediate subdirectories for `.git/` folders (excluding dot-directories and `node_modules`). Each detected sub-repo gets namespaced plugin instances for any plugin in the `MULTI_REPO_PLUGINS` set (currently `code` and `git`, extensible at runtime).
 
+### Selecting Specific Repos
+
+By default, **all** detected git subdirectories are indexed. To index only specific repos, add a `repos` whitelist to your `.brainbank/config.json`:
+
+```json
+{
+  "repos": ["webapp-backend", "webapp-frontend"],
+  "plugins": ["code", "git"]
+}
+```
+
+- **`repos` is set** → only those subdirs are indexed (explicit whitelist)
+- **`repos` is omitted** → all `.git/` children are auto-detected (default behavior)
+
+This is much cleaner than using ignore patterns to exclude entire sub-repos.
+
 ---
 
 ## Namespaced Plugins

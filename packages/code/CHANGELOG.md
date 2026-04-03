@@ -4,6 +4,13 @@ All notable changes to `@brainbank/code` will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **File-level vector search** — embeddings now cover whole files (up to 3K chars) instead of individual chunks
+  - HNSW returns relevant *files* first, then chunks are extracted from matched files
+  - Eliminates noisy results from small method chunks that lack semantic context
+  - Schema migration v4: `code_vectors` keyed by `file_path` instead of `chunk_id`
+  - Requires `brainbank index --force` after upgrade
+
 ### Added
 - **Dependency Tracker** — full bidirectional import graph with resolved file paths
   - `ImportResolver` class — resolves import specifiers to actual file paths at index time (exact match → extension probing → index file → dotted path → tail-index fallback)

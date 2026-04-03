@@ -318,16 +318,40 @@ function scanDb(repoPath: string): ScanResult['db'] {
     }
 }
 
-/** Detect subdirectories with their own .git (mono-repo). */
+/** Detect subdirectories with their own .git (mono-repo). Respects `repos` whitelist from config. */
 function scanGitSubdirs(repoPath: string): ScanResult['gitSubdirs'] {
     if (fs.existsSync(path.join(repoPath, '.git'))) return [];
 
     try {
-        return fs.readdirSync(repoPath, { withFileTypes: true })
+        let subdirs = fs.readdirSync(repoPath, { withFileTypes: true })
             .filter(e => e.isDirectory() && !e.name.startsWith('.'))
             .filter(e => fs.existsSync(path.join(repoPath, e.name, '.git')))
             .map(e => ({ name: e.name }));
+
+        // Apply repos whitelist from config if present
+        const configRepos = readReposFromConfig(repoPath);
+        if (configRepos) {
+            subdirs = subdirs.filter(s => configRepos.includes(s.name));
+        }
+
+        return subdirs;
     } catch {
         return [];
+    }
+}
+
+/** Read the `repos` whitelist from .brainbank/config.json. Returns null if not set. */
+function readReposFromConfig(repoPath: string): string[] | null {
+    const configPath = path.join(repoPath, '.brainbank', 'config.json');
+    try {
+        if (!fs.existsSync(configPath)) return null;
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+        const repos = config.repos;
+        if (Array.isArray(repos) && repos.every(r => typeof r === 'string')) {
+            return repos as string[];
+        }
+        return null;
+    } catch {
+        return null;
     }
 }

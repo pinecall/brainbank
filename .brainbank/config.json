@@ -1,13 +1,17 @@
 {
-  "plugins": [
-    "code",
-    "git",
-    "docs"
-  ],
+  "plugins": ["code"],
   "code": {
-    "maxFileSize": 512000
+    "embedding": "perplexity-context",
+    "maxFileSize": 512000,
+    "ignore": [
+      "node_modules/**",
+      "dist/**",
+      "coverage/**",
+      "test/**",
+      "**/*.test.ts",
+      "**/*.spec.ts",
+      ".brainbank/**"
+    ]
   },
-  "git": {
-    "depth": 500
-  }
+  "embedding": "perplexity-context"
 }

@@ -259,7 +259,12 @@ export interface CallTreeNode {
 }
 
 /** Max call tree depth to prevent infinite recursion. */
-const MAX_CALL_DEPTH = 3;
+/** Generic CRUD method names that appear in many services — skip to avoid noise. */
+const GENERIC_METHODS = new Set([
+    'findOne', 'findAll', 'findById', 'create', 'update', 'remove', 'delete',
+    'save', 'getOne', 'getAll', 'list', 'count',
+]);
+const MAX_CALL_DEPTH = 1;
 /** Max total nodes in the call tree. */
 const MAX_CALL_NODES = 40;
 
@@ -337,6 +342,9 @@ export function buildCallTree(db: DbLike, seedChunkIds: number[]): CallTreeNode[
                 // Name-based dedup: skip if we've already shown a chunk with this name
                 const qualName = row.name ?? row.symbol_name;
                 if (qualName && seenNames.has(qualName)) continue;
+
+                // Skip generic CRUD methods that appear in many services
+                if (qualName && GENERIC_METHODS.has(qualName)) continue;
 
                 seenChunks.add(row.callee_chunk_id);
                 if (qualName) seenNames.add(qualName);

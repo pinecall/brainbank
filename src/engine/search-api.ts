@@ -51,8 +51,9 @@ export function createSearchAPI(
         if (isVectorSearchPlugin(mod)) {
             const vs = mod.createVectorSearch();
             if (vs) {
-                const baseType = mod.name.split(':')[0];
-                strategies.set(baseType, vs);
+                // Use full plugin name (e.g. code:servicehub-backend)
+                // so each repo gets its own vector search strategy
+                strategies.set(mod.name, vs);
             }
         }
     }
@@ -66,7 +67,7 @@ export function createSearchAPI(
 
     const bm25 = new CompositeBM25Search(registry);
 
-    const contextBuilder = new ContextBuilder(search, registry);
+    const contextBuilder = new ContextBuilder(search, registry, bm25);
 
     return new SearchAPI({
         search, bm25, registry, config,

@@ -40,7 +40,7 @@ export function formatCodeContext(
     // 1. Collect seed chunk IDs from search hits
     const seedIds = _collectChunkIds(codeHits);
 
-    // 2. Expand multi-part hits: if "foo (part 2)" matched, fetch all parts of "foo"
+    // 2. Expand multi-part hits: if "foo (part 5)" matched, fetch ±2 parts
     const expandedHits = _expandAdjacentParts(codeHits, codeGraph);
 
     // 3. Build the full call tree (recursive, no trimming)
@@ -49,7 +49,7 @@ export function formatCodeContext(
     // 4. Flatten everything into a single ordered list
     const allChunks = _buildFlatList(expandedHits, callTree);
 
-    // 4. Render as a single flat section
+    // 5. Render as a single flat section
     let currentFile = '';
     for (const chunk of allChunks) {
         // File header (only when file changes)
@@ -158,8 +158,9 @@ function _buildFlatList(
     // Each node carries callerName (set by buildCallTree for roots, by us for deeper nodes).
     function walkTree(nodes: CallTreeNode[]): void {
         for (const node of nodes) {
-            // Filter test files
+            // Filter test files and generic infrastructure
             if (_isTestFile(node.filePath)) continue;
+            if (_isInfraFile(node.filePath)) continue;
 
             const k = key(node.filePath, node.startLine);
             if (seen.has(k)) continue;
@@ -200,6 +201,19 @@ function _isTestFile(filePath: string): boolean {
         || lower.includes('__tests__') || lower.includes('test_')
         || lower.startsWith('test') || lower.includes('.test.')
         || lower.includes('.spec.');
+}
+
+/**
+ * Check if a file path is generic infrastructure (noise when shown as callee).
+ * Logging, config, common utils are too generic to be useful in call trees.
+ */
+function _isInfraFile(filePath: string): boolean {
+    const lower = filePath.toLowerCase();
+    return lower.includes('/logging/') || lower.includes('/logger')
+        || lower.includes('/config/') || lower.includes('config.service')
+        || lower.includes('/common/') || lower.includes('/shared/utils')
+        || lower.includes('/interceptors/') || lower.includes('/guards/')
+        || lower.includes('/filters/') || lower.includes('/middleware/');
 }
 
 // ── Fallback: no graph ──────────────────────────────
@@ -264,11 +278,14 @@ function _collectChunkIds(codeHits: SearchResult[]): number[] {
 }
 
 /** Regex to detect multi-part chunk names: "foo (part N)" */
-const PART_RE = /^(.+) \(part \d+\)$/;
+const PART_RE = /^(.+) \(part (\d+)\)$/;
+
+/** Maximum number of adjacent parts to include on each side of the hit. */
+const MAX_ADJACENT_RADIUS = 2;
 
 /**
- * Expand multi-part search hits: if "foo (part 2)" matched,
- * fetch all sibling parts and insert them in order.
+ * Expand multi-part search hits: if "foo (part 5)" matched,
+ * fetch siblings within ±MAX_ADJACENT_RADIUS (parts 3–7).
  * Non-part hits pass through unchanged.
  */
 function _expandAdjacentParts(
@@ -299,6 +316,7 @@ function _expandAdjacentParts(
 
         // Fetch all sibling parts from DB
         const baseName = match[1];
+        const hitPartNum = parseInt(match[2], 10);
         const siblings = codeGraph.fetchAdjacentParts(hit.filePath, baseName);
 
         if (siblings.length <= 1) {
@@ -308,8 +326,15 @@ function _expandAdjacentParts(
             continue;
         }
 
-        // Insert all sibling parts in order (by start_line)
-        for (const sib of siblings) {
+        // Cap to ±MAX_ADJACENT_RADIUS around the hit part
+        const minPart = hitPartNum - MAX_ADJACENT_RADIUS;
+        const maxPart = hitPartNum + MAX_ADJACENT_RADIUS;
+
+        // Insert capped sibling parts in order (by start_line)
+        for (let i = 0; i < siblings.length; i++) {
+            const sib = siblings[i];
+            const sibPartNum = i + 1; // parts are 1-indexed, sorted by start_line
+            if (sibPartNum < minPart || sibPartNum > maxPart) continue;
             if (seenIds.has(sib.id)) continue;
             seenIds.add(sib.id);
 

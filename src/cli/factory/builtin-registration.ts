@@ -23,11 +23,11 @@ function pluginCfg(config: ProjectConfig | null, pluginName: string): Record<str
     return {};
 }
 
-/** Detect subdirectories that have their own .git repo. */
-function detectGitSubdirs(parentPath: string): { name: string; path: string }[] {
+/** Detect subdirectories that have their own .git repo. Respects optional `repos` whitelist. */
+function detectGitSubdirs(parentPath: string, repos?: string[]): { name: string; path: string }[] {
     try {
         const entries = fs.readdirSync(parentPath, { withFileTypes: true });
-        return entries
+        let subdirs = entries
             .filter(e =>
                 e.isDirectory() &&
                 !e.name.startsWith('.') &&
@@ -35,6 +35,13 @@ function detectGitSubdirs(parentPath: string): { name: string; path: string }[] 
                 fs.existsSync(path.join(parentPath, e.name, '.git')),
             )
             .map(e => ({ name: e.name, path: path.join(parentPath, e.name) }));
+
+        if (repos && repos.length > 0) {
+            const allowed = new Set(repos);
+            subdirs = subdirs.filter(s => allowed.has(s.name));
+        }
+
+        return subdirs;
     } catch { return []; }
 }
 
@@ -45,7 +52,8 @@ export async function registerBuiltins(
 ): Promise<void> {
     const resolvedRp = path.resolve(rp);
     const hasRootGit = fs.existsSync(path.join(resolvedRp, '.git'));
-    const gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp) : [];
+    const configRepos = config?.repos as string[] | undefined;
+    const gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp, configRepos) : [];
 
     for (const name of pluginNames) {
         const factory = await loadPlugin(name);

@@ -5,6 +5,13 @@ All notable changes to BrainBank will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Added
+- **`repos` config field** — whitelist specific sub-repos in multi-repo setups (`"repos": ["backend", "frontend"]`). Omit to auto-detect all (default)
+- **Per-repo DB isolation** — each sub-repo in multi-repo setups gets its own `.db` file (e.g., `servicehub-backend.db`) and HNSW index, ensuring search results represent all repos equally via round-robin interleaving
+- **Hybrid context search** — context builder uses BM25 intersection boost alongside vector search, promoting keyword-matching vector results
+- **Adjacency cap** — multi-part chunk expansion capped at ±2 parts around the hit
+- **Infrastructure noise filter** — call tree excludes generic infrastructure files (logging, config, middleware)
+
 ### Breaking Changes
 - **`DatabaseAdapter` replaces `Database`** — the core `Database` class (`src/db/database.ts`) has been replaced with a `DatabaseAdapter` interface (`src/db/adapter.ts`) + `SQLiteAdapter` implementation (`src/db/sqlite-adapter.ts`). All internal APIs, plugin schemas, and test helpers now use the adapter interface. Plugins should use `PluginContext['db']` type (which is now `DatabaseAdapter`). The `raw<T>()` escape hatch provides typed access to the underlying driver during the transition period. Public export changed: `Database` → `DatabaseAdapter` (type) + `SQLiteAdapter` (class)
 - **Plugin migration signatures changed** — `Migration.up(db: RawDb)` → `Migration.up(adapter: DatabaseAdapter)`. Plugin schemas updated to use `adapter.exec()` instead of raw `better-sqlite3` calls

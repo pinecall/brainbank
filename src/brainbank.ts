@@ -28,6 +28,7 @@ import type {
 } from './types.ts';
 
 import { EventEmitter } from 'node:events';
+import * as path from 'node:path';
 import { resolveConfig } from './config.ts';
 import { HNSW } from './constants.ts';
 import type { DatabaseAdapter } from './db/adapter.ts';
@@ -60,6 +61,7 @@ export class BrainBank extends EventEmitter {
     private _watcher?: Watcher;
     private _webhookServer?: WebhookServer;
     private _sharedHnsw = new Map<string, { hnsw: HNSWIndex; vecCache: Map<number, Float32Array> }>();
+    private _repoDBs = new Map<string, DatabaseAdapter>();
     private _loadedVersions = new Map<string, number>();
 
     constructor(config: BrainBankConfig = {}) {
@@ -163,6 +165,8 @@ export class BrainBank extends EventEmitter {
         reranker?.close?.();
 
         this._embedding?.close().catch(() => { });
+        for (const db of this._repoDBs.values()) db.close();
+        this._repoDBs.clear();
         this._db?.close();
         this._initialized = false;
         this._kvService?.clear();
@@ -380,8 +384,13 @@ export class BrainBank extends EventEmitter {
         }
 
         const privateHnsw = new Map<string, HNSWIndex>();
-        const ctx = this._buildPluginContext(skipVectorLoad, privateHnsw);
         for (const mod of this._registry.all) {
+            const pluginDb = this._getOrCreatePluginDb(mod.name);
+            // Propagate embedding meta to per-repo DBs
+            if (pluginDb !== this._db) {
+                setEmbeddingMeta(pluginDb, this._embedding);
+            }
+            const ctx = this._buildPluginContext(skipVectorLoad, privateHnsw, pluginDb);
             await mod.initialize(ctx);
         }
 
@@ -447,15 +456,36 @@ export class BrainBank extends EventEmitter {
         return resolveEmbedding('local');
     }
 
-    /** Build the `PluginContext` passed to each plugin's `initialize()`. */
+    /**
+     * Get or create a per-repo SQLiteAdapter for namespaced plugins.
+     * Non-namespaced plugins use the root DB.
+     * DB path: `.brainbank/<repoName>.db` (e.g., `servicehub-backend.db`).
+     */
+    private _getOrCreatePluginDb(pluginName: string): DatabaseAdapter {
+        if (!pluginName.includes(':')) return this._db;
+
+        const repoName = pluginName.split(':').slice(1).join(':');
+        const existing = this._repoDBs.get(repoName);
+        if (existing) return existing;
+
+        const dir = path.dirname(this._config.dbPath);
+        const repoDbPath = path.join(dir, `${repoName}.db`);
+        const db = new SQLiteAdapter(repoDbPath);
+        this._repoDBs.set(repoName, db);
+        return db;
+    }
+
+    /** Build a per-plugin `PluginContext` with appropriate DB and HNSW scoping. */
     private _buildPluginContext(
         skipVectorLoad: boolean,
         privateHnsw: Map<string, HNSWIndex>,
+        pluginDb: DatabaseAdapter,
     ): PluginContext {
         let autoId = 0;
+        const dbPath = this._config.dbPath;
 
         return {
-            db: this._db,
+            db: pluginDb,
             embedding: this._embedding,
             config: this._config,
 
@@ -474,12 +504,12 @@ export class BrainBank extends EventEmitter {
             loadVectors: (table, idCol, hnsw, cache) => {
                 if (skipVectorLoad) return;
                 const indexName = table.replace('_vectors', '').replace('_chunks', '');
-                const indexPath = hnswPath(this._config.dbPath, indexName);
-                const rowCount = countRows(this._db, table);
+                const indexPath = hnswPath(dbPath, `${indexName}-${pluginDb === this._db ? 'root' : 'repo'}`);
+                const rowCount = countRows(pluginDb, table);
                 if (hnsw.tryLoad(indexPath, rowCount)) {
-                    loadVecCache(this._db, table, idCol, cache);
+                    loadVecCache(pluginDb, table, idCol, cache);
                 } else {
-                    loadVectors(this._db, table, idCol, hnsw, cache);
+                    loadVectors(pluginDb, table, idCol, hnsw, cache);
                 }
             },
 

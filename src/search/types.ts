@@ -16,8 +16,8 @@ export interface SearchStrategy {
 
 /** Pre-embedded vector search for a single domain (code, git, etc.). */
 export interface DomainVectorSearch {
-    /** Search using a pre-computed query vector. */
-    search(queryVec: Float32Array, k: number, minScore: number, useMMR?: boolean, mmrLambda?: number): SearchResult[];
+    /** Search using a pre-computed query vector. Optional queryText enables BM25 fusion. */
+    search(queryVec: Float32Array, k: number, minScore: number, useMMR?: boolean, mmrLambda?: number, queryText?: string): SearchResult[];
 }
 
 export interface SearchOptions {

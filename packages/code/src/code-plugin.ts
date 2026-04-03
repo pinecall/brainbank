@@ -62,14 +62,15 @@ class CodePlugin implements Plugin {
         runPluginMigrations(ctx.db, this.name, CODE_SCHEMA_VERSION, CODE_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
-        // Use shared HNSW so all code indexers (code, code:frontend, etc.) share one index
-        const shared = await ctx.getOrCreateSharedHnsw('code', undefined, embedding.dims);
+        // Per-repo HNSW: use plugin name as key so each repo has its own vector index
+        // e.g. code:servicehub-backend → separate HNSW from code:servicehub-frontend
+        const shared = await ctx.getOrCreateSharedHnsw(this.name, undefined, embedding.dims);
         this.hnsw = shared.hnsw;
         this.vecCache = shared.vecCache;
 
-        // Only load vectors once (first code indexer to initialize)
+        // Load file-level vectors for this repo's HNSW (keyed by indexed_files.rowid)
         if (shared.isNew) {
-            ctx.loadVectors('code_vectors', 'chunk_id', this.hnsw, this.vecCache);
+            this._loadFileVectors(ctx.db);
         }
 
         const repoPath = this.opts.repoPath ?? ctx.config.repoPath;
@@ -95,6 +96,26 @@ class CodePlugin implements Plugin {
             hnsw: this.hnsw,
             vecs: this.vecCache,
         });
+    }
+
+    /** Load file-level vectors from code_vectors joined with indexed_files.rowid. */
+    private _loadFileVectors(db: { prepare(sql: string): { all(...p: unknown[]): unknown[]; iterate(): IterableIterator<Record<string, unknown>> } }): void {
+        const rows = db.prepare(`
+            SELECT i.rowid as file_id, v.embedding
+            FROM code_vectors v
+            JOIN indexed_files i ON i.file_path = v.file_path
+        `).iterate() as IterableIterator<{ file_id: number; embedding: Buffer }>;
+
+        for (const row of rows) {
+            const vec = new Float32Array(
+                row.embedding.buffer.slice(
+                    row.embedding.byteOffset,
+                    row.embedding.byteOffset + row.embedding.byteLength,
+                ),
+            );
+            this.hnsw.add(vec, row.file_id);
+            this.vecCache.set(row.file_id, vec);
+        }
     }
 
     /** ContextFormatterPlugin — format code results as unified workflow trace. */
@@ -148,15 +169,11 @@ class CodePlugin implements Plugin {
     reembedConfig(): ReembedTable {
         return {
             name: 'code',
-            textTable: 'code_chunks',
+            textTable: 'indexed_files',
             vectorTable: 'code_vectors',
-            idColumn: 'id',
-            fkColumn: 'chunk_id',
-            textBuilder: (r) => [
-                `File: ${r.file_path}`,
-                r.name ? `${r.chunk_type}: ${r.name}` : String(r.chunk_type),
-                String(r.content),
-            ].join('\n'),
+            idColumn: 'rowid',
+            fkColumn: 'file_path',
+            textBuilder: (r) => `File: ${r.file_path}`,
         };
     }
 

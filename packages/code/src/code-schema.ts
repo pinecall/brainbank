@@ -9,7 +9,7 @@ import type { PluginContext } from 'brainbank';
 
 type DbAdapter = PluginContext['db'];
 
-export const CODE_SCHEMA_VERSION = 3;
+export const CODE_SCHEMA_VERSION = 4;
 
 export const CODE_MIGRATIONS = [
     {
@@ -134,6 +134,23 @@ export const CODE_MIGRATIONS = [
 
                 CREATE INDEX IF NOT EXISTS idx_cce_caller ON code_call_edges(caller_chunk_id);
                 CREATE INDEX IF NOT EXISTS idx_cce_callee ON code_call_edges(callee_chunk_id);
+            `);
+        },
+    },
+    {
+        version: 4,
+        up(adapter: DbAdapter): void {
+            adapter.exec(`
+                -- ── File-Level Vectors v4 ─────────────────────
+                -- Replace chunk-level code_vectors with file-level.
+                -- HNSW labels now use indexed_files.rowid.
+                -- Requires re-index (brainbank index --force).
+                DROP TABLE IF EXISTS code_vectors;
+
+                CREATE TABLE code_vectors (
+                    file_path   TEXT PRIMARY KEY,
+                    embedding   BLOB NOT NULL
+                );
             `);
         },
     },
