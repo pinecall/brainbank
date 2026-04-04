@@ -3,25 +3,28 @@
  *
  * Orchestrates the context-building pipeline:
  *   1. Vector search (primary)
- *   2. BM25 intersection boost (re-score)
- *   3. Path scoping (filter)
- *   4. Plugin formatters (output)
+ *   2. Path scoping (filter)
+ *   3. LLM noise pruning (optional)
+ *   4. Session dedup (filter)
+ *   5. Plugin formatters (output)
  *
  * All search post-processing lives in `bm25-boost.ts`.
  * Plugin-agnostic — discovers formatters from ContextFormatterPlugin.
  */
 
-import type { ContextOptions, SearchResult } from '@/types.ts';
+import type { ContextOptions, Pruner, SearchResult } from '@/types.ts';
 import type { SearchStrategy } from './types.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 
 import { isContextFormatterPlugin, isSearchable } from '@/plugin.ts';
 import { filterByPath } from './bm25-boost.ts';
+import { pruneResults } from '@/lib/prune.ts';
 
 export class ContextBuilder {
     constructor(
         private _search: SearchStrategy | undefined,
         private _registry: PluginRegistry,
+        private _pruner?: Pruner,
     ) {}
 
     /** Build a full context block for a task. Returns markdown for system prompt. */
@@ -39,6 +42,12 @@ export class ContextBuilder {
 
         // 2. Path scoping
         results = filterByPath(results, options.pathPrefix);
+
+        // 3. LLM noise pruning (optional — per-request override or construction-time)
+        const pruner = options.pruner ?? this._pruner;
+        if (pruner && results.length > 1) {
+            results = await pruneResults(task, results, pruner);
+        }
 
         // 4. Exclude already-returned files (session dedup)
         if (options.excludeFiles && options.excludeFiles.size > 0) {

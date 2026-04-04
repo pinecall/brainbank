@@ -64,6 +64,8 @@ export interface BrainBankConfig {
     embeddingProvider?: EmbeddingProvider;
     /** Optional reranker for improved search quality */
     reranker?: Reranker;
+    /** Optional LLM noise filter — drops irrelevant results before formatting */
+    pruner?: Pruner;
     /** Port for optional webhook server (enables push-based watch plugins). */
     webhookPort?: number;
 }
@@ -81,6 +83,7 @@ export interface ResolvedConfig {
     maxElements: number;
     embeddingProvider?: EmbeddingProvider;
     reranker?: Reranker;
+    pruner?: Pruner;
     webhookPort?: number;
 }
 
@@ -106,6 +109,31 @@ export interface Reranker {
      */
     rank(query: string, documents: string[]): Promise<number[]>;
     /** Release resources (e.g. unload model). */
+    close?(): Promise<void>;
+}
+
+
+/** Item passed to the pruner for noise classification. */
+export interface PrunerItem {
+    /** Positional index (used to map back to SearchResult[]) */
+    id: number;
+    /** File path — primary signal for relevance */
+    filePath: string;
+    /** Trimmed content preview */
+    preview: string;
+    /** Chunk metadata (type, name, language, lines, etc.) */
+    metadata: Record<string, unknown>;
+}
+
+export interface Pruner {
+    /**
+     * Filter noise from search results.
+     * @param query - The search query
+     * @param items - Items to evaluate (filePath + metadata + trimmed preview)
+     * @returns Array of item IDs to KEEP (everything else is dropped)
+     */
+    prune(query: string, items: PrunerItem[]): Promise<number[]>;
+    /** Release resources. */
     close?(): Promise<void>;
 }
 
@@ -321,6 +349,8 @@ export interface ContextOptions {
     pathPrefix?: string;
     /** File paths to exclude from results (e.g. files already returned in a previous query). */
     excludeFiles?: Set<string>;
+    /** Optional per-request pruner override (e.g. HaikuPruner for LLM noise filtering). */
+    pruner?: Pruner;
 }
 
 
