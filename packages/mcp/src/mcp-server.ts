@@ -28,6 +28,26 @@ import { existsSync } from 'node:fs';
 import { WorkspacePool } from './workspace-pool.js';
 import { createWorkspaceBrain, resolveRepoPath } from './workspace-factory.js';
 
+// ── Session-Level File Tracking ─────────────────────────
+
+/**
+ * Track file paths already returned per repo across brainbank_context calls.
+ * Key = absolute repo path, Value = set of file paths already returned.
+ * Cleared when the MCP server process restarts (session boundary).
+ */
+const sessionFiles = new Map<string, Set<string>>();
+
+/** Extract file paths from `### path/to/file.ext` headers in rendered context. */
+function extractReturnedFiles(context: string): string[] {
+    const files: string[] = [];
+    const re = /^### (.+)$/gm;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(context)) !== null) {
+        files.push(m[1]);
+    }
+    return files;
+}
+
 // ── Multi-Workspace BrainBank Pool ─────────────────────
 
 const pool = new WorkspacePool({
@@ -74,18 +94,38 @@ server.registerTool(
         }),
     },
     async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, repo }) => {
+        const repoPath = resolveRepoPath(repo);
         const brainbank = await getBrainBank(repo);
+
+        // Session dedup: pass previously returned files so they're excluded from results
+        const excludeFiles = sessionFiles.get(repoPath) ?? new Set<string>();
+
         // Build sources from explicit params, then let `sources` override
         const base: Record<string, number> = { code: codeResults, git: gitResults };
         if (docsResults !== undefined) base.docs = docsResults;
         const resolvedSources = sources ? { ...base, ...sources } : base;
+
         const context = await brainbank.getContext(task, {
             affectedFiles,
             sources: resolvedSources,
             pathPrefix: path,
+            excludeFiles,
         });
 
-        return { content: [{ type: 'text' as const, text: context }] };
+        // Prepend project structure on first call for this repo
+        const isFirstCall = excludeFiles.size === 0;
+        const structure = isFirstCall ? brainbank.projectStructure() : '';
+        const fullContext = structure ? `${structure}\n${context}` : context;
+
+        // Track newly returned files for future dedup
+        const returnedFiles = extractReturnedFiles(fullContext);
+        if (returnedFiles.length > 0) {
+            const updated = sessionFiles.get(repoPath) ?? new Set<string>();
+            for (const f of returnedFiles) updated.add(f);
+            sessionFiles.set(repoPath, updated);
+        }
+
+        return { content: [{ type: 'text' as const, text: fullContext }] };
     },
 );
 

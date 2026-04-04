@@ -4,6 +4,9 @@ All notable changes to `@brainbank/code` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Chunk relevance density scoring** — `CodeVectorSearch` now counts matched vs total chunks per file and applies `sqrt(matchedChunks/totalChunks)` as a damping factor. Eliminates false positives where a large file (e.g. 792-line `jobs.service.ts`) ranks #1 because a single chunk tangentially references the query topic
+
 ### Fixed
 - **Dependency graph budget starvation** — forward BFS was consuming the entire `MAX_NODES=30` budget, leaving zero capacity for reverse BFS (upstream dependents). Increased budget to 50 with 60/40 split, ensuring wiring files like `auth.module.ts` are always discovered
 - **DTS build type mismatch** — `_loadChunkVectors()` inline type required `iterate(): IterableIterator<Record<string, unknown>>` but `DatabaseAdapter.prepare<T=unknown>()` returns `IterableIterator<unknown>`. Fixed to accept `unknown`

@@ -1,9 +1,13 @@
 /**
  * BrainBank — Context Builder
  *
- * Builds a formatted markdown context block from search results.
- * Uses hybrid search: vector primary, BM25 as intersection boost.
- * Ready for injection into an LLM system prompt.
+ * Orchestrates the context-building pipeline:
+ *   1. Vector search (primary)
+ *   2. BM25 intersection boost (re-score)
+ *   3. Path scoping (filter)
+ *   4. Plugin formatters (output)
+ *
+ * All search post-processing lives in `bm25-boost.ts`.
  * Plugin-agnostic — discovers formatters from ContextFormatterPlugin.
  */
 
@@ -12,6 +16,7 @@ import type { SearchStrategy } from './types.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 
 import { isContextFormatterPlugin, isSearchable } from '@/plugin.ts';
+import { boostWithBM25, filterByPath } from './bm25-boost.ts';
 
 export class ContextBuilder {
     constructor(
@@ -25,31 +30,41 @@ export class ContextBuilder {
         const src = options.sources ?? {};
         const { minScore = 0.25, useMMR = true, mmrLambda = 0.7 } = options;
 
-        // Primary: vector search (over-fetches 2x for diversity)
-        const vectorResults: SearchResult[] = this._search
+        // 1. Primary: vector search
+        let results: SearchResult[] = this._search
             ? await this._search.search(task, {
                 sources: src,
                 minScore, useMMR, mmrLambda,
             })
             : [];
 
-        // BM25 intersection boost: re-score vector results that also match keywords.
-        // Items matching both vector AND keyword get a score bump, improving rank
-        // for keyword-relevant files that scored lower on vector similarity.
-        let results = this._bm25
-            ? await _boostWithBM25(vectorResults, this._bm25, task, src)
-            : vectorResults;
-
-        // Path scoping: keep only results whose filePath starts with the prefix
-        if (options.pathPrefix) {
-            const prefix = options.pathPrefix;
-            results = results.filter(r => r.filePath?.startsWith(prefix));
+        // 2. BM25 intersection boost
+        if (this._bm25) {
+            results = await boostWithBM25(results, this._bm25, task, src);
         }
 
-        const parts: string[] = [`# Context for: "${task}"\n`];
+        // 3. Path scoping
+        results = filterByPath(results, options.pathPrefix);
 
-        // Deduplicate formatters by base type to avoid duplicate output
-        // in multi-repo setups (e.g. code:backend + code:frontend share one HNSW)
+        // 4. Exclude already-returned files (session dedup)
+        if (options.excludeFiles && options.excludeFiles.size > 0) {
+            results = results.filter(r => !r.filePath || !options.excludeFiles!.has(r.filePath));
+        }
+
+        // 5. Format output
+        const parts: string[] = [`# Context for: "${task}"\n`];
+        this._appendFormatterResults(results, parts, options);
+        await this._appendSearchableResults(task, src, minScore, parts);
+
+        return parts.join('\n');
+    }
+
+    /** Invoke ContextFormatterPlugins, deduplicating by base type for multi-repo. */
+    private _appendFormatterResults(
+        results: SearchResult[],
+        parts: string[],
+        options: ContextOptions,
+    ): void {
         const seenFormatters = new Set<string>();
         for (const mod of this._registry.all) {
             if (isContextFormatterPlugin(mod)) {
@@ -59,12 +74,19 @@ export class ContextBuilder {
                 mod.formatContext(results, parts, options as Record<string, unknown>);
             }
         }
+    }
 
-        // Searchable plugins that aren't context formatters → append results
+    /** Collect results from SearchablePlugins that don't have their own formatter. */
+    private async _appendSearchableResults(
+        task: string,
+        sources: Record<string, number>,
+        minScore: number,
+        parts: string[],
+    ): Promise<void> {
         for (const mod of this._registry.all) {
             if (isContextFormatterPlugin(mod)) continue;
             if (!isSearchable(mod)) continue;
-            const hits = await mod.search(task, { k: src[mod.name.split(':')[0]] ?? 6, minScore });
+            const hits = await mod.search(task, { k: sources[mod.name.split(':')[0]] ?? 6, minScore });
             if (hits.length > 0) {
                 parts.push(`## ${mod.name}\n`);
                 for (const r of hits) {
@@ -73,53 +95,6 @@ export class ContextBuilder {
                 parts.push('');
             }
         }
-
-        return parts.join('\n');
     }
 }
 
-/** BM25 boost factor applied to vector results that also match keywords. */
-const BM25_BOOST = 0.15;
-
-/**
- * Boost vector results that also appear in BM25 keyword results.
- * Does NOT add new results — only re-scores and re-sorts existing vector hits.
- * This promotes keyword-relevant files without introducing BM25-only noise.
- */
-async function _boostWithBM25(
-    vectorResults: SearchResult[],
-    bm25: SearchStrategy,
-    query: string,
-    sources: Record<string, number>,
-): Promise<SearchResult[]> {
-    if (vectorResults.length === 0) return vectorResults;
-
-    const bm25Results = await bm25.search(query, { sources });
-    if (bm25Results.length === 0) return vectorResults;
-
-    // Build a set of BM25 hit keys for fast lookup
-    const bm25Keys = new Set<string>();
-    for (const r of bm25Results) {
-        bm25Keys.add(_resultKey(r));
-    }
-
-    // Boost scores of vector results that also appear in BM25
-    const boosted = vectorResults.map(r => {
-        const k = _resultKey(r);
-        if (bm25Keys.has(k)) {
-            return { ...r, score: r.score + BM25_BOOST };
-        }
-        return r;
-    });
-
-    // Re-sort by boosted score
-    boosted.sort((a, b) => b.score - a.score);
-    return boosted;
-}
-
-/** Generate a dedup key for a search result. */
-function _resultKey(r: SearchResult): string {
-    const sl = 'startLine' in r.metadata ? r.metadata.startLine : '';
-    const el = 'endLine' in r.metadata ? r.metadata.endLine : '';
-    return `${r.filePath ?? ''}:${sl}:${el}`;
-}

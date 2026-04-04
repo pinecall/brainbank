@@ -294,6 +294,55 @@ export class BrainBank extends EventEmitter {
         return result;
     }
 
+    /**
+     * Build a compact project structure from indexed file paths.
+     * Returns a markdown-formatted tree (2 levels deep), or empty string for trivial layouts.
+     */
+    projectStructure(): string {
+        this._requireInit('projectStructure');
+
+        let rows: { file_path: string }[];
+        try {
+            rows = this._db.prepare(
+                "SELECT DISTINCT file_path FROM code_chunks WHERE chunk_type != 'synopsis'",
+            ).all() as { file_path: string }[];
+        } catch {
+            return '';
+        }
+
+        if (rows.length === 0) return '';
+
+        // Count files per top-level and second-level directory
+        const dirTree = new Map<string, Set<string>>();
+        for (const { file_path } of rows) {
+            const parts = file_path.split('/');
+            const topDir = parts.length > 1 ? parts[0] : '.';
+            const subDir = parts.length > 2 ? `${parts[0]}/${parts[1]}` : null;
+
+            if (!dirTree.has(topDir)) dirTree.set(topDir, new Set());
+            if (subDir) dirTree.get(topDir)!.add(subDir);
+        }
+
+        // Skip trivial structures (single top-level dir or root-only files)
+        if (dirTree.size < 2) return '';
+
+        const lines: string[] = ['## Project Structure\n', '```'];
+        const sorted = [...dirTree.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [topDir, subDirs] of sorted) {
+            lines.push(`${topDir}/`);
+            const sortedSubs = [...subDirs].sort().slice(0, 8);
+            for (const sub of sortedSubs) {
+                const subName = sub.split('/').pop() ?? sub;
+                lines.push(`  ${subName}/`);
+            }
+            if (subDirs.size > 8) {
+                lines.push(`  ... +${subDirs.size - 8} more`);
+            }
+        }
+        lines.push('```\n');
+        return lines.join('\n');
+    }
+
     /** Start watching for changes and auto-re-index. */
     watch(options: WatchOptions = {}): Watcher {
         this._requireInit('watch');
@@ -545,6 +594,10 @@ export class BrainBank extends EventEmitter {
      * Reload a single HNSW index by name.
      * Discovers the vector table via ReembeddablePlugin capability.
      * KV is handled directly since it's core-owned.
+     *
+     * The `name` comes from `index_state` and equals the plugin's `mod.name`
+     * (e.g. `code:backend`, `git`, `docs`). This matches the key used in
+     * `getOrCreateSharedHnsw()` during initialization.
      */
     private _reloadIndex(name: string): void {
         // KV HNSW — core-owned, known table
@@ -561,15 +614,17 @@ export class BrainBank extends EventEmitter {
             return;
         }
 
-        // Shared HNSW — discover table from ReembeddablePlugin
+        // Shared HNSW — exact key match against the map
         const shared = this._sharedHnsw.get(name);
         if (!shared) return;
 
+        // Discover vector table from the plugin that owns this HNSW key.
+        // Match by plugin name (e.g. 'code:backend') or reembed name (e.g. 'code').
         for (const mod of this._registry.all) {
             if (!isReembeddable(mod)) continue;
-            const cfg = mod.reembedConfig();
-            if (cfg.name !== name) continue;
+            if (mod.name !== name) continue;
 
+            const cfg = mod.reembedConfig();
             reloadHnsw({
                 dbPath: this._config.dbPath,
                 db: this._db,

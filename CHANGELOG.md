@@ -6,9 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 ### Changed
+- **`.brainbank/data/` directory** — All generated files (`.db`, `.index`, `.lock`) now live in `.brainbank/data/` instead of `.brainbank/` root. `config.json` and `plugins/` stay at `.brainbank/`
 - **`DocsPlugin.indexDocs()` return type** — now includes `removed` count for orphan cleanup tracking
 ### Added
+- **Chunk relevance density scoring** — Files where only a small fraction of chunks match the query are penalized via `sqrt(matchedChunks/totalChunks)`. Eliminates false positives like `jobs.service.ts` ranking #1 for "push notifications" when only 1 of 15 chunks is tangentially related
+- **Session-level deduplication** — MCP server tracks returned files across calls in a session. Previously-returned files are passed as `excludeFiles` and filtered out at the data level in `ContextBuilder`, preventing duplicate content from consuming the context window
+- **Project structure summary** — `BrainBank.projectStructure()` generates a compact 2-level directory tree from indexed file paths, prepended to the first MCP context call per session for project awareness
+- **`excludeFiles` context option** — `ContextOptions.excludeFiles?: Set<string>` filters out specified files before formatting in `ContextBuilder.build()`
 - **`repos` config field** — whitelist specific sub-repos in multi-repo setups (`"repos": ["backend", "frontend"]`). Omit to auto-detect all (default)
+- **`src/search/bm25-boost.ts`** — extracted `boostWithBM25`, `filterByPath`, `resultKey` from ContextBuilder into a standalone pure-function module with unit tests
 - **Per-repo DB isolation** — each sub-repo in multi-repo setups gets its own `.db` file (e.g., `servicehub-backend.db`) and HNSW index, ensuring search results represent all repos equally via round-robin interleaving
 - **Hybrid context search** — context builder uses BM25 intersection boost alongside vector search, promoting keyword-matching vector results
 - **Adjacency cap** — multi-part chunk expansion capped at ±2 parts around the hit
@@ -17,6 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **`--path` CLI flag** — `brainbank context "task" --path src/services/` scopes results to a subdirectory
 
 ### Fixed
+- **Watch ignores config patterns** — `brainbank watch` now respects `code.ignore` glob patterns from `.brainbank/config.json`. Previously the watcher only used the hardcoded `IGNORE_DIRS` list. Added `matchesGlob()` utility to `languages.ts`, `ignore` option to `WatchOptions`, and pattern filtering for both events and directory traversal in the shared `fs.watch` tree
 - **TS5055 rebuild race** — `build:core` script now runs `rm -rf dist` before `tsup` to prevent `Cannot write file 'dist/index.d.ts' because it would overwrite input file` caused by the `node_modules/brainbank -> ..` symlink seeing its own prior DTS output
 - **MCP stdout pollution** — `builtin-registration.ts` warning and multi-repo detection messages changed from `console.log` to `console.error` (stderr), keeping stdout clean for structured data output
 - **Watch silent crash** — `brainbank watch` exited immediately when no plugins implemented `WatchablePlugin`. Added fallback recursive `fs.watch` for `IndexablePlugin`s (e.g. `@brainbank/code`) with debounced re-indexing and a keepalive interval to prevent Node from exiting
@@ -24,6 +31,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Docs always re-indexing** — `addCollection()` used `INSERT OR REPLACE` which SQLite implements as DELETE+INSERT, triggering `ON DELETE CASCADE` on `doc_chunks` and wiping all indexed data on every startup. Changed to `INSERT … ON CONFLICT DO UPDATE` (true upsert)
 - **IncrementalTracker** — New core primitive (`PluginContext.createTracker()`) that standardizes add/update/delete detection for plugin indexing. Shared `plugin_tracking` table with per-plugin namespacing. Docs plugin migrated to use it
 - **Index ignores config.plugins** — `brainbank index` now uses `config.plugins` from `.brainbank/config.json` as the source of truth for module selection, skipping the interactive prompt when a config exists
+- **Hot-reload key mismatch** — `bumpVersion()` used `baseType` ('code') but `_sharedHnsw` was keyed by full plugin name ('code:backend'), causing `_reloadIndex` to silently skip reloads. Fixed: version is now bumped per `mod.name`, and `_reloadIndex` matches by plugin name
+
+### Refactored
+- **ContextBuilder SRP** — Extracted BM25 boost, path filtering, and result keying to `src/search/bm25-boost.ts`. ContextBuilder is now a pure orchestrator with private `_appendFormatterResults` and `_appendSearchableResults` helpers
+- **HNSW sharing strategy documented** — Added explicit decision table to `getOrCreateSharedHnsw()` JSDoc showing key patterns and sharing behavior per plugin type
 
 ### Breaking Changes
 - **`DatabaseAdapter` replaces `Database`** — the core `Database` class (`src/db/database.ts`) has been replaced with a `DatabaseAdapter` interface (`src/db/adapter.ts`) + `SQLiteAdapter` implementation (`src/db/sqlite-adapter.ts`). All internal APIs, plugin schemas, and test helpers now use the adapter interface. Plugins should use `PluginContext['db']` type (which is now `DatabaseAdapter`). The `raw<T>()` escape hatch provides typed access to the underlying driver during the transition period. Public export changed: `Database` → `DatabaseAdapter` (type) + `SQLiteAdapter` (class)

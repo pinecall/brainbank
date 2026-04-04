@@ -41,7 +41,7 @@ export interface ICollection {
 export interface BrainBankConfig {
     /** Root path of the repository to index. Default: '.' */
     repoPath?: string;
-    /** SQLite database path. Default: '.brainbank/brainbank.db' */
+    /** SQLite database path. Default: '.brainbank/data/brainbank.db' */
     dbPath?: string;
 
     /** Max git commits to index. Default: 500 */
@@ -319,6 +319,8 @@ export interface ContextOptions {
     mmrLambda?: number;
     /** Filter results to files under this path prefix (e.g. 'src/services/'). */
     pathPrefix?: string;
+    /** File paths to exclude from results (e.g. files already returned in a previous query). */
+    excludeFiles?: Set<string>;
 }
 
 
