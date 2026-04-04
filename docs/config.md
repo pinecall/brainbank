@@ -37,6 +37,7 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
   // Global defaults
   "embedding": "local",
   "reranker": "qwen3",
+  "pruner": "haiku",
 
   // BrainBank constructor overrides
   "brainbank": {
@@ -54,15 +55,16 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
 
 ```
 .brainbank/
-├── brainbank.db        # SQLite database (auto-created)
-├── hnsw-kv.index       # HNSW graph for KV collections
-├── hnsw-code.index     # HNSW graph for code (shared across code:* plugins)
-├── hnsw-git.index      # HNSW graph for git (shared across git:* plugins)
-├── hnsw-docs.index     # HNSW graph for docs (shared across docs:* plugins)
 ├── config.json         # Project config (optional)
-└── plugins/            # Custom plugin files (optional, auto-discovered)
-    ├── notes.ts
-    └── csv.ts
+├── plugins/            # Custom plugin files (optional, auto-discovered)
+│   ├── notes.ts
+│   └── csv.ts
+└── data/               # All generated files (auto-created, gitignored)
+    ├── brainbank.db    # SQLite database
+    ├── hnsw-kv.index   # HNSW graph for KV collections
+    ├── hnsw-code.index # HNSW graph for code (shared across code:* plugins)
+    ├── hnsw-git.index  # HNSW graph for git
+    └── hnsw-docs.index # HNSW graph for docs
 ```
 
 ---
@@ -129,6 +131,7 @@ No config file? The CLI uses all built-in plugins with local embeddings — **ze
 | `BRAINBANK_DEBUG` | Show full stack traces in CLI errors |
 | `OPENAI_API_KEY` | Required when using `--embedding openai` |
 | `PERPLEXITY_API_KEY` | Required when using `--embedding perplexity` or `perplexity-context` |
+| `ANTHROPIC_API_KEY` | Required when using `--pruner haiku` |
 | `BRAINBANK_EMBEDDING` | Fallback embedding key (`local`, `openai`, `perplexity`, `perplexity-context`) |
 
 > **Recommended:** Set `"embedding"` in `.brainbank/config.json` instead of relying on env vars — the interactive `brainbank index` prompt saves it for you automatically.
@@ -137,5 +140,5 @@ No config file? The CLI uses all built-in plugins with local embeddings — **ze
 
 ## See Also
 
-- [Embeddings & Reranker](embeddings.md) — provider details, benchmarks, reranker config
+- [Embeddings, Reranker & Pruner](embeddings.md) — provider details, benchmarks, reranker & pruner config
 - [Plugins](plugins.md) — per-plugin embedding override

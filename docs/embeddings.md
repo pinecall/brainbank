@@ -1,4 +1,4 @@
-# Embeddings & Reranker
+# Embeddings, Reranker & Pruner
 
 ## Embedding Providers
 
@@ -242,6 +242,82 @@ const myReranker: Reranker = {
   async close() { /* optional cleanup */ },
 };
 ```
+
+---
+
+## Pruner (LLM Noise Filter)
+
+BrainBank ships with an optional **LLM-based noise filter** that post-processes search results before context formatting. It sends each result's file path, metadata, and a code preview (first 50 lines) to **Claude Haiku 4.5** for binary classification: keep or drop. **Disabled by default.**
+
+### How It Works
+
+```
+Search results (25 files)
+  │
+  ▼
+Haiku Pruner: "Is this file relevant to the query?"
+  │
+  ▼
+Filtered results (17 files) → ContextBuilder
+```
+
+The pruner runs **after** vector + BM25 search and path scoping, but **before** context formatting and deduplication. It fails open — if the API call fails, all results pass through unchanged.
+
+### When to Use It
+
+| Metric | Without Pruner | With Pruner |
+|--------|---------------|-------------|
+| **Latency** | — | +300-600ms |
+| **Precision** | Good (RRF) | Better — drops false positives |
+| **Cost** | Free | ~$0.001/query |
+
+**Recommended** for:
+- Context generation (`getContext()` / `brainbank context`) where every file counts
+- Large codebases where vector search returns tangentially related files
+- MCP tool calls where token budget is limited
+
+**Not needed** for:
+- Simple search queries where you review results manually
+- Small codebases (<100 files) with very targeted results
+
+### Enabling
+
+```typescript
+import { BrainBank, HaikuPruner } from 'brainbank';
+
+const brain = new BrainBank({
+  pruner: new HaikuPruner(),  // requires ANTHROPIC_API_KEY
+});
+```
+
+```bash
+# CLI
+brainbank context "auth middleware" --pruner haiku
+```
+
+```jsonc
+// .brainbank/config.json
+{ "pruner": "haiku" }
+```
+
+### Custom Pruner
+
+Implement the `Pruner` interface:
+
+```typescript
+import type { Pruner, PrunerItem } from 'brainbank';
+
+const myPruner: Pruner = {
+  async prune(query: string, items: PrunerItem[]): Promise<number[]> {
+    // Return array of item IDs to KEEP
+    // items have: id, filePath, preview, metadata
+    return items.filter(i => isRelevant(i)).map(i => i.id);
+  },
+  async close() { /* optional cleanup */ },
+};
+```
+
+> **Environment:** Requires `ANTHROPIC_API_KEY` env var. Model: `claude-haiku-4-5-20251001`.
 
 ---
 

@@ -94,7 +94,7 @@ Extensions that connect BrainBank to external tools and workflows.
 | **[Search](docs/search.md)** | Hybrid search, scoped queries, context generation |
 | **[Custom Plugins](docs/custom-plugins.md)** | Build plugins + publish as npm packages |
 | **[Configuration](docs/config.md)** | `.brainbank/config.json`, env vars |
-| **[Embeddings & Reranker](docs/embeddings.md)** | Providers, benchmarks, per-plugin overrides |
+| **[Embeddings, Reranker & Pruner](docs/embeddings.md)** | Providers, benchmarks, per-plugin overrides, LLM noise filter |
 | **[Multi-Repo](docs/multi-repo.md)** | Index multiple repositories into one DB |
 | **[MCP Server](docs/mcp.md)** | AI tool integration (stdio) |
 | **[Indexing](docs/indexing.md)** | Code graph, incremental indexing, re-embedding |

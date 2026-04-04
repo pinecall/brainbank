@@ -117,7 +117,7 @@ brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only
 brainbank hsearch "bug" --notes 5 --git 3            # custom plugin + git
 ```
 
-Any `--<name> <number>` flag not in the known non-source list (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--only`, `--docs`, `--mode`, `--limit`, `--ignore`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter. Source names that don't match a registered plugin are routed to KV collections.
+Any `--<name> <number>` flag not in the known non-source list (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--pruner`, `--only`, `--docs`, `--mode`, `--limit`, `--ignore`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter. Source names that don't match a registered plugin are routed to KV collections.
 
 Results are filtered to a minimum score of 70% and capped at 20 results in the CLI output.
 
@@ -129,6 +129,7 @@ Get formatted markdown context for a task, ready for system prompt injection:
 
 ```bash
 brainbank context <task>                    # Get formatted context for a task
+brainbank context <task> --pruner haiku     # With LLM noise filter (drops irrelevant results)
 brainbank context add <col> <path> <desc>   # Add context metadata for a path
 brainbank context list                      # List all context metadata entries
 ```
@@ -233,5 +234,6 @@ brainbank serve                             # Start MCP server (stdio, requires 
 | `--pattern <glob>` | File pattern for docs (default: `**/*.md`) |
 | `--context <desc>` | Context description |
 | `--reranker <name>` | Reranker (`qwen3`) |
+| `--pruner <name>` | LLM noise filter (`haiku`) — drops irrelevant results before formatting |
 | `--embedding <key>` | Embedding provider (`local`, `openai`, `perplexity`, `perplexity-context`) |
 | `--yes` / `--y` | Skip interactive prompts (auto-select all available) |

@@ -89,6 +89,7 @@ brain.hybridSearch('auth')
   │
   └── Reciprocal Rank Fusion (k=60, maxResults=15)
         └── Optional: Qwen3 Reranker (position-aware blend)
+        └── Optional: Pruner (LLM noise filter, e.g. Haiku)
 ```
 
 **Plugin-based discovery:** `createSearchAPI()` iterates over all registered plugins:
@@ -168,6 +169,9 @@ Reciprocal Rank Fusion (RRF, k=60, maxResults=15)
 Optional: Qwen3-Reranker (position-aware blend)
   │
   ▼
+Optional: Pruner (LLM noise filter — Haiku classifies keep/drop)
+  │
+  ▼
 Final results (sorted by blended score)
 ```
 
@@ -223,6 +227,6 @@ for (const r of results) {
 ## See Also
 
 - [Collections](collections.md) — per-collection search modes
-- [Embeddings & Reranker](embeddings.md) — reranker configuration and benchmarks
+- [Embeddings, Reranker & Pruner](embeddings.md) — reranker, pruner configuration and benchmarks
 - [Indexing](indexing.md) — code graph enrichment for better search
 - [Plugins](plugins.md) — how plugins contribute to search
