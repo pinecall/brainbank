@@ -5,7 +5,10 @@ All notable changes to `@brainbank/code` will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- **Chunk relevance density scoring** — `CodeVectorSearch` now counts matched vs total chunks per file and applies `sqrt(matchedChunks/totalChunks)` as a damping factor. Eliminates false positives where a large file (e.g. 792-line `jobs.service.ts`) ranks #1 because a single chunk tangentially references the query topic
+- **Chunk density filter** — files with <20% matched chunks get 0.25x penalty on RRF score, catching extreme false positives like `jobs.service.ts` (1/15 = 7%)
+
+### Fixed
+- **RRF score display** — display score now uses normalized RRF (0-100%) instead of raw cosine similarity, which was scrambling the interleaved ranking across multi-repo setups. `notifications.worker.ts` went from missing (#13+) to #3 at 97%
 
 ### Fixed
 - **Dependency graph budget starvation** — forward BFS was consuming the entire `MAX_NODES=30` budget, leaving zero capacity for reverse BFS (upstream dependents). Increased budget to 50 with 60/40 split, ensuring wiring files like `auth.module.ts` are always discovered

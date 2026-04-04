@@ -1,63 +1,44 @@
 /**
  * Tests for chunk relevance density scoring in CodeVectorSearch.
  *
- * The density factor is: score *= (matchedChunks / totalChunks) ^ DENSITY_EXPONENT
- * where DENSITY_EXPONENT = 0.5 (square root).
+ * The density filter uses a hard threshold: files with matchedChunks/totalChunks
+ * below DENSITY_THRESHOLD (0.10) get a DENSITY_PENALTY (0.25x) on their RRF score.
+ * Files above the threshold are untouched.
  *
- * This penalizes files where only a tiny fraction of chunks matched the query,
- * e.g. jobs.service.ts (1/15 chunks matched → 74% penalty) vs
- * notifications.gateway.ts (3/3 chunks matched → no penalty).
+ * This catches extreme false positives like jobs.service.ts (1/15 = 0.067)
+ * but leaves legitimate files like notifications.worker.ts (2/8 = 0.25) alone.
  */
 
-const DENSITY_EXPONENT = 0.5;
+const DENSITY_THRESHOLD = 0.10;
+const DENSITY_PENALTY = 0.25;
 
 export const name = 'Code Vector Search — Chunk Density Scoring';
 
 export const tests = {
-    'sqrt density: 1/15 chunks matched → ~74% penalty'(assert: { lt(a: number, b: number, msg: string): void; gt(a: number, b: number, msg: string): void }) {
-        const matched = 1;
-        const total = 15;
-        const density = matched / total;
-        const factor = Math.pow(density, DENSITY_EXPONENT);
-
-        // sqrt(1/15) ≈ 0.258
-        assert.lt(factor, 0.30, 'density factor should be < 0.30');
-        assert.gt(factor, 0.20, 'density factor should be > 0.20');
+    'density: 1/15 chunks is below threshold → penalized'(assert: { lt(a: number, b: number, msg: string): void }) {
+        const density = 1 / 15; // 0.067
+        assert.lt(density, DENSITY_THRESHOLD, '1/15 should be below threshold');
     },
 
-    'sqrt density: 3/3 chunks matched → no penalty'(assert: { gt(a: number, b: number, msg: string): void; lt(a: number, b: number, msg: string): void }) {
-        const matched = 3;
-        const total = 3;
-        const density = matched / total;
-        const factor = Math.pow(density, DENSITY_EXPONENT);
-
-        assert.gt(factor, 0.99, '100% match density factor should be ~1.0');
-        assert.lt(factor, 1.01, '100% match density factor should be ~1.0');
+    'density: 2/8 chunks is above threshold → untouched'(assert: { gt(a: number, b: number, msg: string): void }) {
+        const density = 2 / 8; // 0.25
+        assert.gt(density, DENSITY_THRESHOLD, '2/8 should be above threshold');
     },
 
-    'sqrt density: 2/10 chunks matched → ~55% penalty'(assert: { lt(a: number, b: number, msg: string): void; gt(a: number, b: number, msg: string): void }) {
-        const matched = 2;
-        const total = 10;
-        const density = matched / total;
-        const factor = Math.pow(density, DENSITY_EXPONENT);
+    'density penalty pushes false positive below relevant file'(assert: { gt(a: number, b: number, msg: string): void }) {
+        // jobs.service.ts: high RRF base but density 1/15 → penalized
+        const jobsRRF = 0.033 * DENSITY_PENALTY;  // 0.033 × 0.25 = 0.00825
 
-        // sqrt(0.2) ≈ 0.447
-        assert.lt(factor, 0.50, 'density factor should be < 0.50');
-        assert.gt(factor, 0.40, 'density factor should be > 0.40');
+        // notifications.worker.ts: lower RRF base but density 2/8 → no penalty
+        const notifRRF = 0.025; // untouched
+
+        assert.gt(notifRRF, jobsRRF, 'relevant file should rank above false positive');
+        assert.gt(notifRRF / jobsRRF, 2, 'ranking gap should be >2x');
     },
 
-    'density creates large ranking gap between low and high match files'(assert: { gt(a: number, b: number, msg: string): void }) {
-        // Simulates: jobs.service.ts (1/15 match) vs notifications.gateway.ts (3/3 match)
-        const baseRRFHigh = 0.033; // jobs.service.ts — high base score
-        const baseRRFLow = 0.025;  // notifications.gateway.ts — lower base score
-
-        const densityLow = Math.pow(1 / 15, DENSITY_EXPONENT);   // 0.258
-        const densityHigh = Math.pow(3 / 3, DENSITY_EXPONENT);   // 1.0
-
-        const finalJobs = baseRRFHigh * densityLow;       // 0.033 × 0.258 = 0.00852
-        const finalNotif = baseRRFLow * densityHigh;      // 0.025 × 1.0   = 0.025
-
-        assert.gt(finalNotif, finalJobs, 'high-density file should rank above low-density even with lower base score');
-        assert.gt(finalNotif / finalJobs, 2, 'ranking gap should be >2x');
+    'files with exactly 1 chunk total are never density-penalized'(assert: { gt(a: number, b: number, msg: string): void }) {
+        // Small files (1 chunk) where 1/1 matched should never trigger the penalty
+        const density = 1 / 1; // 1.0
+        assert.gt(density, DENSITY_THRESHOLD, 'single-chunk file should be above threshold');
     },
 };

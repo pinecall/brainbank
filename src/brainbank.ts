@@ -28,6 +28,7 @@ import type {
 } from './types.ts';
 
 import { EventEmitter } from 'node:events';
+import { readdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { resolveConfig } from './config.ts';
 import { HNSW } from './constants.ts';
@@ -296,51 +297,102 @@ export class BrainBank extends EventEmitter {
 
     /**
      * Build a compact project structure from indexed file paths.
-     * Returns a markdown-formatted tree (2 levels deep), or empty string for trivial layouts.
+     * Returns a markdown-formatted tree (3 levels deep), or empty string for trivial layouts.
+     * In multi-repo setups, scans all sub-repo DBs and prefixes paths with repo names.
      */
     projectStructure(): string {
         this._requireInit('projectStructure');
 
-        let rows: { file_path: string }[];
-        try {
-            rows = this._db.prepare(
-                "SELECT DISTINCT file_path FROM code_chunks WHERE chunk_type != 'synopsis'",
-            ).all() as { file_path: string }[];
-        } catch {
-            return '';
+        // Collect file paths: try main DB first, fall back to sub-repo DBs
+        const filePaths = this._collectFilePaths();
+        if (filePaths.length === 0) return '';
+
+        // Build 3-level tree: L1 → L2 → Set<L3>
+        // Only track directory segments (skip files at L2/L3 by checking for children)
+        const tree = new Map<string, Map<string, Set<string>>>();
+        for (const fp of filePaths) {
+            const parts = fp.split('/');
+            if (parts.length < 3) continue; // Skip root-level files
+            const l1 = parts[0];
+            const l2 = parts[1];
+            const l3 = parts.length > 3 ? parts[2] : null; // L3 is a dir only if there's a L4+
+
+            if (!tree.has(l1)) tree.set(l1, new Map());
+            const l2Map = tree.get(l1)!;
+            if (!l2Map.has(l2)) l2Map.set(l2, new Set());
+            if (l3) l2Map.get(l2)!.add(l3);
         }
 
-        if (rows.length === 0) return '';
+        // Skip trivial structures
+        const totalL2 = [...tree.values()].reduce((n, m) => n + m.size, 0);
+        if (totalL2 < 3) return '';
 
-        // Count files per top-level and second-level directory
-        const dirTree = new Map<string, Set<string>>();
-        for (const { file_path } of rows) {
-            const parts = file_path.split('/');
-            const topDir = parts.length > 1 ? parts[0] : '.';
-            const subDir = parts.length > 2 ? `${parts[0]}/${parts[1]}` : null;
-
-            if (!dirTree.has(topDir)) dirTree.set(topDir, new Set());
-            if (subDir) dirTree.get(topDir)!.add(subDir);
-        }
-
-        // Skip trivial structures (single top-level dir or root-only files)
-        if (dirTree.size < 2) return '';
-
+        const MAX_L2 = 12;
+        const MAX_L3 = 10;
         const lines: string[] = ['## Project Structure\n', '```'];
-        const sorted = [...dirTree.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-        for (const [topDir, subDirs] of sorted) {
-            lines.push(`${topDir}/`);
-            const sortedSubs = [...subDirs].sort().slice(0, 8);
-            for (const sub of sortedSubs) {
-                const subName = sub.split('/').pop() ?? sub;
-                lines.push(`  ${subName}/`);
+        for (const [l1, l2Map] of [...tree.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+            lines.push(`${l1}/`);
+            // Only show L2 dirs that have L3 children (actual subdirectories, not leaf files)
+            const l2Dirs = [...l2Map.entries()]
+                .filter(([, children]) => children.size > 0)
+                .sort((a, b) => a[0].localeCompare(b[0]));
+            const l2Show = l2Dirs.slice(0, MAX_L2);
+            for (const [l2, l3Set] of l2Show) {
+                lines.push(`  ${l2}/`);
+                const l3Sorted = [...l3Set].sort().slice(0, MAX_L3);
+                for (const l3 of l3Sorted) {
+                    lines.push(`    ${l3}/`);
+                }
+                if (l3Set.size > MAX_L3) {
+                    lines.push(`    ... +${l3Set.size - MAX_L3} more`);
+                }
             }
-            if (subDirs.size > 8) {
-                lines.push(`  ... +${subDirs.size - 8} more`);
+            if (l2Dirs.length > MAX_L2) {
+                lines.push(`  ... +${l2Dirs.length - MAX_L2} more`);
             }
         }
         lines.push('```\n');
         return lines.join('\n');
+    }
+
+    /**
+     * Gather distinct file paths from code_chunks tables.
+     * For multi-repo, scans all .db files in .brainbank/data/ and prefixes
+     * each path with the sub-repo name.
+     */
+    private _collectFilePaths(): string[] {
+
+        // Try main DB first
+        try {
+            const rows = this._db.prepare(
+                "SELECT DISTINCT file_path FROM code_chunks WHERE chunk_type != 'synopsis'",
+            ).all() as { file_path: string }[];
+            if (rows.length > 0) return rows.map(r => r.file_path);
+        } catch { /* no code_chunks table → multi-repo */ }
+
+        // Multi-repo: scan .brainbank/data/*.db for sub-repo databases
+        const dataDir = path.join(this._config.repoPath, '.brainbank', 'data');
+        let dbFiles: string[];
+        try {
+            dbFiles = readdirSync(dataDir).filter(f => f.endsWith('.db') && f !== 'brainbank.db');
+        } catch { return []; }
+
+        const allPaths: string[] = [];
+        for (const dbFile of dbFiles) {
+            const repoName = dbFile.replace(/\.db$/, '');
+            try {
+                const tmpDb = new SQLiteAdapter(path.join(dataDir, dbFile));
+                const rows = tmpDb.prepare(
+                    "SELECT DISTINCT file_path FROM code_chunks WHERE chunk_type != 'synopsis'",
+                ).all() as { file_path: string }[];
+                for (const r of rows) {
+                    allPaths.push(`${repoName}/${r.file_path}`);
+                }
+                tmpDb.close();
+            } catch { /* skip if no code_chunks */ }
+        }
+
+        return allPaths;
     }
 
     /** Start watching for changes and auto-re-index. */

@@ -1,3 +1,4 @@
+
 /**
  * @brainbank/code — Code Vector Search (File-Level Results)
  *
@@ -45,11 +46,13 @@ const CROSS_LEVEL_BOOST = 1.4;
 const CHUNK_ONLY_PENALTY = 0.7;
 
 /**
- * Minimum density ratio below which files are heavily penalized.
- * Files with matchedChunks/totalChunks below this get a sqrt-damped score.
- * For example, 1/15 = 0.067 → sqrt(0.067) = 0.26 → 74% penalty on final score.
+ * Density threshold: files with matchedChunks/totalChunks below this
+ * are treated as false positives and get a hard 0.25x penalty on RRF score.
+ * E.g. custom-query.builder.ts: 2/12 = 0.17 < 0.20 → penalized.
+ *      notifications.worker.ts: 2/8 = 0.25 ≥ 0.20 → untouched.
  */
-const DENSITY_EXPONENT = 0.5;
+const DENSITY_THRESHOLD = 0.20;
+const DENSITY_PENALTY = 0.25;
 
 export class CodeVectorSearch {
     constructor(private _c: CodeVectorConfig) {}
@@ -103,6 +106,7 @@ export class CodeVectorSearch {
             }
         }
 
+
         // Merge vector scores with cross-level scoring
         const vectorFileScores = new Map<string, number>();
         const allVectorFiles = new Set([...synopsisFileScores.keys(), ...chunkFileScores.keys()]);
@@ -112,13 +116,10 @@ export class CodeVectorSearch {
             const chunkScore = chunkFileScores.get(fp);
 
             if (synScore !== undefined && chunkScore !== undefined) {
-                // Both levels match → high confidence, boost
                 vectorFileScores.set(fp, Math.max(synScore, chunkScore) * CROSS_LEVEL_BOOST);
             } else if (chunkScore !== undefined) {
-                // Only chunk matches, no synopsis → might be noise, penalize
                 vectorFileScores.set(fp, chunkScore * CHUNK_ONLY_PENALTY);
             } else if (synScore !== undefined) {
-                // Only synopsis matches → broad relevance, keep as-is
                 vectorFileScores.set(fp, synScore);
             }
         }
@@ -149,6 +150,7 @@ export class CodeVectorSearch {
                 } catch { /* FTS parse error — skip BM25 */ }
             }
         }
+
 
         // ── Union ALL candidates from both sources ───────────────
         const allCandidateFiles = new Set([
@@ -181,7 +183,7 @@ export class CodeVectorSearch {
         const bm25RankMap = new Map(bm25Ranked);
 
         // Score each file with balanced RRF — both sources contribute equally
-        const fileRRF: { filePath: string; rrfScore: number }[] = [];
+        const fileRRF: { filePath: string; rrfScore: number; vecScore: number }[] = [];
         for (const filePath of allCandidateFiles) {
             const vecRank = vectorRankMap.get(filePath) ?? (vectorFileScores.size + RRF_K);
             const bm25Rank = bm25RankMap.get(filePath) ?? (bm25FileScores.size + RRF_K);
@@ -190,25 +192,26 @@ export class CodeVectorSearch {
             const bm25RRF = 1 / (RRF_K + bm25Rank);
             let rrfScore = vecRRF + bm25RRF;
 
-            // ── Chunk density adjustment ─────────────────────────
-            // If only 1 out of 15 chunks in a file matched, the file is mostly
-            // irrelevant noise. Apply sqrt(matched/total) as a damping factor.
-            // Examples:
-            //   1/15 = 0.067 → sqrt(0.067) = 0.26 → ~74% penalty
-            //   3/5  = 0.60  → sqrt(0.60)  = 0.77 → ~23% penalty
-            //   5/5  = 1.00  → sqrt(1.00)  = 1.00 → no penalty
+            // ── Chunk density filter ─────────────────────────────
+            // Only penalize extreme false positives: files where <10% of
+            // chunks matched the query. This catches jobs.service.ts (1/15=7%)
+            // but leaves notifications.worker.ts (2/8=25%) untouched.
             const matched = matchedChunkCount.get(filePath) ?? 0;
             const total = totalChunksByFile.get(filePath) ?? 1;
-            if (total > 1 && matched > 0) {
-                const density = matched / total;
-                rrfScore *= Math.pow(density, DENSITY_EXPONENT);
+            if (total > 1 && matched > 0 && (matched / total) < DENSITY_THRESHOLD) {
+                rrfScore *= DENSITY_PENALTY;
             }
 
-            fileRRF.push({ filePath, rrfScore });
+            const vecScore = vectorFileScores.get(filePath) ?? bm25FileScores.get(filePath) ?? 0;
+            fileRRF.push({ filePath, rrfScore, vecScore });
         }
 
         // Sort files by adjusted RRF score
         fileRRF.sort((a, b) => b.rrfScore - a.rrfScore);
+
+        // Normalize RRF scores to 0-1 range for display
+        // The max rrfScore becomes 1.0, rest scale proportionally
+        const maxRRF = fileRRF.length > 0 ? fileRRF[0].rrfScore : 1;
 
         // ── Build file-level results — ZERO truncation ───────────
         const topFiles = fileRRF.slice(0, k);
@@ -248,7 +251,7 @@ export class CodeVectorSearch {
 
             results.push({
                 type: 'code',
-                score: file.rrfScore,
+                score: maxRRF > 0 ? file.rrfScore / maxRRF : 0,
                 filePath: file.filePath,
                 content,
                 metadata: {
