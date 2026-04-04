@@ -209,10 +209,6 @@ export class CodeVectorSearch {
         // Sort files by adjusted RRF score
         fileRRF.sort((a, b) => b.rrfScore - a.rrfScore);
 
-        // Normalize RRF scores to 0-1 range for display
-        // The max rrfScore becomes 1.0, rest scale proportionally
-        const maxRRF = fileRRF.length > 0 ? fileRRF[0].rrfScore : 1;
-
         // ── Build file-level results — ZERO truncation ───────────
         const topFiles = fileRRF.slice(0, k);
         const filePaths = topFiles.map(f => f.filePath);
@@ -251,7 +247,7 @@ export class CodeVectorSearch {
 
             results.push({
                 type: 'code',
-                score: maxRRF > 0 ? file.rrfScore / maxRRF : 0,
+                score: file.rrfScore,
                 filePath: file.filePath,
                 content,
                 metadata: {

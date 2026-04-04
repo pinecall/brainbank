@@ -16,13 +16,12 @@ import type { SearchStrategy } from './types.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 
 import { isContextFormatterPlugin, isSearchable } from '@/plugin.ts';
-import { boostWithBM25, filterByPath } from './bm25-boost.ts';
+import { filterByPath } from './bm25-boost.ts';
 
 export class ContextBuilder {
     constructor(
         private _search: SearchStrategy | undefined,
         private _registry: PluginRegistry,
-        private _bm25?: SearchStrategy,
     ) {}
 
     /** Build a full context block for a task. Returns markdown for system prompt. */
@@ -30,7 +29,7 @@ export class ContextBuilder {
         const src = options.sources ?? {};
         const { minScore = 0.25, useMMR = true, mmrLambda = 0.7 } = options;
 
-        // 1. Primary: vector search
+        // 1. Primary: vector search (includes per-repo BM25 fusion internally)
         let results: SearchResult[] = this._search
             ? await this._search.search(task, {
                 sources: src,
@@ -38,12 +37,7 @@ export class ContextBuilder {
             })
             : [];
 
-        // 2. BM25 intersection boost
-        if (this._bm25) {
-            results = await boostWithBM25(results, this._bm25, task, src);
-        }
-
-        // 3. Path scoping
+        // 2. Path scoping
         results = filterByPath(results, options.pathPrefix);
 
         // 4. Exclude already-returned files (session dedup)
