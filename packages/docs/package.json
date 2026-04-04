@@ -3,15 +3,11 @@
     "version": "0.1.0",
     "description": "Document collection indexing plugin for BrainBank — smart markdown chunking + hybrid search",
     "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "src/index.ts",
     "exports": {
-        ".": {
-            "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
-        }
+        ".": "./src/index.ts"
     },
-    "files": ["dist"],
+    "files": ["src"],
     "scripts": {
         "build": "tsup"
     },

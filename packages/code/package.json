@@ -3,16 +3,12 @@
     "version": "0.1.0",
     "description": "Code indexing plugin for BrainBank — AST-aware chunking, import graph, and symbol extraction for 20+ languages",
     "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "src/index.ts",
     "exports": {
-        ".": {
-            "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
-        }
+        ".": "./src/index.ts"
     },
     "files": [
-        "dist/"
+        "src/"
     ],
     "scripts": {
         "build": "tsup"

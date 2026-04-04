@@ -28,8 +28,7 @@ import { existsSync } from 'node:fs';
 import { WorkspacePool } from './workspace-pool.js';
 import { createWorkspaceBrain, resolveRepoPath } from './workspace-factory.js';
 
-// Track which repos have had their project structure sent (first-call only)
-const structureSent = new Set<string>();
+
 
 // ── Multi-Workspace BrainBank Pool ─────────────────────
 
@@ -91,13 +90,7 @@ server.registerTool(
             pathPrefix: path,
         });
 
-        // Prepend project structure on first call for this repo
-        const isFirstCall = !structureSent.has(repoPath);
-        const structure = isFirstCall ? brainbank.projectStructure() : '';
-        if (isFirstCall) structureSent.add(repoPath);
-        const fullContext = structure ? `${structure}\n${context}` : context;
-
-        return { content: [{ type: 'text' as const, text: fullContext }] };
+        return { content: [{ type: 'text' as const, text: context }] };
     },
 );
 

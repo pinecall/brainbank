@@ -3,15 +3,11 @@
     "version": "0.1.0",
     "description": "Git history indexing plugin for BrainBank — commit search + co-edit analysis",
     "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "src/index.ts",
     "exports": {
-        ".": {
-            "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
-        }
+        ".": "./src/index.ts"
     },
-    "files": ["dist"],
+    "files": ["src"],
     "scripts": {
         "build": "tsup"
     },

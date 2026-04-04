@@ -205,6 +205,10 @@ export type SearchResultType = 'code' | 'commit' | 'document' | 'collection';
 export interface CodeResultMetadata {
     /** Database chunk ID (used by call graph annotations). */
     id?: number;
+    /** File path (may duplicate CodeResult.filePath for metadata-only access). */
+    filePath?: string;
+    /** Adjacent chunk IDs from the same file (used by context expansion). */
+    chunkIds?: number[];
     chunkType: string;
     name?: string;
     startLine: number;

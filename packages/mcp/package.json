@@ -3,10 +3,10 @@
     "version": "0.3.0",
     "description": "MCP (Model Context Protocol) server for BrainBank",
     "type": "module",
-    "main": "dist/mcp-server.js",
-    "bin": "dist/mcp-server.js",
+    "main": "src/mcp-server.ts",
+    "bin": "src/mcp-server.ts",
     "files": [
-        "dist/"
+        "src/"
     ],
     "scripts": {
         "build": "tsup"

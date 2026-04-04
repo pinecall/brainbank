@@ -8,8 +8,8 @@ All notable changes to `@brainbank/mcp` will be documented in this file.
 - **Removed 5 MCP tools**: `brainbank_search`, `brainbank_stats`, `brainbank_history`, `brainbank_collection`, `brainbank_workspaces`. Server now exposes only `brainbank_context` (primary) and `brainbank_index`
 - `brainbank_context` description updated to reference Workflow Trace output
 
-### Added
-- **Project structure summary** — prepends a compact 2-level directory tree on the first MCP call per session for project awareness
+### Removed
+- **Project structure summary** — removed compact directory tree prepend on first MCP call. Low signal-to-noise ratio in practice
 
 ### Removed
 - **Session-level deduplication** — removed automatic file tracking across calls. It accumulated files from ALL queries/conversations, progressively stripping the best results from subsequent searches. Dedup caused a 4/10 → 8/10 quality swing between identical queries

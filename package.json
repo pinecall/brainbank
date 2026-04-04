@@ -3,19 +3,16 @@
     "version": "0.8.0",
     "description": "Pluggable semantic memory for AI agents — hybrid search (vector + BM25) in a single SQLite file. Built-in code, git, and docs indexers. Bring your own.",
     "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "src/index.ts",
     "bin": {
-        "brainbank": "./dist/cli.js"
+        "brainbank": "./bin/brainbank.ts"
     },
     "exports": {
-        ".": {
-            "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
-        }
+        ".": "./src/index.ts"
     },
     "files": [
         "dist/",
+        "src/",
         "bin/",
         "LICENSE",
         "README.md",
@@ -28,8 +25,7 @@
         "prepublishOnly": "npm run build:core",
         "test": "node --import tsx test/run.ts",
         "test:integration": "node --import tsx test/run.ts --integration",
-        "test:verbose": "node --import tsx test/run.ts --verbose",
-        "dev": "tsx src/cli/index.ts"
+        "test:verbose": "node --import tsx test/run.ts --verbose"
     },
     "workspaces": [
         "packages/*"
