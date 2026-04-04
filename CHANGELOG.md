@@ -5,13 +5,20 @@ All notable changes to BrainBank will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Added
+- **HTTP daemon mode** — `brainbank serve --http` starts a lightweight JSON API server on `localhost:8181`. CLI `context` command auto-delegates to the running daemon (skips cold model loading). Supports multi-repo via `--repo` param per request. Daemon mode: `brainbank serve --http --daemon` (background fork, PID file at `~/.cache/brainbank/server.pid`). `brainbank serve stop` kills the daemon. `brainbank status` shows server state
+### Changed
+- **Source-first workspace** — all `package.json` files (root + `@brainbank/code`, `git`, `docs`, `mcp`) now point `main`/`exports` to `src/index.ts` instead of `dist/`. No builds needed during development — `tsx` resolves `.ts` imports at runtime. `dist/` is only generated for `npm publish` via `prepublishOnly`
+- **CLI bin shim** — `bin/brainbank.ts` replaces `dist/cli.js` as the CLI entry point. Uses `#!/usr/bin/env node --import tsx` to run TypeScript source directly
+- **Removed `dev` script** — no longer needed since the bin IS the dev entry point
+- **Deleted `typings/packages.d.ts`** — with source-first exports, TypeScript resolves types directly from `src/index.ts` in each package. The ambient declarations are no longer needed
 ### Changed
 - **`.brainbank/data/` directory** — All generated files (`.db`, `.index`, `.lock`) now live in `.brainbank/data/` instead of `.brainbank/` root. `config.json` and `plugins/` stay at `.brainbank/`
 - **`DocsPlugin.indexDocs()` return type** — now includes `removed` count for orphan cleanup tracking
 ### Added
 - **Chunk relevance density scoring** — Files where only a small fraction of chunks match the query are penalized via `sqrt(matchedChunks/totalChunks)`. Eliminates false positives like `jobs.service.ts` ranking #1 for "push notifications" when only 1 of 15 chunks is tangentially related
 - **Session-level deduplication** — MCP server tracks returned files across calls in a session. Previously-returned files are passed as `excludeFiles` and filtered out at the data level in `ContextBuilder`, preventing duplicate content from consuming the context window
-- **Project structure summary** — `BrainBank.projectStructure()` generates a compact 2-level directory tree from indexed file paths, prepended to the first MCP context call per session for project awareness
+- ~~**Project structure summary**~~ — Removed `BrainBank.projectStructure()` and the first-call directory tree prepend from MCP context. Low signal-to-noise ratio in practice
 - **`excludeFiles` context option** — `ContextOptions.excludeFiles?: Set<string>` filters out specified files before formatting in `ContextBuilder.build()`
 - **`repos` config field** — whitelist specific sub-repos in multi-repo setups (`"repos": ["backend", "frontend"]`). Omit to auto-detect all (default)
 - **`src/search/bm25-boost.ts`** — extracted `boostWithBM25`, `filterByPath`, `resultKey` from ContextBuilder into a standalone pure-function module with unit tests

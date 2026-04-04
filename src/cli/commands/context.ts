@@ -13,6 +13,7 @@
 
 import { c, args, stripFlags, getFlag, findDocsPlugin } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory/index.ts';
+import { tryServerContext } from '@/cli/server-client.ts';
 
 /** Parse --code N, --git N, --no-git, --no-code flags into sources map. */
 function parseContextFlags(): Record<string, number> {
@@ -93,9 +94,25 @@ export async function cmdContext(): Promise<void> {
         process.exit(1);
     }
 
-    const brain = await createBrain();
     const sources = parseContextFlags();
     const pathPrefix = getFlag('path');
+    const repo = getFlag('repo');
+
+    // Try HTTP server delegation first
+    const serverResult = await tryServerContext({
+        task,
+        repo: repo ?? process.cwd(),
+        sources: Object.keys(sources).length > 0 ? sources : undefined,
+        pathPrefix,
+    });
+
+    if (serverResult !== null) {
+        console.log(serverResult);
+        return;
+    }
+
+    // Fall back to local
+    const brain = await createBrain();
     const context = await brain.getContext(task, {
         sources: Object.keys(sources).length > 0 ? sources : undefined,
         pathPrefix,

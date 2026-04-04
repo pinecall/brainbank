@@ -18,7 +18,8 @@ BrainBank can be used entirely from the command line — no config file needed.
 | [`stats`](#utility) | Show index statistics |
 | [`reembed`](#utility) | Re-embed all vectors |
 | [`watch`](#watch-mode) | Auto re-index on changes (plugin-driven) |
-| [`serve`](#utility) | Start MCP server (stdio) |
+| [`serve`](#http-server) | Start HTTP daemon or MCP server |
+| [`status`](#http-server) | Show HTTP server status |
 
 ---
 
@@ -211,6 +212,51 @@ Watch mode delegates watching to each plugin. Plugins that implement `WatchableP
 
 ---
 
+## HTTP Server
+
+BrainBank includes a lightweight HTTP daemon that keeps models and indexes hot in memory. When the server is running, CLI `context` commands auto-delegate to it — skipping the cold-start cost of loading embeddings and HNSW indices.
+
+### Start / Stop
+
+```bash
+brainbank serve --http                      # Start HTTP server (foreground)
+brainbank serve --http --daemon             # Start as background daemon
+brainbank serve --http --port 9090          # Custom port (default: 8181)
+brainbank serve stop                        # Stop background daemon
+brainbank status                            # Show server state
+```
+
+### How Delegation Works
+
+When you run `brainbank context "task"`, the CLI:
+
+1. Checks if an HTTP server is running (via PID file at `~/.cache/brainbank/server.pid`)
+2. If running → sends the query to `POST http://localhost:<port>/context` → prints the result
+3. If not running → falls back to local mode (loads models, queries, then exits)
+
+### Multi-Repo
+
+A single server handles all repos. The `--repo` flag in each CLI call selects the workspace:
+
+```bash
+brainbank context "auth flow" --repo ~/aurora     # loads aurora workspace
+brainbank context "search bug" --repo ~/drift     # loads drift workspace
+```
+
+Workspaces are cached in memory with a 30-minute TTL.
+
+### HTTP API
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `GET` | `/health` | — | Server status (pid, port, uptime, workspaces) |
+| `POST` | `/context` | `{ task, repo?, sources?, pathPrefix? }` | Get formatted context |
+| `POST` | `/index` | `{ repo?, forceReindex? }` | Trigger re-indexing |
+
+> **Note:** The HTTP server is a core brainbank feature — no `@brainbank/mcp` dependency required.
+
+---
+
 ## Utility
 
 ```bash
@@ -236,4 +282,5 @@ brainbank serve                             # Start MCP server (stdio, requires 
 | `--reranker <name>` | Reranker (`qwen3`) |
 | `--pruner <name>` | LLM noise filter (`haiku`) — drops irrelevant results before formatting |
 | `--embedding <key>` | Embedding provider (`local`, `openai`, `perplexity`, `perplexity-context`) |
+| `--port <n>` | HTTP server port (default: `8181`) |
 | `--yes` / `--y` | Skip interactive prompts (auto-select all available) |

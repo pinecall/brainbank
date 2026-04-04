@@ -83,6 +83,9 @@ export type { WatchOptions } from './services/watch.ts';
 export { Watcher } from './services/watch.ts';
 export { WebhookServer } from './services/webhook-server.ts';
 export type { WebhookHandler } from './services/webhook-server.ts';
+export { HttpServer } from './services/http-server.ts';
+export type { HttpServerOptions } from './services/http-server.ts';
+export { isServerRunning, getServerUrl, readPid, writePid, removePid, DEFAULT_PORT } from './services/daemon.ts';
 
 // Reranker
 export { Qwen3Reranker } from './providers/rerankers/qwen3-reranker.ts';
