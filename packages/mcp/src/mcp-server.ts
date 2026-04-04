@@ -73,11 +73,10 @@ server.registerTool(
             docsResults: z.number().optional().describe('Max document results (omit to skip docs)'),
             sources: z.record(z.number()).optional().describe('Per-source result limits, overrides codeResults/gitResults/docsResults (e.g. { code: 10, git: 0, docs: 5 })'),
             path: z.string().optional().describe('Filter results to files under this path prefix (e.g. src/services/)'),
-            pruner: z.string().optional().describe('LLM noise filter to apply (e.g. "haiku"). Drops irrelevant results before formatting.'),
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
         }),
     },
-    async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, pruner, repo }) => {
+    async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, repo }) => {
         const repoPath = resolveRepoPath(repo);
         const brainbank = await getBrainBank(repo);
 
@@ -86,18 +85,10 @@ server.registerTool(
         if (docsResults !== undefined) base.docs = docsResults;
         const resolvedSources = sources ? { ...base, ...sources } : base;
 
-        // Resolve per-request pruner
-        let prunerInstance;
-        if (pruner === 'haiku') {
-            const { HaikuPruner } = await import('brainbank');
-            prunerInstance = new HaikuPruner();
-        }
-
         const context = await brainbank.getContext(task, {
             affectedFiles,
             sources: resolvedSources,
             pathPrefix: path,
-            pruner: prunerInstance,
         });
 
         // Prepend project structure on first call for this repo
