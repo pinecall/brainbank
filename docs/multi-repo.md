@@ -30,7 +30,7 @@ brainbank index ~/projects --depth 200
   Co-edit pairs: 1636
 ```
 
-All code, git history, and co-edit relationships go into **one** `.brainbank/brainbank.db` at the parent directory. Search returns results across all repositories:
+All code, git history, and co-edit relationships go into **one** `.brainbank/data/brainbank.db` at the parent directory. Search returns results across all repositories:
 
 ```bash
 brainbank hsearch "cancel job confirmation" --repo ~/projects

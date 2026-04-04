@@ -12,6 +12,7 @@
  */
 
 import { Watcher } from '../../../src/services/watch.ts';
+import { matchesGlob } from '../../../src/lib/languages.ts';
 import type { Plugin, WatchablePlugin, IndexablePlugin } from '../../../src/plugin.ts';
 import type { WatchEvent, WatchEventHandler, WatchHandle, WatchConfig } from '../../../src/types.ts';
 
@@ -266,4 +267,26 @@ export const tests = {
 
         await watcher.close();
     },
+
+    'matchesGlob matches double-star directory patterns'(assert: { (cond: unknown, msg?: string): void }) {
+        assert(matchesGlob('test/unit/foo.ts', ['test/**']), 'test/** should match test/unit/foo.ts');
+        assert(matchesGlob('dist/bundle.js', ['dist/**']), 'dist/** should match dist/bundle.js');
+        assert(!matchesGlob('src/index.ts', ['test/**']), 'test/** should NOT match src/index.ts');
+    },
+
+    'matchesGlob matches extension glob patterns'(assert: { (cond: unknown, msg?: string): void }) {
+        assert(matchesGlob('src/foo.test.ts', ['**/*.test.ts']), '**/*.test.ts should match src/foo.test.ts');
+        assert(matchesGlob('deep/nested/bar.spec.ts', ['**/*.spec.ts']), '**/*.spec.ts should match nested');
+        assert(!matchesGlob('src/foo.ts', ['**/*.test.ts']), '**/*.test.ts should NOT match src/foo.ts');
+    },
+
+    'matchesGlob returns false for empty patterns'(assert: { (cond: unknown, msg?: string): void }) {
+        assert(!matchesGlob('src/foo.ts', []), 'empty patterns should never match');
+    },
+
+    'matchesGlob matches exact paths'(assert: { (cond: unknown, msg?: string): void }) {
+        assert(matchesGlob('coverage/lcov.info', ['coverage/**']), 'coverage/** should match');
+        assert(matchesGlob('.brainbank/data/db.db', ['.brainbank/**']), '.brainbank/** should match');
+    },
 };
+

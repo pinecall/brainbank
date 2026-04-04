@@ -260,7 +260,7 @@ Each migration runs in its **own transaction**. If a migration fails, the databa
 ## Inspecting Plugin Versions
 
 ```sql
--- In .brainbank/brainbank.db
+-- In .brainbank/data/brainbank.db
 SELECT * FROM plugin_versions;
 
 -- plugin_name │ version │ applied_at

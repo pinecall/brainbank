@@ -19,7 +19,7 @@ export const tests = {
         const code = `export function hello() {\n  return 'world';\n}\n`;
         const chunks = await chunker.chunk('test.ts', code, 'typescript');
         assert.equal(chunks.length, 1);
-        assert.equal(chunks[0].chunkType, 'file');
+        assert.equal(chunks[0].chunkType, 'function');
         assert.equal(chunks[0].startLine, 1);
     },
 

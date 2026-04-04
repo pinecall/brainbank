@@ -46,7 +46,26 @@ export interface PluginContext {
     createHnsw(maxElements?: number, dims?: number, name?: string): Promise<HNSWIndex>;
     /** Load existing vectors from a SQLite vectors table into an HNSW index + cache. */
     loadVectors(table: string, idCol: string, hnsw: HNSWIndex, cache: Map<number, Float32Array>): void;
-    /** Get or create a shared HNSW index by type (e.g. 'code', 'git'). Optionally override dims for per-plugin embeddings. */
+    /**
+     * Get or create a shared HNSW index by key.
+     *
+     * **HNSW sharing strategies:**
+     * The `type` key determines sharing behavior. Two plugins that pass the
+     * same key share one HNSW index; different keys get separate indexes.
+     *
+     * | Plugin type | Key passed        | Sharing behavior                          |
+     * |------------|------------------|------------------------------------------|
+     * | git        | `'git'`           | All `git:*` repos share one HNSW          |
+     * | docs       | `'docs'`          | All docs share one HNSW                   |
+     * | code       | `this.name`       | Each `code:*` repo gets its own HNSW      |
+     *
+     * **Rule of thumb:**
+     * - Same key = shared index (saves memory, single search covers all)
+     * - Plugin name as key = per-repo index (avoids cross-repo noise)
+     *
+     * The key is also used for hot-reload (`ensureFresh`) and disk persistence
+     * (`hnsw-<key>.index`), so it must match the key used in `bumpVersion()`.
+     */
     getOrCreateSharedHnsw(type: string, maxElements?: number, dims?: number): Promise<{ hnsw: HNSWIndex; vecCache: Map<number, Float32Array>; isNew: boolean }>;
     /** Get or create a dynamic collection. */
     collection(name: string): ICollection;

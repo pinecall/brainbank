@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 export const DEFAULTS: ResolvedConfig = {
     repoPath: '.',
-    dbPath: '.brainbank/brainbank.db',
+    dbPath: '.brainbank/data/brainbank.db',
     gitDepth: 500,
     maxFileSize: 512_000,      // 500KB
     maxDiffBytes: 8192,
@@ -41,6 +41,7 @@ export function resolveConfig(partial: BrainBankConfig = {}): ResolvedConfig {
         maxElements:       partial.maxElements       ?? DEFAULTS.maxElements,
         embeddingProvider: partial.embeddingProvider,
         reranker: partial.reranker,
+        pruner: partial.pruner,
         webhookPort: partial.webhookPort,
     };
 }

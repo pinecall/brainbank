@@ -26,6 +26,7 @@ export function contextFromCLI(repoPath?: string): BrainContext {
         flags: {
             ignore: getFlag('ignore'),
             reranker: getFlag('reranker'),
+            pruner: getFlag('pruner'),
             embedding: getFlag('embedding'),
         },
     };

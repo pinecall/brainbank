@@ -303,7 +303,7 @@ function scanConfig(repoPath: string): ScanResult['config'] {
 
 /** Check DB existence and size. */
 function scanDb(repoPath: string): ScanResult['db'] {
-    const dbPath = path.join(repoPath, '.brainbank', 'brainbank.db');
+    const dbPath = path.join(repoPath, '.brainbank', 'data', 'brainbank.db');
     if (!fs.existsSync(dbPath)) return { exists: false, sizeMB: 0 };
 
     try {

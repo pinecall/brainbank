@@ -25,7 +25,7 @@ import type { WatchEvent, WatchHandle } from '@/types.ts';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isIndexable, isWatchable } from '@/plugin.ts';
-import { isSupported, isIgnoredDir } from '@/lib/languages.ts';
+import { isSupported, isIgnoredDir, matchesGlob } from '@/lib/languages.ts';
 
 /** Doc file extensions that the docs plugin indexes. */
 const DOC_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.rst']);
@@ -34,6 +34,8 @@ const DOC_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.rst']);
 export interface WatchOptions {
     /** Default debounce for plugins that don't specify watchConfig. Default: 2000 */
     debounceMs?: number;
+    /** Glob patterns to ignore (from config.json code.ignore). */
+    ignore?: string[];
     /** Called when a source triggers re-indexing. */
     onIndex?: (sourceId: string, pluginName: string) => void;
     /** Called on errors. */
@@ -155,6 +157,7 @@ export class Watcher {
      */
     private _startSharedFsWatch(plugins: Plugin[], repoPath: string): WatchHandle | null {
         const watchers: fs.FSWatcher[] = [];
+        const ignorePatterns = this._options.ignore ?? [];
 
         // Dedup: macOS fs.watch fires both 'change' + 'rename' for a single save.
         const recentEvents = new Map<string, number>();
@@ -176,6 +179,9 @@ export class Watcher {
                     const fullPath = path.join(dir, filename);
                     const relPath = path.relative(repoPath, fullPath);
                     const ext = path.extname(fullPath).toLowerCase();
+
+                    // Config ignore: skip files matching user-defined glob patterns
+                    if (ignorePatterns.length > 0 && matchesGlob(relPath, ignorePatterns)) return;
 
                     // Dedup: skip if we already saw this file within DEDUP_MS
                     const now = Date.now();
@@ -222,6 +228,9 @@ export class Watcher {
                     if (!entry.isDirectory()) continue;
                     if (isIgnoredDir(entry.name)) continue;
                     if (entry.name.startsWith('.')) continue;
+                    // Skip directories matching config ignore patterns
+                    const dirRel = path.relative(repoPath, path.join(dir, entry.name));
+                    if (ignorePatterns.length > 0 && matchesGlob(dirRel + '/', ignorePatterns)) continue;
                     watchDir(path.join(dir, entry.name));
                 }
             } catch {

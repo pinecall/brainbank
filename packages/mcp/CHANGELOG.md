@@ -9,8 +9,10 @@ All notable changes to `@brainbank/mcp` will be documented in this file.
 - `brainbank_context` description updated to reference Workflow Trace output
 
 ### Added
-- **Session-level deduplication** — tracks returned file paths per repo across calls in a session; passes them as `excludeFiles` to prevent duplicate content across consecutive queries
 - **Project structure summary** — prepends a compact 2-level directory tree on the first MCP call per session for project awareness
+
+### Removed
+- **Session-level deduplication** — removed automatic file tracking across calls. It accumulated files from ALL queries/conversations, progressively stripping the best results from subsequent searches. Dedup caused a 4/10 → 8/10 quality swing between identical queries
 - **`docsResults` param** on `brainbank_context` — explicit max document results, ensuring docs filtering works reliably across all MCP clients
 - **`sources` param** on `brainbank_context` — per-source result limits (e.g. `{ code: 10, git: 0, docs: 5 }`), overrides named params when present
 - **`path` param** on `brainbank_context` — filter results to files under a path prefix (e.g. `src/services/`)

@@ -18,7 +18,7 @@ import { createBrain } from '@/cli/factory/index.ts';
 function parseContextFlags(): Record<string, number> {
     const NON_SOURCE = new Set([
         'repo', 'depth', 'collection', 'pattern', 'context', 'name',
-        'keep', 'reranker', 'only', 'docs-path', 'mode', 'limit',
+        'keep', 'reranker', 'pruner', 'only', 'docs-path', 'mode', 'limit',
         'ignore', 'meta', 'k', 'yes', 'y', 'force', 'verbose', 'path',
     ]);
     const sources: Record<string, number> = {};

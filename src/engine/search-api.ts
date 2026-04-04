@@ -67,7 +67,7 @@ export function createSearchAPI(
 
     const bm25 = new CompositeBM25Search(registry);
 
-    const contextBuilder = new ContextBuilder(search, registry);
+    const contextBuilder = new ContextBuilder(search, registry, config.pruner);
 
     return new SearchAPI({
         search, bm25, registry, config,

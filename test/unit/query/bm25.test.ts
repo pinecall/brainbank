@@ -22,7 +22,7 @@ export const tests = {
     async 'FTS5 tables are created with schema v8'(assert: any) {
         const db = freshDb('bm25-test');
 
-        assert.equal(SCHEMA_VERSION, 8);
+        assert.equal(SCHEMA_VERSION, 9);
 
         const tables = db.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_%'"

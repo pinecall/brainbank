@@ -166,6 +166,9 @@ export class BrainBank extends EventEmitter {
         const reranker = this._config.reranker as { close?: () => void } | undefined;
         reranker?.close?.();
 
+        const pruner = this._config.pruner as { close?: () => void } | undefined;
+        pruner?.close?.();
+
         this._embedding?.close().catch(() => { });
         for (const db of this._repoDBs.values()) db.close();
         this._repoDBs.clear();

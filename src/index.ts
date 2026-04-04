@@ -49,6 +49,7 @@ export type {
     BrainBankConfig, ResolvedConfig,
     EmbeddingProvider,
     Reranker,
+    Pruner, PrunerItem,
     VectorIndex, SearchHit,
     CodeChunk,
     GitCommitRecord,
@@ -86,6 +87,11 @@ export type { WebhookHandler } from './services/webhook-server.ts';
 // Reranker
 export { Qwen3Reranker } from './providers/rerankers/qwen3-reranker.ts';
 export type { Qwen3RerankerOptions } from './providers/rerankers/qwen3-reranker.ts';
+
+// Pruner
+export { HaikuPruner } from './providers/pruners/haiku-pruner.ts';
+export type { HaikuPrunerOptions } from './providers/pruners/haiku-pruner.ts';
+export { pruneResults } from './lib/prune.ts';
 
 // Embedding resolver
 export { resolveEmbedding, providerKey } from './providers/embeddings/resolve.ts';

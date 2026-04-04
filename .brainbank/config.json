@@ -13,5 +13,6 @@
       ".brainbank/**"
     ]
   },
-  "embedding": "perplexity-context"
+  "embedding": "perplexity-context",
+  "pruner": "haiku"
 }

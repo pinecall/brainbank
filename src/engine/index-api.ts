@@ -66,8 +66,10 @@ export async function runIndex(deps: IndexDeps, options: {
 
         results[baseType] = mergeResult(results[baseType] as IndexResult | undefined, r);
 
-        // Bump version so other processes detect staleness
-        bumpVersion(deps.db, baseType);
+        // Bump version per plugin name (= HNSW key) so hot-reload resolves correctly.
+        // In multi-repo setups the HNSW key is the full name (e.g. 'code:backend'),
+        // not the base type ('code'). ensureFresh() matches against HNSW map keys.
+        bumpVersion(deps.db, mod.name);
     }
 
     // Save HNSW indices with file locking after all plugins complete

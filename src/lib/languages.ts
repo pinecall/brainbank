@@ -164,3 +164,17 @@ export function isIgnoredDir(dirName: string): boolean {
 export function isIgnoredFile(fileName: string): boolean {
     return IGNORE_FILES.has(fileName);
 }
+
+/** Check if a relative path matches any of the given glob patterns. */
+export function matchesGlob(relPath: string, patterns: string[]): boolean {
+    for (const pattern of patterns) {
+        const regex = pattern
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // escape regex specials (not * ?)
+            .replace(/\*\*/g, '\x00')               // placeholder for **
+            .replace(/\*/g, '[^/]*')                 // * = anything except /
+            .replace(/\?/g, '.')                     // ? = any single char
+            .replace(/\x00/g, '.*');                 // ** = anything including /
+        if (new RegExp(`^${regex}$`).test(relPath)) return true;
+    }
+    return false;
+}

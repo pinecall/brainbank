@@ -12,7 +12,7 @@ export const tests = {
         const cfg = resolveConfig();
         // repoPath is resolved to absolute, dbPath is relative to repoPath
         assert.equal(cfg.repoPath, path.resolve('.'));
-        assert.equal(cfg.dbPath, path.join(path.resolve('.'), '.brainbank/brainbank.db'));
+        assert.equal(cfg.dbPath, path.join(path.resolve('.'), '.brainbank/data/brainbank.db'));
         assert.equal(cfg.gitDepth, 500);
         assert.equal(cfg.maxFileSize, 512_000);
         assert.equal(cfg.hnswM, 16);

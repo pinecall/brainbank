@@ -21,6 +21,24 @@ trigger: always_on
 ## Documentation
 - Always update README.md, docs/architecture.md, and CHANGELOG.md when making changes that affect them
 - All code, comments, docs, and tests must be written in **English**
+- Update all necessary documentation to ensure consistency with the architecture.
+
+docs
+├── architecture.md
+├── benchmarks.md
+├── cli.md
+├── collections.md
+├── config.md
+├── custom-plugins.md
+├── embeddings.md
+├── getting-started.md
+├── indexing.md
+├── local-development.md
+├── mcp.md
+├── migrations.md
+├── multi-repo.md
+├── plugins.md
+└── search.md
 
 ## Permissions — NEVER Without Approval
 - `git commit` / `git push`

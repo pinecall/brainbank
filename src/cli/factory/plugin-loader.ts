@@ -112,6 +112,12 @@ export async function setupProviders(
         brainOpts.reranker = new Qwen3Reranker();
     }
 
+    const prunerFlag = flags?.pruner ?? (config?.pruner as string | undefined);
+    if (prunerFlag === 'haiku') {
+        const { HaikuPruner } = await import('@/providers/pruners/haiku-pruner.ts');
+        brainOpts.pruner = new HaikuPruner();
+    }
+
     const embFlag = flags?.embedding
         ?? (config?.embedding as string | undefined)
         ?? env?.BRAINBANK_EMBEDDING
