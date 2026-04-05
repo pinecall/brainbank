@@ -22,7 +22,7 @@ export async function cmdStatus(): Promise<void> {
 
     if (!info) {
         console.log(`\n  ${c.dim('HTTP Server:')} ${c.yellow('stopped')}\n`);
-        console.log(c.dim('  Start with: brainbank serve --http'));
+        console.log(c.dim('  Start with: brainbank daemon'));
         console.log('');
         return;
     }
@@ -41,7 +41,7 @@ export async function cmdStatus(): Promise<void> {
     } else {
         // PID file exists but server not responding
         console.log(`\n  ${c.dim('HTTP Server:')} ${c.yellow('stale')} (PID ${info.pid} not responding)`);
-        console.log(c.dim('  The PID file may be stale. Restart with: brainbank serve --http'));
+        console.log(c.dim('  The PID file may be stale. Restart with: brainbank daemon'));
         console.log('');
     }
 }

@@ -33,6 +33,20 @@ export class CompositeBM25Search implements SearchStrategy {
             if (k <= 0) continue;
 
             const hits = plugin.searchBM25(query, k);
+
+            // Multi-repo: prefix filePaths with sub-repo name (same as CompositeVectorSearch)
+            const colonIdx = plugin.name.indexOf(':');
+            if (colonIdx > 0) {
+                const subRepo = plugin.name.slice(colonIdx + 1);
+                for (const hit of hits) {
+                    if (hit.filePath) hit.filePath = `${subRepo}/${hit.filePath}`;
+                    const meta = hit.metadata as Record<string, unknown>;
+                    if (typeof meta.filePath === 'string') {
+                        meta.filePath = `${subRepo}/${meta.filePath}`;
+                    }
+                }
+            }
+
             results.push(...hits);
         }
 

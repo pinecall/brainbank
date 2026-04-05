@@ -41,6 +41,21 @@ export class CompositeVectorSearch implements SearchStrategy {
             if (k <= 0) continue;
             requestedK = Math.max(requestedK, k);
             const hits = strategy.search(queryVec, k, minScore, useMMR, mmrLambda, query);
+
+            // Multi-repo: prefix filePaths with sub-repo name so path filtering works
+            // e.g. strategy 'code:servicehub-backend' → filePath 'servicehub-backend/src/app.ts'
+            const colonIdx = name.indexOf(':');
+            if (colonIdx > 0) {
+                const subRepo = name.slice(colonIdx + 1);
+                for (const hit of hits) {
+                    if (hit.filePath) hit.filePath = `${subRepo}/${hit.filePath}`;
+                    const meta = hit.metadata as Record<string, unknown>;
+                    if (typeof meta.filePath === 'string') {
+                        meta.filePath = `${subRepo}/${meta.filePath}`;
+                    }
+                }
+            }
+
             allResults.push(...hits);
         }
 

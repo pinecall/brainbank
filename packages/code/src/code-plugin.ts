@@ -123,7 +123,12 @@ class CodePlugin implements Plugin {
         if (codeHits.length === 0) return;
 
         const codeGraph = new SqlCodeGraphProvider(this.db);
-        formatCodeContext(codeHits, parts, codeGraph);
+
+        // Multi-repo: extract sub-repo prefix from plugin name (e.g. 'code:backend' → 'backend')
+        const colonIdx = this.name.indexOf(':');
+        const pathPrefix = colonIdx > 0 ? this.name.slice(colonIdx + 1) : undefined;
+
+        formatCodeContext(codeHits, parts, codeGraph, pathPrefix);
     }
 
     /** BM25SearchPlugin — FTS5 keyword search across code chunks. */

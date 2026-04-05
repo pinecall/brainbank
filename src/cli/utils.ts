@@ -36,7 +36,7 @@ export function hasFlag(name: string): boolean {
 /** Known flags that take a value (--flag <value>). */
 const VALUE_FLAGS = new Set([
     'repo', 'depth', 'collection', 'pattern', 'context', 'name',
-    'keep', 'reranker', 'only', 'docs', 'path',
+    'keep', 'reranker', 'pruner', 'only', 'docs', 'path',
     'ignore', 'meta', 'k', 'mode', 'limit',
 ]);
 

@@ -5,8 +5,8 @@
  * Format: JSON { pid: number, port: number }
  *
  * Used by:
- *   - `brainbank serve --http` to write PID on start
- *   - `brainbank serve stop` to find and kill the daemon
+ *   - `brainbank daemon` to write PID on start
+ *   - `brainbank daemon stop` to find and kill the daemon
  *   - `brainbank status` to report server state
  *   - CLI commands to detect running server for delegation
  */

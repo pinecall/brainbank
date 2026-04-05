@@ -7,5 +7,9 @@ while [ -L "$SCRIPT" ]; do
   [ "${SCRIPT#/}" = "$SCRIPT" ] && SCRIPT="$DIR/$SCRIPT"
 done
 DIR="$(cd "$(dirname "$SCRIPT")" && pwd)"
+ROOT="$DIR/.."
 
-exec npx tsx "$DIR/../src/integrations/cli.ts" "$@"
+# Tell tsx where brainbank's tsconfig is (for @/ path aliases)
+export TSX_TSCONFIG_PATH="$ROOT/tsconfig.json"
+
+exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli/index.ts" "$@"

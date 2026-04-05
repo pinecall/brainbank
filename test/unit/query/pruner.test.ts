@@ -6,7 +6,7 @@
  *   - Pruner interface accepted in config
  *   - ContextBuilder filters noise via pruner
  *   - No pruner = all results pass through
- *   - Pruner receives trimmed previews
+ *   - Pruner receives full content (capped by char limit)
  */
 
 import type { SearchResult, PrunerItem } from '../../../src/types.ts';
@@ -114,7 +114,7 @@ export const tests = {
         assert.equal(formatter.captured.length, 3, 'without pruner, all results should pass');
     },
 
-    async 'pruneResults trims content to maxPreviewLines'(assert: { ok: (v: unknown, msg?: string) => void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
+    async 'pruneResults sends full content under char cap'(assert: { ok: (v: unknown, msg?: string) => void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
         let receivedItems: PrunerItem[] = [];
         const mockPruner = {
             async prune(_query: string, items: PrunerItem[]) {
@@ -123,17 +123,42 @@ export const tests = {
             },
         };
 
+        // 50 lines is well under 8K chars — should pass through fully
         const longContent = Array.from({ length: 50 }, (_, i) => `line ${i}`).join('\n');
         const results = [
             makeCodeResult('src/long.ts', 0.9, longContent),
             makeCodeResult('src/short.ts', 0.8, 'line 0\nline 1'),
         ];
 
-        await pruneResults('test', results, mockPruner, 5);
+        await pruneResults('test', results, mockPruner);
 
         assert.equal(receivedItems.length, 2, 'should pass 2 items');
-        assert.equal(receivedItems[0].preview.split('\n').length, 5, 'long content should be trimmed to 5 lines');
-        assert.equal(receivedItems[1].preview.split('\n').length, 2, 'short content should not be trimmed');
+        assert.equal(receivedItems[0].preview, longContent, 'content under char cap should pass through fully');
+        assert.equal(receivedItems[1].preview, 'line 0\nline 1', 'short content should pass through fully');
+    },
+
+    async 'pruneResults truncates oversized content with marker'(assert: { ok: (v: unknown, msg?: string) => void }) {
+        let receivedItems: PrunerItem[] = [];
+        const mockPruner = {
+            async prune(_query: string, items: PrunerItem[]) {
+                receivedItems = items;
+                return items.map(i => i.id);
+            },
+        };
+
+        // Generate content that exceeds 8K chars (~10K chars)
+        const hugeContent = Array.from({ length: 500 }, (_, i) => `// line ${i}: ${'x'.repeat(15)}`).join('\n');
+        const results = [
+            makeCodeResult('src/huge.ts', 0.9, hugeContent),
+            makeCodeResult('src/small.ts', 0.8, 'tiny'),
+        ];
+
+        await pruneResults('test', results, mockPruner);
+
+        assert.ok(receivedItems[0].preview.includes('[...'), 'oversized content should have omission marker');
+        assert.ok(receivedItems[0].preview.includes('lines omitted'), 'marker should mention lines omitted');
+        assert.ok(receivedItems[0].preview.length < hugeContent.length, 'preview should be shorter than original');
+        assert.ok(!receivedItems[1].preview.includes('[...'), 'small content should not be truncated');
     },
 
     async 'pruneResults with single result skips pruner'(assert: { ok: (v: unknown, msg?: string) => void }) {

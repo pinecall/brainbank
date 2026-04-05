@@ -26,6 +26,7 @@ export function formatCodeContext(
     codeHits: SearchResult[],
     parts: string[],
     codeGraph?: CodeGraphProvider,
+    pathPrefix?: string,
 ): void {
     if (codeHits.length === 0) return;
 
@@ -41,13 +42,13 @@ export function formatCodeContext(
     const seedIds = _collectChunkIds(codeHits);
 
     // 2. Expand multi-part hits: if "foo (part 5)" matched, fetch ±2 parts
-    const expandedHits = _expandAdjacentParts(codeHits, codeGraph);
+    const expandedHits = _expandAdjacentParts(codeHits, codeGraph, pathPrefix);
 
     // 3. Build the full call tree (recursive, no trimming)
     const callTree = seedIds.length > 0 ? codeGraph.buildCallTree(seedIds) : [];
 
     // 4. Flatten everything into a single ordered list
-    const allChunks = _buildFlatList(expandedHits, callTree);
+    const allChunks = _buildFlatList(expandedHits, callTree, pathPrefix);
 
     // 5. Render as a single flat section
     let currentFile = '';
@@ -87,12 +88,13 @@ export function formatCodeContext(
 
         parts.push(`**${label}**${suffix}`);
         parts.push('```' + (chunk.language || ''));
+        parts.push(`// ${chunk.filePath} L${chunk.startLine}-${chunk.endLine}`);
         parts.push(chunk.content);
         parts.push('```\n');
     }
 
     // 5. Compact dependency summary (just file names)
-    _renderDependencySummary(codeHits, parts, codeGraph);
+    _renderDependencySummary(codeHits, parts, codeGraph, pathPrefix);
 }
 
 // ── Types ───────────────────────────────────────────
@@ -118,6 +120,7 @@ interface FlatChunk {
 function _buildFlatList(
     codeHits: SearchResult[],
     callTree: CallTreeNode[],
+    pathPrefix?: string,
 ): FlatChunk[] {
     const seen = new Set<string>(); // key: filePath:startLine
     const result: FlatChunk[] = [];
@@ -167,7 +170,7 @@ function _buildFlatList(
             seen.add(k);
 
             result.push({
-                filePath: node.filePath,
+                filePath: pathPrefix ? `${pathPrefix}/${node.filePath}` : node.filePath,
                 name: node.name,
                 chunkType: node.chunkType,
                 startLine: node.startLine,
@@ -237,6 +240,7 @@ function _renderHitsFlat(codeHits: SearchResult[], parts: string[]): void {
 
         parts.push(`**${label}** — ${Math.round(hit.score * 100)}% match`);
         parts.push('```' + (m.language || ''));
+        parts.push(`// ${filePath} L${m.startLine}-${m.endLine}`);
         parts.push(hit.content);
         parts.push('```\n');
     }
@@ -249,8 +253,15 @@ function _renderDependencySummary(
     codeHits: SearchResult[],
     parts: string[],
     codeGraph: CodeGraphProvider,
+    pathPrefix?: string,
 ): void {
-    const hitFiles = new Set(codeHits.map(r => r.filePath).filter(Boolean) as string[]);
+    // Strip sub-repo prefix for DB lookup (DB stores unprefixed paths)
+    const strip = (fp: string) => pathPrefix && fp.startsWith(pathPrefix + '/') 
+        ? fp.slice(pathPrefix.length + 1) : fp;
+    const add = (fp: string) => pathPrefix ? `${pathPrefix}/${fp}` : fp;
+    const hitFiles = new Set(
+        codeHits.map(r => r.filePath).filter(Boolean).map(fp => strip(fp as string)),
+    );
     const graph = codeGraph.buildDependencyGraph(hitFiles);
 
     const nonSeed = graph.nodes.filter(n => !n.isSeed);
@@ -267,12 +278,12 @@ function _renderDependencySummary(
         (b.inDegree + b.outDegree) - (a.inDegree + a.outDegree);
 
     if (downstream.length > 0) {
-        const fileList = downstream.sort(sortByDegree).map(n => `\`${n.filePath}\``).join(', ');
+        const fileList = downstream.sort(sortByDegree).map(n => `\`${add(n.filePath)}\``).join(', ');
         parts.push(`**Dependencies** (${downstream.length} files imported by matched code): ${fileList}\n`);
     }
 
     if (upstream.length > 0) {
-        const fileList = upstream.sort(sortByDegree).map(n => `\`${n.filePath}\``).join(', ');
+        const fileList = upstream.sort(sortByDegree).map(n => `\`${add(n.filePath)}\``).join(', ');
         parts.push(`**Dependents** (${upstream.length} files that import matched code): ${fileList}\n`);
     }
 }
@@ -308,6 +319,7 @@ const MAX_ADJACENT_RADIUS = 2;
 function _expandAdjacentParts(
     codeHits: SearchResult[],
     codeGraph: CodeGraphProvider,
+    pathPrefix?: string,
 ): SearchResult[] {
     const expanded: SearchResult[] = [];
     const seenIds = new Set<number>();
@@ -334,7 +346,11 @@ function _expandAdjacentParts(
         // Fetch all sibling parts from DB
         const baseName = match[1];
         const hitPartNum = parseInt(match[2], 10);
-        const siblings = codeGraph.fetchAdjacentParts(hit.filePath, baseName);
+        // Strip sub-repo prefix for DB lookup (DB stores unprefixed paths)
+    const lookupPath = pathPrefix && hit.filePath.startsWith(pathPrefix + '/') 
+        ? hit.filePath.slice(pathPrefix.length + 1) 
+        : hit.filePath;
+    const siblings = codeGraph.fetchAdjacentParts(lookupPath, baseName);
 
         if (siblings.length <= 1) {
             // No siblings found — render as-is
@@ -363,7 +379,7 @@ function _expandAdjacentParts(
                 expanded.push({
                     type: 'code' as const,
                     content: sib.content,
-                    filePath: sib.filePath,
+                    filePath: pathPrefix ? `${pathPrefix}/${sib.filePath}` : sib.filePath,
                     score: -1, // sentinel: adjacent part (not a search hit)
                     metadata: {
                         id: sib.id,

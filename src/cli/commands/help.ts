@@ -34,11 +34,12 @@ export function showHelp(): void {
     console.log(`  ${c.cyan('stats')}                              Show index statistics`);
     console.log(`  ${c.cyan('reembed')}                            Re-embed all vectors`);
     console.log(`  ${c.cyan('watch')}                              Watch files, auto-re-index`);
-    console.log(`  ${c.cyan('serve')}                              Start MCP server (stdio)`);
-    console.log(`  ${c.cyan('serve --http')}                       Start HTTP daemon (foreground)`);
-    console.log(`  ${c.cyan('serve --http --daemon')}              Start HTTP daemon (background)`);
-    console.log(`  ${c.cyan('serve stop')}                         Stop background HTTP daemon`);
-    console.log(`  ${c.cyan('status')}                             Show HTTP server status`);
+    console.log(`  ${c.cyan('mcp')}                                Start MCP server (stdio)`);
+    console.log(`  ${c.cyan('daemon')}                             Start HTTP daemon (foreground)`);
+    console.log(`  ${c.cyan('daemon start')}                       Start HTTP daemon (background)`);
+    console.log(`  ${c.cyan('daemon stop')}                        Stop background daemon`);
+    console.log(`  ${c.cyan('daemon restart')}                     Restart background daemon`);
+    console.log(`  ${c.cyan('status')}                             Show daemon status`);
     console.log('');
     console.log(c.bold('Options:'));
     console.log(`  ${c.dim('--repo <path>')}           Repository path (default: .)`);
@@ -52,7 +53,7 @@ export function showHelp(): void {
     console.log(`  ${c.dim('--ignore <globs>')}        Ignore glob patterns for code indexing (comma-separated)`);
     console.log(`  ${c.dim('--yes / -y')}              Skip interactive prompt (auto-select all available)`);
     console.log(`  ${c.dim('--reranker <name>')}       Reranker to use (qwen3)`);
-    console.log(`  ${c.dim('--port <n>')}             HTTP server port (default: 8181)`);
+    console.log(`  ${c.dim('--port <n>')}              HTTP daemon port (default: 8181)`);
     console.log('');
     console.log(c.bold('Examples:'));
     console.log(c.dim('  brainbank index .'));
@@ -64,8 +65,7 @@ export function showHelp(): void {
     console.log(c.dim('  brainbank hsearch "auth" --code 0 --git 10           # git only'));
     console.log(c.dim('  brainbank search "handler" --git 0                   # code only'));
     console.log(c.dim('  brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only'));
-    console.log(c.dim('  brainbank hsearch "bug" --notes 5 --git 3            # custom plugin'));
-    console.log(c.dim('  brainbank context "add rate limiting to the API"'));
-    console.log(c.dim('  brainbank context "auth flow" --path src/services/'));
-    console.log(c.dim('  brainbank serve'));
+    console.log(c.dim('  brainbank context "auth flow" | pbcopy               # → clipboard'));
+    console.log(c.dim('  brainbank daemon start                               # background HTTP'));
+    console.log(c.dim('  brainbank mcp                                        # MCP stdio'));
 }

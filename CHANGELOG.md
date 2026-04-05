@@ -5,8 +5,14 @@ All notable changes to BrainBank will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Fixed
+- **Pruner false negatives** — `pruneResults()` now sends full file content to the pruner instead of truncating to 50 lines. For oversized files (>8K chars), keeps top 60% + bottom 25% with an omission marker (preserves imports AND key exports/functions). Previously, the pruner only saw imports and boilerplate, causing it to incorrectly drop relevant files. Haiku prompt also improved with stronger conservatism rules and metadata filtering (skips noisy fields like `chunkIds` and `rrfScore`)
+- **Multi-repo `path` filter broken** — `path` prefix filter (e.g. `path: "servicehub-backend/src"`) returned zero results because indexed file paths were relative to sub-repo roots (e.g. `src/app.ts`) without the sub-repo name. Now `CompositeVectorSearch` and `CompositeBM25Search` prefix all result paths with the sub-repo name from the plugin name (e.g. `code:servicehub-backend` → `servicehub-backend/src/app.ts`). Code context formatter, call tree, dependency summary, and adjacent parts all respect the prefix
+- **CLI `--pruner` flag leaked into query** — `pruner` was missing from `VALUE_FLAGS` in CLI utils, causing `--pruner haiku` to append "haiku" to the query text
+
 ### Added
-- **HTTP daemon mode** — `brainbank serve --http` starts a lightweight JSON API server on `localhost:8181`. CLI `context` command auto-delegates to the running daemon (skips cold model loading). Supports multi-repo via `--repo` param per request. Daemon mode: `brainbank serve --http --daemon` (background fork, PID file at `~/.cache/brainbank/server.pid`). `brainbank serve stop` kills the daemon. `brainbank status` shows server state
+- **HTTP daemon mode** — `brainbank daemon` starts a lightweight JSON API server on `localhost:8181`. CLI `context` command auto-delegates to the running daemon (skips cold model loading). Supports multi-repo via `--repo` param per request. Background mode: `brainbank daemon start`. `brainbank daemon stop` kills it. `brainbank status` shows daemon state
+- **`brainbank mcp`** — renamed from `brainbank serve`. Starts MCP stdio server (for AI clients). `brainbank serve` still works as alias
 ### Changed
 - **Source-first workspace** — all `package.json` files (root + `@brainbank/code`, `git`, `docs`, `mcp`) now point `main`/`exports` to `src/index.ts` instead of `dist/`. No builds needed during development — `tsx` resolves `.ts` imports at runtime. `dist/` is only generated for `npm publish` via `prepublishOnly`
 - **CLI bin shim** — `bin/brainbank.ts` replaces `dist/cli.js` as the CLI entry point. Uses `#!/usr/bin/env node --import tsx` to run TypeScript source directly

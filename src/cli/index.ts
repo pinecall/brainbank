@@ -16,7 +16,8 @@ import { cmdContext } from './commands/context.ts';
 import { cmdStats } from './commands/stats.ts';
 import { cmdReembed } from './commands/reembed.ts';
 import { cmdWatch } from './commands/watch.ts';
-import { cmdServe } from './commands/serve.ts';
+import { cmdMcp } from './commands/mcp.ts';
+import { cmdDaemon } from './commands/daemon.ts';
 import { cmdStatus } from './commands/status.ts';
 import { showHelp } from './commands/help.ts';
 
@@ -36,7 +37,9 @@ async function main(): Promise<void> {
         case 'stats':       return cmdStats();
         case 'reembed':     return cmdReembed();
         case 'watch':       return cmdWatch();
-        case 'serve':       return cmdServe();
+        case 'mcp':         return cmdMcp();
+        case 'serve':        return cmdMcp(); // backward compat
+        case 'daemon':      return cmdDaemon();
         case 'status':      return cmdStatus();
         case 'help':
         case '--help':

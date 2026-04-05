@@ -1008,14 +1008,20 @@ bm25-boost.ts — Pure functions
 **Pattern:** Optional post-search filter using Haiku 4.5
 
 The pruner runs **after** path scoping and **before** context formatting.
-Each search result is sent to Haiku with its file path, metadata, and a
-code preview (first 50 lines). Haiku returns which IDs to keep.
+Each search result is sent to Haiku with its file path, metadata, and **full
+file content** (capped at ~8K chars per item). For oversized files, the top
+60% + bottom 25% of lines are kept with an omission marker in between,
+preserving imports AND exports/key functions.
 
 ```
-pruneResults(pruner, query, results, { maxPreviewLines: 50 }):
-  items = results.map(r => { id, filePath, preview, metadata })
+pruneResults(query, results, pruner):
+  items = results.map(r => { id, filePath, preview: _buildPreview(content), metadata })
   keepIds = await pruner.prune(query, items)   ← Haiku API call
   return results.filter(r => keepIds.has(id))
+
+_buildPreview(content):
+  if content.length <= 8K chars → return as-is
+  else → top 60% + "[... N lines omitted ...]" + bottom 25%
 ```
 
 **Fail-open:** If the API call fails or returns invalid JSON, all results

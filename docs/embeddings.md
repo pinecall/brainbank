@@ -247,7 +247,7 @@ const myReranker: Reranker = {
 
 ## Pruner (LLM Noise Filter)
 
-BrainBank ships with an optional **LLM-based noise filter** that post-processes search results before context formatting. It sends each result's file path, metadata, and a code preview (first 50 lines) to **Claude Haiku 4.5** for binary classification: keep or drop. **Disabled by default.**
+BrainBank ships with an optional **LLM-based noise filter** that post-processes search results before context formatting. It sends each result's file path, metadata, and **full file content** (capped at ~8K chars per file) to **Claude Haiku 4.5** for binary classification: keep or drop. **Disabled by default.**
 
 ### How It Works
 

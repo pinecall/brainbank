@@ -18,8 +18,9 @@ BrainBank can be used entirely from the command line — no config file needed.
 | [`stats`](#utility) | Show index statistics |
 | [`reembed`](#utility) | Re-embed all vectors |
 | [`watch`](#watch-mode) | Auto re-index on changes (plugin-driven) |
-| [`serve`](#http-server) | Start HTTP daemon or MCP server |
-| [`status`](#http-server) | Show HTTP server status |
+| [`mcp`](#utility) | Start MCP server (stdio) |
+| [`daemon`](#http-daemon) | Start HTTP daemon |
+| [`status`](#http-daemon) | Show daemon status |
 
 ---
 
@@ -212,18 +213,19 @@ Watch mode delegates watching to each plugin. Plugins that implement `WatchableP
 
 ---
 
-## HTTP Server
+## HTTP Daemon
 
-BrainBank includes a lightweight HTTP daemon that keeps models and indexes hot in memory. When the server is running, CLI `context` commands auto-delegate to it — skipping the cold-start cost of loading embeddings and HNSW indices.
+BrainBank includes a lightweight HTTP daemon that keeps models and indexes hot in memory. When the daemon is running, CLI `context` commands auto-delegate to it — skipping the cold-start cost of loading embeddings and HNSW indices.
 
 ### Start / Stop
 
 ```bash
-brainbank serve --http                      # Start HTTP server (foreground)
-brainbank serve --http --daemon             # Start as background daemon
-brainbank serve --http --port 9090          # Custom port (default: 8181)
-brainbank serve stop                        # Stop background daemon
-brainbank status                            # Show server state
+brainbank daemon                            # Start daemon (foreground)
+brainbank daemon start                      # Start daemon (background)
+brainbank daemon start --port 9090          # Custom port (default: 8181)
+brainbank daemon stop                       # Stop background daemon
+brainbank daemon restart                    # Stop + start
+brainbank status                            # Show daemon state
 ```
 
 ### How Delegation Works
@@ -262,7 +264,7 @@ Workspaces are cached in memory with a 30-minute TTL.
 ```bash
 brainbank stats                             # Show index statistics
 brainbank reembed                           # Re-embed all vectors (after provider switch)
-brainbank serve                             # Start MCP server (stdio, requires @brainbank/mcp)
+brainbank mcp                               # Start MCP server (stdio, requires @brainbank/mcp)
 ```
 
 ---

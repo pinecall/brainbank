@@ -5,7 +5,7 @@
     "type": "module",
     "main": "src/index.ts",
     "bin": {
-        "brainbank": "./bin/brainbank.ts"
+        "brainbank": "./bin/brainbank"
     },
     "exports": {
         ".": "./src/index.ts"
@@ -20,12 +20,13 @@
     ],
     "scripts": {
         "postinstall": "rm -rf node_modules/brainbank && ln -s .. node_modules/brainbank",
+        "start": "bin/brainbank",
         "build": "rm -rf dist && tsup && npm run build --workspaces --if-present",
         "build:core": "rm -rf dist && tsup",
         "prepublishOnly": "npm run build:core",
         "test": "node --import tsx test/run.ts",
-        "test:integration": "node --import tsx test/run.ts --integration",
-        "test:verbose": "node --import tsx test/run.ts --verbose"
+        "link": "npm link",
+        "unlink": "npm unlink -g brainbank"
     },
     "workspaces": [
         "packages/*"
@@ -36,6 +37,10 @@
     "repository": {
         "type": "git",
         "url": "git+https://github.com/pinecall/brainbank.git"
+    },
+    "homepage": "https://github.com/pinecall/brainbank#readme",
+    "bugs": {
+        "url": "https://github.com/pinecall/brainbank/issues"
     },
     "keywords": [
         "ai",

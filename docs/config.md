@@ -95,6 +95,19 @@ Each plugin creates its own HNSW index with the correct dimensions. A plugin wit
 
 ---
 
+## Reranker & Pruner
+
+| Key | Options | Description |
+|-----|---------|-------------|
+| `reranker` | `"qwen3"` | Re-ranks search results using a cross-encoder model for better ordering |
+| `pruner` | `"haiku"` | LLM noise filter — drops irrelevant results before context formatting. Requires `ANTHROPIC_API_KEY` |
+
+Both are optional. Set in config or via CLI flags (`--reranker qwen3`, `--pruner haiku`).
+
+The pruner runs **after** search + path scoping, **before** formatting. Fails open — if the API call fails, all results pass through.
+
+> See [Embeddings, Reranker & Pruner](embeddings.md) for detailed pipeline diagrams and benchmarks.
+
 ## Custom Plugin Config
 
 Custom plugins auto-discovered from `.brainbank/plugins/` can have their own config section, matched by plugin name:
