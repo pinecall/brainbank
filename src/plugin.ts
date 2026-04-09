@@ -23,6 +23,7 @@ import type {
     EmbeddingProvider, SearchResult, IndexResult, ProgressCallback,
     ResolvedConfig, DocumentCollection, ICollection,
     WatchEventHandler, WatchHandle, WatchConfig,
+    ExpanderManifestItem,
 } from './types.ts';
 
 // Provided to each plugin during initialization.
@@ -215,10 +216,36 @@ export function isVectorSearchPlugin(p: Plugin): p is VectorSearchPlugin {
     return typeof (p as VectorSearchPlugin).createVectorSearch === 'function';
 }
 
+/** Describes a configurable context field that a plugin supports. */
+export interface ContextFieldDef {
+    /** Field name (e.g. 'lines', 'callTree', 'symbols'). Must be unique per plugin. */
+    name: string;
+    /** Accepted value type. 'object' allows nested config like `{ depth: 3 }`. */
+    type: 'boolean' | 'number' | 'object';
+    /** Default value (used when not specified in config or query). */
+    default: unknown;
+    /** Human-readable description for CLI --help and MCP tool descriptions. */
+    description: string;
+}
+
+/** Plugin that declares configurable context fields. */
+export interface ContextFieldPlugin extends Plugin {
+    /** Declare available context fields. Called once during setup. */
+    contextFields(): ContextFieldDef[];
+}
+
+/** Check if a plugin declares context fields. */
+export function isContextFieldPlugin(p: Plugin): p is ContextFieldPlugin {
+    return typeof (p as ContextFieldPlugin).contextFields === 'function';
+}
+
 /** Plugin that contributes sections to the context builder output. */
 export interface ContextFormatterPlugin extends Plugin {
-    /** Append formatted markdown sections to `parts`. */
-    formatContext(results: SearchResult[], parts: string[], options?: Record<string, unknown>): void;
+    /**
+     * Append formatted markdown sections to `parts`.
+     * `fields` contains resolved context fields (plugin defaults ← config ← per-query).
+     */
+    formatContext(results: SearchResult[], parts: string[], fields: Record<string, unknown>): void;
 }
 
 /** Check if a plugin provides context formatting. */
@@ -253,4 +280,27 @@ export interface BM25SearchPlugin extends Plugin {
 /** Check if a plugin provides BM25 keyword search. */
 export function isBM25SearchPlugin(p: Plugin): p is BM25SearchPlugin {
     return typeof (p as BM25SearchPlugin).searchBM25 === 'function';
+}
+
+/** Plugin that supports context expansion (provides manifest + resolves chunk IDs). */
+export interface ExpandablePlugin extends Plugin {
+    /**
+     * Build a manifest of candidate chunks for LLM expansion.
+     * Returns chunks from files NOT already in search results.
+     *
+     * @param excludeFilePaths File paths already present in search results — excluded from manifest.
+     * @param excludeIds       Chunk IDs already in search results — excluded from manifest.
+     */
+    buildManifest(excludeFilePaths: string[], excludeIds: number[]): ExpanderManifestItem[];
+    /**
+     * Resolve chunk IDs back into SearchResults.
+     * Called after the expander selects additional IDs.
+     */
+    resolveChunks(ids: number[]): SearchResult[];
+}
+
+/** Check if a plugin supports context expansion. */
+export function isExpandablePlugin(p: Plugin): p is ExpandablePlugin {
+    return typeof (p as ExpandablePlugin).buildManifest === 'function'
+        && typeof (p as ExpandablePlugin).resolveChunks === 'function';
 }

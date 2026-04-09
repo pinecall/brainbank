@@ -4,6 +4,25 @@ All notable changes to `@brainbank/code` will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Data objects respect `compact: false`** — removed index-time summarization of large data objects (e.g. XState machines, config constants). Previously, `_summarizeDataObject` replaced chunk content with a keys-only summary at index time, making it impossible to see the full body even with `compact: false`. Now data objects go through normal `_splitLargeBlock`, storing full content in the DB. The `compact` flag at render time controls display.
+- **Expander manifest sampling bias** — manifest query was `ORDER BY file_path LIMIT 300`, which systematically excluded files from the second half of the alphabet in large repos (e.g. `user.store.ts` starting with 'u' never made the manifest). Now uses `ROW_NUMBER() OVER (PARTITION BY file_path)` window function to sample up to 3 chunks per file, capped at 500 total, ensuring the manifest covers the entire codebase.
+
+### Added
+- **BrainBankQL context fields** — `ContextFieldPlugin` implementation declaring 5 configurable fields:
+  - `lines` — prefix each code line with source line number
+  - `callTree` — toggle on/off + configurable depth (`{ depth: N }`)
+  - `imports` — toggle dependency/import summary section
+  - `symbols` — symbol index for all matched files (from `code_symbols` table)
+  - `compact` — show only function/class signatures, skip bodies
+- **`fetchSymbolsForFiles()`** on `SqlCodeGraphProvider` — SQL query against `code_symbols` for symbol index rendering
+- **`buildCallTree()` depth param** — `maxDepth` parameter overrides the hardcoded `MAX_CALL_DEPTH`, allowing agents to control call tree traversal depth per query
+- **`ExpandablePlugin` implementation** — `buildManifest()` queries `code_chunks` for lightweight chunk descriptors; `resolveChunks()` fetches full content by IDs. Enables LLM-powered context expansion
+- **`fetchChunkManifest()` + `fetchChunksByIds()`** on `SqlCodeGraphProvider` — SQL queries for expander manifest building and chunk resolution
+
+### Fixed
+- **Expander manifest duplication** — `fetchChunkManifest()` used `WHERE file_path IN` (inclusive), returning chunks from files already in search results. Changed to `WHERE file_path NOT IN` (exclusive) so the manifest only contains chunks from unseen files. SQL capped at 300 rows. `buildManifest(excludeFilePaths, excludeIds)` signature updated
+
 ### Changed
 - **Concurrent file indexing (~10× speedup)** — files are now processed in parallel batches of 5 instead of sequentially. Additionally, the two `embedBatch` API calls per file (chunks + synopsis) are merged into a single call, halving round-trips. Net effect: ~10× faster indexing on API-based embedding providers
 

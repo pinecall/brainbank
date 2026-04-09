@@ -21,6 +21,8 @@ export interface ProjectConfig {
     maxFileSize?: number;
     indexers?: Plugin[];
     brainbank?: Partial<BrainBankConfig>;
+    /** Context field defaults (e.g. { lines: true, callTree: true, symbols: false }). */
+    context?: Record<string, unknown>;
     /** Per-plugin config sections (e.g. code, git, docs). */
     [pluginName: string]: unknown;
 }

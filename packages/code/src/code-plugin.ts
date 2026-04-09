@@ -14,7 +14,7 @@
  *     .use(code({ repoPath: './backend',  name: 'code:backend' }));
  */
 
-import type { Plugin, PluginContext, EmbeddingProvider, IndexResult, ProgressCallback, ReembedTable, SearchResult } from 'brainbank';
+import type { Plugin, PluginContext, ContextFieldDef, ExpanderManifestItem, EmbeddingProvider, IndexResult, ProgressCallback, ReembedTable, SearchResult } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 import { runPluginMigrations, sanitizeFTS, normalizeBM25, escapeLike } from 'brainbank';
 
@@ -117,8 +117,19 @@ class CodePlugin implements Plugin {
         }
     }
 
+    /** ContextFieldPlugin — declare available context fields. */
+    contextFields(): ContextFieldDef[] {
+        return [
+            { name: 'lines',    type: 'boolean', default: false, description: 'Prefix each code line with its source line number (e.g. 127| code)' },
+            { name: 'callTree', type: 'object',  default: true,  description: 'Include call tree expansion. Pass { depth: N } to control depth (default: 2)' },
+            { name: 'imports',  type: 'boolean', default: true,  description: 'Include dependency/import summary section' },
+            { name: 'symbols',  type: 'boolean', default: false, description: 'Append symbol index (all functions, classes, interfaces) for matched files' },
+            { name: 'compact',  type: 'boolean', default: false, description: 'Show only function/class signatures, skip bodies' },
+        ];
+    }
+
     /** ContextFormatterPlugin — format code results as unified workflow trace. */
-    formatContext(results: SearchResult[], parts: string[]): void {
+    formatContext(results: SearchResult[], parts: string[], fields: Record<string, unknown>): void {
         const codeHits = results.filter(r => r.type === 'code');
         if (codeHits.length === 0) return;
 
@@ -128,7 +139,42 @@ class CodePlugin implements Plugin {
         const colonIdx = this.name.indexOf(':');
         const pathPrefix = colonIdx > 0 ? this.name.slice(colonIdx + 1) : undefined;
 
-        formatCodeContext(codeHits, parts, codeGraph, pathPrefix);
+        formatCodeContext(codeHits, parts, codeGraph, pathPrefix, fields);
+    }
+
+    /** ExpandablePlugin — build lightweight manifest for expander (excludes already-matched content). */
+    buildManifest(excludeFilePaths: string[], excludeIds: number[]): ExpanderManifestItem[] {
+        const graph = new SqlCodeGraphProvider(this.db);
+        const chunks = graph.fetchChunkManifest(excludeFilePaths, excludeIds);
+        return chunks.map(c => ({
+            id: c.id,
+            filePath: c.filePath,
+            name: c.name,
+            chunkType: c.chunkType,
+            lines: `L${c.startLine}-L${c.endLine}`,
+        }));
+    }
+
+    /** ExpandablePlugin — resolve expanded chunk IDs back to SearchResults. */
+    resolveChunks(ids: number[]): SearchResult[] {
+        const graph = new SqlCodeGraphProvider(this.db);
+        const chunks = graph.fetchChunksByIds(ids);
+        return chunks.map(c => ({
+            type: 'code' as const,
+            score: -1, // marker: expansion-sourced, not search-ranked
+            filePath: c.filePath,
+            content: c.content,
+            metadata: {
+                id: c.id,
+                chunkType: c.chunkType,
+                name: c.name,
+                startLine: c.startLine,
+                endLine: c.endLine,
+                language: c.language,
+                filePath: c.filePath,
+                expandedBy: 'expander',
+            },
+        }));
     }
 
     /** BM25SearchPlugin — FTS5 keyword search across code chunks. */

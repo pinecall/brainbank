@@ -17,7 +17,7 @@
 import type { SearchResult } from 'brainbank';
 import { isCodeResult } from 'brainbank';
 
-import type { CodeGraphProvider, CallTreeNode, AdjacentPart } from './sql-code-graph.js';
+import type { CodeGraphProvider, CallTreeNode, AdjacentPart, SymbolInfo } from './sql-code-graph.js';
 
 // ── Public API ──────────────────────────────────────
 
@@ -27,14 +27,22 @@ export function formatCodeContext(
     parts: string[],
     codeGraph?: CodeGraphProvider,
     pathPrefix?: string,
+    fields: Record<string, unknown> = {},
 ): void {
     if (codeHits.length === 0) return;
+
+    const showLines = fields.lines === true;
+    const showImports = fields.imports !== false; // default: true
+    const showCallTree = fields.callTree !== false; // default: true
+    const callTreeDepth = _resolveCallTreeDepth(fields.callTree);
+    const showSymbols = fields.symbols === true;
+    const showCompact = fields.compact === true;
 
     parts.push('## Code Context\n');
 
     if (!codeGraph) {
         // No graph available — just render search hits
-        _renderHitsFlat(codeHits, parts);
+        _renderHitsFlat(codeHits, parts, showLines);
         return;
     }
 
@@ -45,7 +53,9 @@ export function formatCodeContext(
     const expandedHits = _expandAdjacentParts(codeHits, codeGraph, pathPrefix);
 
     // 3. Build the full call tree (recursive, no trimming)
-    const callTree = seedIds.length > 0 ? codeGraph.buildCallTree(seedIds) : [];
+    const callTree = (showCallTree && seedIds.length > 0)
+        ? codeGraph.buildCallTree(seedIds, callTreeDepth)
+        : [];
 
     // 4. Flatten everything into a single ordered list
     const allChunks = _buildFlatList(expandedHits, callTree, pathPrefix);
@@ -86,15 +96,29 @@ export function formatCodeContext(
             continue;
         }
 
+        // Compact mode: show only first signature line + symbol listing
+        if (showCompact && !isSearchHit) {
+            const sig = _extractSignature(chunk.content);
+            parts.push(`**${label}**${suffix} → \`${sig}\`\n`);
+            continue;
+        }
+
         parts.push(`**${label}**${suffix}`);
         parts.push('```' + (chunk.language || ''));
         parts.push(`// ${chunk.filePath} L${chunk.startLine}-${chunk.endLine}`);
-        parts.push(chunk.content);
+        parts.push(_formatContent(chunk.content, chunk.startLine, showLines));
         parts.push('```\n');
     }
 
-    // 5. Compact dependency summary (just file names)
-    _renderDependencySummary(codeHits, parts, codeGraph, pathPrefix);
+    // 6. Symbol index (if enabled)
+    if (showSymbols) {
+        _renderSymbolIndex(codeHits, parts, codeGraph, pathPrefix);
+    }
+
+    // 7. Compact dependency summary (just file names)
+    if (showImports) {
+        _renderDependencySummary(codeHits, parts, codeGraph, pathPrefix);
+    }
 }
 
 // ── Types ───────────────────────────────────────────
@@ -222,7 +246,7 @@ function _isInfraFile(filePath: string): boolean {
 // ── Fallback: no graph ──────────────────────────────
 
 /** Render search hits without graph enrichment. */
-function _renderHitsFlat(codeHits: SearchResult[], parts: string[]): void {
+function _renderHitsFlat(codeHits: SearchResult[], parts: string[], showLines: boolean): void {
     let currentFile = '';
     for (const hit of codeHits) {
         if (!isCodeResult(hit)) continue;
@@ -241,7 +265,7 @@ function _renderHitsFlat(codeHits: SearchResult[], parts: string[]): void {
         parts.push(`**${label}** — ${Math.round(hit.score * 100)}% match`);
         parts.push('```' + (m.language || ''));
         parts.push(`// ${filePath} L${m.startLine}-${m.endLine}`);
-        parts.push(hit.content);
+        parts.push(_formatContent(hit.content, m.startLine, showLines));
         parts.push('```\n');
     }
 }
@@ -443,7 +467,6 @@ function _extractOneLiner(content: string): string {
     const lines = content.split('\n');
 
     let inDocstring = false;
-
     for (const raw of lines) {
         const line = raw.trim();
 
@@ -469,4 +492,99 @@ function _extractOneLiner(content: string): string {
     }
 
     return 'pass';
+}
+
+// ── BrainBankQL Field Helpers ───────────────────────
+
+/**
+ * Format content with optional line number annotations.
+ * When `showLines` is true, each line is prefixed with its source line number:
+ *   127| export class PinecallAgent extends Agent {
+ *   128|     override model = "gpt-4.1-nano";
+ */
+function _formatContent(content: string, startLine: number, showLines: boolean): string {
+    if (!showLines) return content;
+
+    const lines = content.split('\n');
+    const maxLineNum = startLine + lines.length - 1;
+    const padWidth = String(maxLineNum).length;
+
+    return lines
+        .map((line, i) => `${String(startLine + i).padStart(padWidth)}| ${line}`)
+        .join('\n');
+}
+
+/**
+ * Resolve the callTree field value to a numeric depth.
+ * - `true` or `undefined` → default depth (undefined, use hardcoded)
+ * - `false` → 0 (disabled, handled by caller)
+ * - `{ depth: N }` → N
+ * - number → N
+ */
+function _resolveCallTreeDepth(value: unknown): number | undefined {
+    if (value === false || value === 0) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'object' && value !== null && 'depth' in value) {
+        return (value as { depth: number }).depth;
+    }
+    return undefined; // use default
+}
+
+/**
+ * Extract a compact signature from a chunk's content.
+ * Shows the first non-comment, non-blank line (typically the function/class declaration).
+ */
+function _extractSignature(content: string): string {
+    const lines = content.split('\n');
+    for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('//') || line.startsWith('#') || line.startsWith('/*') || line.startsWith('*')) continue;
+        if (line.startsWith('@')) continue;
+        return line.length > 100 ? line.slice(0, 97) + '...' : line;
+    }
+    return '...';
+}
+
+/**
+ * Render a symbol index section — all functions, classes, interfaces
+ * from matched files, grouped by file path.
+ */
+function _renderSymbolIndex(
+    codeHits: SearchResult[],
+    parts: string[],
+    codeGraph: CodeGraphProvider,
+    pathPrefix?: string,
+): void {
+    // Collect unique file paths from search hits
+    const strip = (fp: string) => pathPrefix && fp.startsWith(pathPrefix + '/')
+        ? fp.slice(pathPrefix.length + 1) : fp;
+    const add = (fp: string) => pathPrefix ? `${pathPrefix}/${fp}` : fp;
+
+    const filePaths = [...new Set(
+        codeHits
+            .filter(r => r.filePath)
+            .map(r => strip(r.filePath as string)),
+    )];
+
+    if (!('fetchSymbolsForFiles' in codeGraph)) return;
+    const symbols = (codeGraph as unknown as { fetchSymbolsForFiles(fps: string[]): SymbolInfo[] })
+        .fetchSymbolsForFiles(filePaths);
+
+    if (symbols.length === 0) return;
+
+    parts.push('---\n');
+    parts.push('## Symbol Index\n');
+
+    // Group by file
+    let currentFile = '';
+    for (const sym of symbols) {
+        const displayPath = add(sym.filePath);
+        if (displayPath !== currentFile) {
+            currentFile = displayPath;
+            parts.push(`### ${currentFile}`);
+        }
+        parts.push(`  ${sym.kind} ${sym.name} (L${sym.line})`);
+    }
+    parts.push('');
 }

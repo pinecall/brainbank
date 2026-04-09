@@ -26,14 +26,15 @@ export type {
     CoEditPlugin,
     ReembeddablePlugin, ReembedTable,
     DocsPlugin,
-    VectorSearchPlugin, ContextFormatterPlugin,
-    MigratablePlugin, BM25SearchPlugin,
+    VectorSearchPlugin, ContextFormatterPlugin, ContextFieldPlugin,
+    ContextFieldDef,
+    MigratablePlugin, BM25SearchPlugin, ExpandablePlugin,
 } from './plugin.ts';
 export {
     isIndexable, isSearchable, isWatchable,
     isDocsPlugin, isCoEditPlugin, isReembeddable,
-    isVectorSearchPlugin, isContextFormatterPlugin,
-    isMigratable, isBM25SearchPlugin,
+    isVectorSearchPlugin, isContextFormatterPlugin, isContextFieldPlugin,
+    isMigratable, isBM25SearchPlugin, isExpandablePlugin,
 } from './plugin.ts';
 
 // Constants (core-only)
@@ -50,6 +51,7 @@ export type {
     EmbeddingProvider,
     Reranker,
     Pruner, PrunerItem,
+    Expander, ExpanderManifestItem, ExpanderResult,
     VectorIndex, SearchHit,
     CodeChunk,
     GitCommitRecord,
@@ -95,6 +97,10 @@ export type { Qwen3RerankerOptions } from './providers/rerankers/qwen3-reranker.
 export { HaikuPruner } from './providers/pruners/haiku-pruner.ts';
 export type { HaikuPrunerOptions } from './providers/pruners/haiku-pruner.ts';
 export { pruneResults } from './lib/prune.ts';
+
+// Expander
+export { HaikuExpander } from './providers/pruners/haiku-expander.ts';
+export type { HaikuExpanderOptions } from './providers/pruners/haiku-expander.ts';
 
 // Embedding resolver
 export { resolveEmbedding, providerKey } from './providers/embeddings/resolve.ts';

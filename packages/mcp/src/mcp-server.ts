@@ -73,9 +73,16 @@ server.registerTool(
             sources: z.record(z.number()).optional().describe('Per-source result limits, overrides codeResults/gitResults/docsResults (e.g. { code: 10, git: 0, docs: 5 })'),
             path: z.string().optional().describe('Filter results to files under this path prefix (e.g. src/services/)'),
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
+            // BrainBankQL context fields
+            lines: z.boolean().optional().describe('Prefix each code line with its source line number (e.g. 127| code)'),
+            symbols: z.boolean().optional().describe('Append symbol index (all functions, classes, interfaces) for matched files'),
+            compact: z.boolean().optional().describe('Show only function/class signatures, skip bodies'),
+            callTree: z.union([z.boolean(), z.object({ depth: z.number() })]).optional().describe('Include call tree expansion. Pass { depth: N } to control depth'),
+            imports: z.boolean().optional().describe('Include dependency/import summary section'),
+            expander: z.boolean().optional().describe('Enable LLM-powered context expansion to discover related chunks not found by search'),
         }),
     },
-    async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, repo }) => {
+    async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, repo, lines, symbols, compact, callTree, imports, expander }) => {
         const repoPath = resolveRepoPath(repo);
         const brainbank = await getBrainBank(repo);
 
@@ -84,11 +91,21 @@ server.registerTool(
         if (docsResults !== undefined) base.docs = docsResults;
         const resolvedSources = sources ? { ...base, ...sources } : base;
 
+        // Build fields from explicit params (only include defined values)
+        const fields: Record<string, unknown> = {};
+        if (lines !== undefined) fields.lines = lines;
+        if (symbols !== undefined) fields.symbols = symbols;
+        if (compact !== undefined) fields.compact = compact;
+        if (callTree !== undefined) fields.callTree = callTree;
+        if (imports !== undefined) fields.imports = imports;
+        if (expander !== undefined) fields.expander = expander;
+
         const context = await brainbank.getContext(task, {
             affectedFiles,
             sources: resolvedSources,
             pathPrefix: path,
             source: 'mcp',
+            fields: Object.keys(fields).length > 0 ? fields : undefined,
         });
 
         return { content: [{ type: 'text' as const, text: context }] };

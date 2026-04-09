@@ -118,6 +118,17 @@ export async function setupProviders(
         brainOpts.pruner = new HaikuPruner();
     }
 
+    // Expander: automatically enabled when pruner is haiku (same API key), or explicit config
+    const expanderFlag = config?.expander as string | undefined;
+    if (expanderFlag === 'haiku' || (prunerFlag === 'haiku' && expanderFlag !== 'none')) {
+        try {
+            const { HaikuExpander } = await import('@/providers/pruners/haiku-expander.ts');
+            brainOpts.expander = new HaikuExpander();
+        } catch {
+            // Fail-open: if API key missing, skip expander silently
+        }
+    }
+
     const embFlag = flags?.embedding
         ?? (config?.embedding as string | undefined)
         ?? env?.BRAINBANK_EMBEDDING
@@ -126,5 +137,10 @@ export async function setupProviders(
         const provider = await resolveEmbeddingKey(embFlag);
         brainOpts.embeddingProvider = provider;
         brainOpts.embeddingDims = provider.dims;
+    }
+
+    // Context field defaults from config.json "context" section
+    if (config?.context) {
+        brainOpts.contextFields = config.context;
     }
 }

@@ -72,7 +72,7 @@ export function createSearchAPI(
     const bm25 = new CompositeBM25Search(registry);
 
     const rerankerName = config.reranker ? (config.reranker.constructor?.name ?? 'custom') : undefined;
-    const contextBuilder = new ContextBuilder(search, registry, config.pruner, embedding, rerankerName);
+    const contextBuilder = new ContextBuilder(search, registry, config.pruner, embedding, rerankerName, config.contextFields ?? {}, config.expander);
 
     return new SearchAPI({
         search, bm25, registry, config,

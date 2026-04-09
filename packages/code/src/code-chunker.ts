@@ -205,19 +205,7 @@ export class CodeChunker {
             return;
         }
 
-        // Large data object → single summary chunk
-        // Variables >3× MAX with very low code density (pure config/data literals)
-        if (category === 'variable' && nodeLines > this.MAX * 3) {
-            const start = outerNode.startPosition.row;
-            const end = outerNode.endPosition.row;
-            const blockLines = lines.slice(start, end + 1);
-            if (this._isDataObject(blockLines)) {
-                chunks.push(this._summarizeDataObject(filePath, blockLines, start, end, name, language));
-                return;
-            }
-        }
-
-        // Large non-class → split with overlap
+        // Large non-class → split with overlap (includes large data objects)
         if (nodeLines > this.MAX) {
             chunks.push(...this._splitLargeBlock(filePath, lines,
                 outerNode.startPosition.row, outerNode.endPosition.row,
@@ -365,63 +353,6 @@ export class CodeChunker {
             content,
             language,
         });
-    }
-
-    // ── Data-object detection ────────────────────────
-
-    /**
-     * Detect if a block is a pure data/config object (no logic, just nested literals).
-     * Low statement density (<5% code lines) indicates data, not logic.
-     */
-    private _isDataObject(blockLines: string[]): boolean {
-        let codeStatements = 0;
-        for (const raw of blockLines) {
-            const line = raw.trim();
-            if (!line || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) continue;
-            // Count lines that indicate real code statements (not data assignments)
-            if (
-                /\b(function|=>|if|else|for|while|switch|return|throw|try|catch|await|async|class|new )/.test(line)
-            ) {
-                codeStatements++;
-            }
-        }
-        const density = codeStatements / blockLines.length;
-        return density < 0.05;
-    }
-
-    /** Produce a single summary chunk for a large data object. */
-    private _summarizeDataObject(
-        filePath: string, blockLines: string[],
-        start: number, end: number,
-        name: string, language: string,
-    ): CodeChunk {
-        // Extract top-level keys from the object literal
-        const keys: string[] = [];
-        for (const raw of blockLines) {
-            const match = /^\s{2,4}['"]?([\w.\-/: ]+)['"]?\s*[:=]/.exec(raw);
-            if (match && !match[1].startsWith('//')) {
-                keys.push(match[1].trim());
-            }
-        }
-
-        const keySummary = keys.length > 0
-            ? keys.slice(0, 20).map(k => `  ${k}`).join('\n')
-            : '  // (nested data)';
-        const suffix = keys.length > 20 ? `\n  // ... and ${keys.length - 20} more` : '';
-
-        const content = `// Data object (${blockLines.length} lines) — exported constant\n` +
-            `${blockLines[0]?.trim() ?? name}\n` +
-            `// Top-level keys:\n${keySummary}${suffix}`;
-
-        return {
-            filePath,
-            chunkType: 'data',
-            name,
-            startLine: start + 1,
-            endLine: end + 1,
-            content,
-            language,
-        };
     }
 
     // ── Fallback: Generic sliding window ────────────

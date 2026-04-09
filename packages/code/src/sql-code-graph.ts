@@ -29,7 +29,7 @@ export interface CodeGraphProvider {
     buildDependencyGraph(seedFiles: Set<string>): DependencyGraph;
     fetchBestChunks(filePaths: string[]): CodeChunkSummary[];
     fetchCalledChunks(seedChunkIds: number[]): CalledChunk[];
-    buildCallTree(seedChunkIds: number[]): CallTreeNode[];
+    buildCallTree(seedChunkIds: number[], maxDepth?: number): CallTreeNode[];
     /** Fetch all sibling parts for a multi-part chunk (e.g. 'foo (part 2)' → all parts of foo). */
     fetchAdjacentParts(filePath: string, baseName: string): AdjacentPart[];
 }
@@ -101,8 +101,8 @@ export class SqlCodeGraphProvider implements CodeGraphProvider {
     }
 
     /** Build a recursive call tree from seed chunks. */
-    buildCallTree(seedChunkIds: number[]): CallTreeNode[] {
-        return buildCallTree(this._db, seedChunkIds);
+    buildCallTree(seedChunkIds: number[], maxDepth?: number): CallTreeNode[] {
+        return buildCallTree(this._db, seedChunkIds, maxDepth);
     }
 
     /** Fetch all sibling parts for a multi-part chunk. */
@@ -120,4 +120,118 @@ export class SqlCodeGraphProvider implements CodeGraphProvider {
             return [];
         }
     }
+
+    /** Fetch all symbols for a set of file paths. Returns symbols grouped by file. */
+    fetchSymbolsForFiles(filePaths: string[]): SymbolInfo[] {
+        if (filePaths.length === 0) return [];
+        try {
+            const ph = filePaths.map(() => '?').join(',');
+            return this._db.prepare(
+                `SELECT file_path AS filePath, name, kind, line
+                 FROM code_symbols
+                 WHERE file_path IN (${ph})
+                 ORDER BY file_path, line`
+            ).all(...filePaths) as SymbolInfo[];
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * Fetch lightweight chunk manifest for expansion candidates.
+     * Returns chunks from files NOT in excludeFilePaths and NOT in excludeIds.
+     *
+     * Uses windowed sampling: up to 3 chunks per file, ensuring the manifest
+     * covers the entire codebase instead of being biased toward alphabetically
+     * early files. Capped at 500 total rows for the LLM.
+     *
+     * @param excludeFilePaths File paths already in search results — skip entirely.
+     * @param excludeIds       Chunk IDs already in search results — skip individually.
+     */
+    fetchChunkManifest(excludeFilePaths: string[], excludeIds: number[]): ChunkManifestItem[] {
+        try {
+            const params: (string | number)[] = [];
+            const clauses: string[] = [];
+
+            if (excludeFilePaths.length > 0) {
+                const pathPh = excludeFilePaths.map(() => '?').join(',');
+                clauses.push(`file_path NOT IN (${pathPh})`);
+                params.push(...excludeFilePaths);
+            }
+
+            if (excludeIds.length > 0) {
+                const idPh = excludeIds.map(() => '?').join(',');
+                clauses.push(`id NOT IN (${idPh})`);
+                params.push(...excludeIds);
+            }
+
+            const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+
+            // Window function: rank chunks per file, take up to 3 per file.
+            // This ensures the manifest covers the full codebase instead of
+            // being biased toward alphabetically early files.
+            return this._db.prepare(
+                `SELECT id, filePath, name, chunkType, startLine, endLine
+                 FROM (
+                     SELECT id, file_path AS filePath, name, chunk_type AS chunkType,
+                            start_line AS startLine, end_line AS endLine,
+                            ROW_NUMBER() OVER (PARTITION BY file_path ORDER BY start_line) AS rn
+                     FROM code_chunks
+                     ${where}
+                 )
+                 WHERE rn <= 3
+                 ORDER BY filePath, startLine
+                 LIMIT 500`
+            ).all(...params) as ChunkManifestItem[];
+        } catch {
+            return [];
+        }
+    }
+
+    /** Fetch full chunk content by IDs. Used by the expander to resolve expansion IDs. */
+    fetchChunksByIds(ids: number[]): ExpandedChunk[] {
+        if (ids.length === 0) return [];
+        try {
+            const ph = ids.map(() => '?').join(',');
+            return this._db.prepare(
+                `SELECT id, file_path AS filePath, name, chunk_type AS chunkType,
+                        start_line AS startLine, end_line AS endLine,
+                        language, content
+                 FROM code_chunks
+                 WHERE id IN (${ph})`
+            ).all(...ids) as ExpandedChunk[];
+        } catch {
+            return [];
+        }
+    }
+}
+
+/** Symbol info from code_symbols table. */
+export interface SymbolInfo {
+    filePath: string;
+    name: string;
+    kind: string;
+    line: number;
+}
+
+/** Lightweight chunk descriptor for expander manifest. */
+export interface ChunkManifestItem {
+    id: number;
+    filePath: string;
+    name: string;
+    chunkType: string;
+    startLine: number;
+    endLine: number;
+}
+
+/** Full chunk data returned when resolving expansion IDs. */
+export interface ExpandedChunk {
+    id: number;
+    filePath: string;
+    name: string;
+    chunkType: string;
+    startLine: number;
+    endLine: number;
+    language: string;
+    content: string;
 }

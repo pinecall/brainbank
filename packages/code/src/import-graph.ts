@@ -277,9 +277,10 @@ const MAX_CALL_NODES = 40;
  * Only includes cross-file calls to avoid intra-file noise.
  * Deduplicates by chunk ID AND by function name (same-name classes across files).
  */
-export function buildCallTree(db: DbLike, seedChunkIds: number[]): CallTreeNode[] {
+export function buildCallTree(db: DbLike, seedChunkIds: number[], maxDepth?: number): CallTreeNode[] {
     if (seedChunkIds.length === 0) return [];
 
+    const effectiveDepth = maxDepth ?? MAX_CALL_DEPTH;
     const seenChunks = new Set<number>();
     /** Dedup by qualified name — e.g. "TranscriptBuffer" seen once, skip duplicates. */
     const seenNames = new Set<string>();
@@ -301,7 +302,7 @@ export function buildCallTree(db: DbLike, seedChunkIds: number[]): CallTreeNode[
     }
 
     function expand(callerChunkId: number, depth: number): CallTreeNode[] {
-        if (depth > MAX_CALL_DEPTH || totalNodes >= MAX_CALL_NODES) return [];
+        if (depth > effectiveDepth || totalNodes >= MAX_CALL_NODES) return [];
 
         try {
             const rows = db.prepare(

@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 ### Added
+- **BrainBankQL context fields** — GraphQL-inspired field system for context queries. Plugins declare configurable fields via `contextFields()`, resolved in 3 layers: plugin defaults ← `config.json` "context" ← per-query `fields`. Code plugin ships with 5 fields:
+  - `lines: true` — prefix each code line with its source line number (`127| code`)
+  - `callTree: false | { depth: N }` — toggle call tree expansion and control depth
+  - `imports: false` — toggle dependency/import summary section
+  - `symbols: true` — append symbol index (functions, classes, interfaces) for matched files
+  - `compact: true` — show only function/class signatures, skip bodies
+- **`ContextFieldDef` + `ContextFieldPlugin` interfaces** — new plugin capability for declaring configurable context fields. Exported from core: `ContextFieldDef`, `ContextFieldPlugin`, `isContextFieldPlugin`
+- **`fields` on `ContextOptions`** — per-request context field overrides (e.g. `{ lines: true, callTree: { depth: 3 } }`)
+- **`contextFields` on `ResolvedConfig`** — propagates `config.json` "context" section defaults through the config pipeline
+- **CLI context field flags** — `--lines`, `--symbols`, `--compact`, `--expander`, `--no-callTree`, `--no-imports`, `--callTree.depth=N`
+- **MCP context field params** — `lines`, `symbols`, `compact`, `callTree`, `imports`, `expander` params on `brainbank_context` tool
+- **`Expander` interface + `HaikuExpander`** — LLM-powered context expansion pipeline step. After search + pruning, reviews a manifest of available chunks in matched files and selects additional chunks to include. Uses Haiku 4.5 for fast, low-cost expansion (~$0.001/call). Fail-open on errors. Returns `ExpanderResult { ids, note? }` — the optional `note` is a brief LLM observation (e.g. "file X not found", "module Y is deprecated") appended as a final `## Expansion Notes` section
+- **`ExpandablePlugin` capability** — plugins implement `buildManifest()` + `resolveChunks()` to support expansion. Code plugin implements this for `code_chunks`
+- **`expander` on `ResolvedConfig`** — auto-enabled when pruner is `haiku` (same API key), or explicit `"expander": "haiku"` in config
 - **Query debug logger** — all search operations (`getContext`, `search`, `hybridSearch`, `searchBM25`) now log structured entries to `/tmp/brainbank.log`. Each entry includes: query text, embedding provider, pruner/reranker state, source attribution (`cli`/`mcp`/`daemon`/`api`), full result list with scores, pruned items, and wall-clock duration. Log auto-truncates at 10 MB (keeps newest half). New module: `src/lib/logger.ts`
 - **`source` field on `ContextOptions` and `SearchOptions`** — callers pass `'cli'`, `'mcp'`, `'daemon'`, or `'api'` so the log can attribute each query to its origin
 - **Pruner semantic ordering** — `Pruner.prune()` now returns IDs ordered by semantic relevance to the query (most relevant first). `pruneResults()` respects this order instead of preserving the original vector-score order. `HaikuPruner` prompt updated to rank results by how directly each file answers the query. Effectively combines noise filtering + semantic reranking in a single LLM call
@@ -19,6 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **CLI `--force` parsed as repo path** — `brainbank index --force` treated `--force` as a positional path argument, scanning `/cwd/--force` instead of the current directory. Fixed by using `stripFlags(args)` to extract positional arguments
 - **Pruner false negatives** — `pruneResults()` now sends full file content to the pruner instead of truncating to 50 lines. For oversized files (>8K chars), keeps top 60% + bottom 25% with an omission marker (preserves imports AND key exports/functions). Previously, the pruner only saw imports and boilerplate, causing it to incorrectly drop relevant files. Haiku prompt also improved with stronger conservatism rules and metadata filtering (skips noisy fields like `chunkIds` and `rrfScore`)
 - **Multi-repo `path` filter broken** — `path` prefix filter (e.g. `path: "servicehub-backend/src"`) returned zero results because indexed file paths were relative to sub-repo roots (e.g. `src/app.ts`) without the sub-repo name. Now `CompositeVectorSearch` and `CompositeBM25Search` prefix all result paths with the sub-repo name from the plugin name (e.g. `code:servicehub-backend` → `servicehub-backend/src/app.ts`). Code context formatter, call tree, dependency summary, and adjacent parts all respect the prefix
+- **Expander duplication** — `buildManifest()` queried chunks FROM the files already in search results, causing the expander to select redundant content from those same files. Flipped the semantics: manifest now queries chunks from files NOT in search results (`WHERE file_path NOT IN`). `ExpandablePlugin.buildManifest(excludeFilePaths, excludeIds)` signature updated; SQL capped at 300 rows
 - **CLI `--pruner` flag leaked into query** — `pruner` was missing from `VALUE_FLAGS` in CLI utils, causing `--pruner haiku` to append "haiku" to the query text
 
 ### Added

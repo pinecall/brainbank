@@ -98,6 +98,9 @@ export async function cmdContext(): Promise<void> {
     const pathPrefix = getFlag('path');
     const repo = getFlag('repo');
 
+    // Parse BrainBankQL field flags
+    const fields = parseFieldFlags();
+
     // Try HTTP server delegation first
     const serverResult = await tryServerContext({
         task,
@@ -117,7 +120,52 @@ export async function cmdContext(): Promise<void> {
         sources: Object.keys(sources).length > 0 ? sources : undefined,
         pathPrefix,
         source: 'cli',
+        fields: Object.keys(fields).length > 0 ? fields : undefined,
     });
     console.log(context);
     brain.close();
+}
+
+/** Parse BrainBankQL field flags: --lines, --symbols, --compact, --no-callTree, --callTree.depth=N, etc. */
+function parseFieldFlags(): Record<string, unknown> {
+    const FIELD_BOOLEANS = new Set(['lines', 'symbols', 'compact', 'expander']);
+    const FIELD_NEGATABLE = new Set(['callTree', 'imports']);
+    const fields: Record<string, unknown> = {};
+
+    for (let i = 0; i < args.length; i++) {
+        if (!args[i].startsWith('--')) continue;
+        const raw = args[i].slice(2);
+
+        // --no-callTree, --no-imports → set to false
+        if (raw.startsWith('no-')) {
+            const name = raw.slice(3);
+            if (FIELD_NEGATABLE.has(name)) {
+                fields[name] = false;
+            }
+            continue;
+        }
+
+        // --callTree.depth=4 → { depth: 4 }
+        const dotIdx = raw.indexOf('.');
+        if (dotIdx > 0) {
+            const fieldName = raw.slice(0, dotIdx);
+            const rest = raw.slice(dotIdx + 1);
+            const eqIdx = rest.indexOf('=');
+            if (eqIdx > 0) {
+                const key = rest.slice(0, eqIdx);
+                const val = parseInt(rest.slice(eqIdx + 1), 10);
+                if (!isNaN(val)) {
+                    fields[fieldName] = { [key]: val };
+                }
+            }
+            continue;
+        }
+
+        // --lines, --symbols, --compact, --expander → true
+        if (FIELD_BOOLEANS.has(raw)) {
+            fields[raw] = true;
+        }
+    }
+
+    return fields;
 }

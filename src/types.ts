@@ -66,8 +66,12 @@ export interface BrainBankConfig {
     reranker?: Reranker;
     /** Optional LLM noise filter — drops irrelevant results before formatting */
     pruner?: Pruner;
+    /** Optional LLM context expander — discovers additional relevant chunks after pruning */
+    expander?: Expander;
     /** Port for optional webhook server (enables push-based watch plugins). */
     webhookPort?: number;
+    /** Context field defaults from config.json "context" section. */
+    contextFields?: Record<string, unknown>;
 }
 
 export interface ResolvedConfig {
@@ -84,7 +88,10 @@ export interface ResolvedConfig {
     embeddingProvider?: EmbeddingProvider;
     reranker?: Reranker;
     pruner?: Pruner;
+    expander?: Expander;
     webhookPort?: number;
+    /** Context field defaults from config.json "context" section. */
+    contextFields?: Record<string, unknown>;
 }
 
 
@@ -134,6 +141,44 @@ export interface Pruner {
      *          (most relevant first). Everything else is dropped.
      */
     prune(query: string, items: PrunerItem[]): Promise<number[]>;
+    /** Release resources. */
+    close?(): Promise<void>;
+}
+
+/** Lightweight chunk descriptor for the expander manifest. */
+export interface ExpanderManifestItem {
+    /** Chunk ID (code_chunks.id) */
+    id: number;
+    /** File path */
+    filePath: string;
+    /** Chunk name (e.g. function/class name) */
+    name: string;
+    /** Chunk type (function, class, method, etc.) */
+    chunkType: string;
+    /** Line range (e.g. "L45-L89") */
+    lines: string;
+}
+
+/** Result from the expander: chunk IDs to add + optional free-text note. */
+export interface ExpanderResult {
+    /** Additional chunk IDs to splice into results. */
+    ids: number[];
+    /** Brief observation for the agent (e.g. "file X not found", "module Y is deprecated"). */
+    note?: string;
+}
+
+export interface Expander {
+    /**
+     * Given a task and a manifest of available chunks,
+     * return additional chunk IDs + an optional contextual note.
+     * Runs after pruning. Fail-open: errors return empty result.
+     *
+     * @param query - The search query / task description
+     * @param currentIds - IDs of chunks already in results (from search + prune)
+     * @param manifest - All available chunks (lightweight descriptors)
+     * @returns Chunk IDs to add + optional note
+     */
+    expand(query: string, currentIds: number[], manifest: ExpanderManifestItem[]): Promise<ExpanderResult>;
     /** Release resources. */
     close?(): Promise<void>;
 }
@@ -358,6 +403,12 @@ export interface ContextOptions {
     pruner?: Pruner;
     /** Caller origin for debug logging. */
     source?: 'cli' | 'mcp' | 'daemon' | 'api';
+    /**
+     * Context field overrides. Merged on top of config.json "context" defaults.
+     * Plugin-defined fields like `lines`, `callTree`, `symbols`, `compact`, `imports`.
+     * Example: `{ lines: true, callTree: { depth: 3 }, symbols: true }`
+     */
+    fields?: Record<string, unknown>;
 }
 
 
