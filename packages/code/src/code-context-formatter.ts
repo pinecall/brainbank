@@ -272,7 +272,8 @@ function _isTestFile(filePath: string): boolean {
 
 /**
  * Check if a file path is generic infrastructure (noise when shown as callee).
- * Logging, config, common utils are too generic to be useful in call trees.
+ * Logging, config, common utils, font loaders, plugin setup, and app bootstrap
+ * are too generic to be useful in call trees.
  */
 function _isInfraFile(filePath: string): boolean {
     const lower = filePath.toLowerCase();
@@ -280,7 +281,13 @@ function _isInfraFile(filePath: string): boolean {
         || lower.includes('/config/') || lower.includes('config.service')
         || lower.includes('/common/') || lower.includes('/shared/utils')
         || lower.includes('/interceptors/') || lower.includes('/guards/')
-        || lower.includes('/filters/') || lower.includes('/middleware/');
+        || lower.includes('/filters/') || lower.includes('/middleware/')
+        // Project bootstrap / plugin setup
+        || lower.includes('webfontloader') || lower.includes('fontloader')
+        || lower.includes('/polyfill') || lower.includes('polyfill.')
+        || lower.includes('/plugins/') || lower.includes('plugin-setup')
+        || lower.includes('vuetify.') || lower.includes('vite.config')
+        || lower.includes('webpack.config') || lower.includes('tsconfig');
 }
 
 // ── Fallback: no graph ──────────────────────────────
