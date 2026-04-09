@@ -54,15 +54,13 @@ export class HaikuPruner implements Pruner {
             `You are a precision search filter and ranker. You have the FULL source code of each file.\n` +
             `Return a JSON array of #IDs to KEEP, ordered by relevance (most relevant FIRST).\n\n` +
             `Rules:\n` +
-            `- Understand the SPECIFIC system/feature the query targets. Don't match on shared vocabulary alone.\n` +
-            `  Example: "snackbar toast notification" targets the toast popup system, NOT a notification center/bell icon.\n` +
-            `- KEEP files that directly implement, define types for, or configure the queried system.\n` +
-            `- KEEP files where the queried system is mounted, initialized, or composed.\n` +
-            `- DROP files that only CONSUME the system (e.g. a component that calls showNotification once but has 400 lines of unrelated logic).\n` +
-            `- DROP files that implement a DIFFERENT system sharing similar vocabulary.\n` +
-            `- DROP large files (>200 lines) where the query-relevant code is <5% of the file.\n` +
-            `- Aim for 40-70% keep rate. Returning fewer, highly relevant files is BETTER than returning many tangential ones.\n` +
-            `- ORDER: core implementation → types/config → mount points → peripheral.\n\n` +
+            `- Understand the SPECIFIC system/feature the query asks about.\n` +
+            `- KEEP files that implement, configure, or mount the queried system.\n` +
+            `- DROP files that implement a DIFFERENT system that happens to share vocabulary (e.g. "notification center" vs "toast notification").\n` +
+            `- DROP files that only CONSUME the queried API (e.g. one showError() call in 400 lines of unrelated CRUD).\n` +
+            `- DROP infrastructure/boilerplate files (font loaders, webpack config, etc.) unless they directly configure the queried feature.\n` +
+            `- Aim for 40-70% keep rate. Fewer, focused results are BETTER than many tangential ones.\n` +
+            `- ORDER: core implementation → types/config → mount points → consumers.\n\n` +
             `Respond with ONLY the JSON array. Example: [3, 0, 5, 1]`;
 
         try {
