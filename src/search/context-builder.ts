@@ -165,9 +165,17 @@ export class ContextBuilder {
     private async _expand(task: string, results: SearchResult[]): Promise<{ results: SearchResult[]; note?: string }> {
         if (!this._expander) return { results: [] };
 
-        // Collect unique file paths already in results (to exclude from manifest)
+        // Detect multi-repo prefix from results (e.g. 'servicehub-frontend')
+        // Results have prefixed filePaths like 'servicehub-frontend/src/...'
+        // but DB chunks have unprefixed paths like 'src/...'
+        const repoPrefix = this._detectRepoPrefix(results);
+
+        // Collect unique file paths already in results (strip repo prefix for DB match)
         const excludeFilePaths = [...new Set(
-            results.filter(r => r.filePath).map(r => r.filePath as string),
+            results.filter(r => r.filePath).map(r => {
+                const fp = r.filePath as string;
+                return repoPrefix && fp.startsWith(repoPrefix + '/') ? fp.slice(repoPrefix.length + 1) : fp;
+            }),
         )];
 
         // Collect current chunk IDs (to exclude from manifest)
@@ -178,31 +186,61 @@ export class ContextBuilder {
             if (id !== undefined) excludeIds.push(id);
         }
 
-        // Build manifest from all ExpandablePlugins (only chunks from NEW files)
+        // Build manifest + resolve from the MATCHING ExpandablePlugin only
+        // In multi-repo, expand only from the plugin whose name matches the result set's repo
         const manifest: ExpanderManifestItem[] = [];
+        let resolver: ((ids: number[]) => SearchResult[]) | undefined;
         for (const mod of this._registry.all) {
-            if (isExpandablePlugin(mod)) {
-                manifest.push(...mod.buildManifest(excludeFilePaths, excludeIds));
+            if (!isExpandablePlugin(mod)) continue;
+
+            // In multi-repo, only expand from the plugin matching the result set's repo
+            // e.g. 'code:servicehub-frontend' matches repoPrefix 'servicehub-frontend'
+            const colonIdx = mod.name.indexOf(':');
+            const pluginRepo = colonIdx > 0 ? mod.name.slice(colonIdx + 1) : undefined;
+            if (repoPrefix && pluginRepo && pluginRepo !== repoPrefix) continue;
+
+            manifest.push(...mod.buildManifest(excludeFilePaths, excludeIds));
+            if (!resolver) {
+                const prefix = pluginRepo;
+                resolver = (ids: number[]) => {
+                    const chunks = mod.resolveChunks(ids);
+                    // Add repo prefix back to resolved chunk filePaths
+                    if (prefix) {
+                        for (const chunk of chunks) {
+                            if (chunk.filePath) chunk.filePath = `${prefix}/${chunk.filePath}`;
+                            const meta = chunk.metadata as Record<string, unknown>;
+                            if (typeof meta.filePath === 'string') {
+                                meta.filePath = `${prefix}/${meta.filePath}`;
+                            }
+                        }
+                    }
+                    return chunks;
+                };
             }
         }
-        if (manifest.length === 0) return { results: [] };
+        if (manifest.length === 0 || !resolver) return { results: [] };
 
         // Call expander
         try {
             const expandResult = await this._expander.expand(task, excludeIds, manifest);
             if (expandResult.ids.length === 0) return { results: [], note: expandResult.note };
-
-            // Resolve IDs back to SearchResults from the first ExpandablePlugin
-            for (const mod of this._registry.all) {
-                if (isExpandablePlugin(mod)) {
-                    return { results: mod.resolveChunks(expandResult.ids), note: expandResult.note };
-                }
-            }
-            return { results: [], note: expandResult.note };
+            return { results: resolver(expandResult.ids), note: expandResult.note };
         } catch {
             // Fail-open: expansion errors are non-fatal
             return { results: [] };
         }
+    }
+
+    /** Detect the multi-repo prefix from existing results (e.g. 'servicehub-frontend'). */
+    private _detectRepoPrefix(results: SearchResult[]): string | undefined {
+        for (const r of results) {
+            if (!r.filePath) continue;
+            // Multi-repo filePaths look like 'servicehub-frontend/src/...'
+            // The repo prefix is the first path segment before 'src/'
+            const srcIdx = r.filePath.indexOf('/src/');
+            if (srcIdx > 0) return r.filePath.slice(0, srcIdx);
+        }
+        return undefined;
     }
 
     /** Collect results from SearchablePlugins that don't have their own formatter. */

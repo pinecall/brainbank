@@ -51,17 +51,19 @@ export class HaikuPruner implements Pruner {
 
         const prompt =
             `Query: "${query}"\n\nSearch results (full file content):\n${itemLines}\n\n` +
-            `You are a search result filter and ranker. You have access to the FULL source code of each file.\n` +
-            `Return a JSON array of #IDs to KEEP, ordered by relevance to the query (most relevant FIRST).\n\n` +
+            `You are a precision search filter and ranker. You have the FULL source code of each file.\n` +
+            `Return a JSON array of #IDs to KEEP, ordered by relevance (most relevant FIRST).\n\n` +
             `Rules:\n` +
-            `- ONLY drop files that are CLEARLY AND OBVIOUSLY unrelated to the query.\n` +
-            `- KEEP any file that mentions, implements, imports, configures, or tests anything related to the query — even indirectly.\n` +
-            `- KEEP types, interfaces, entities, configs, DTOs, modules, stores, services, and controllers that touch the query domain.\n` +
-            `- KEEP utility files if they contain functions used by the query domain.\n` +
-            `- When in doubt, ALWAYS KEEP. False negatives (dropping a relevant file) are FAR WORSE than false positives.\n` +
-            `- You should typically keep 80-100% of results. Only drop obvious noise.\n` +
-            `- ORDER by how directly each file answers or relates to the query. Core implementations first, then types/interfaces, then indirect/peripheral files last.\n\n` +
-            `Respond with ONLY the JSON array. Example: [3, 0, 5, 1, 8]`;
+            `- Understand the SPECIFIC system/feature the query targets. Don't match on shared vocabulary alone.\n` +
+            `  Example: "snackbar toast notification" targets the toast popup system, NOT a notification center/bell icon.\n` +
+            `- KEEP files that directly implement, define types for, or configure the queried system.\n` +
+            `- KEEP files where the queried system is mounted, initialized, or composed.\n` +
+            `- DROP files that only CONSUME the system (e.g. a component that calls showNotification once but has 400 lines of unrelated logic).\n` +
+            `- DROP files that implement a DIFFERENT system sharing similar vocabulary.\n` +
+            `- DROP large files (>200 lines) where the query-relevant code is <5% of the file.\n` +
+            `- Aim for 40-70% keep rate. Returning fewer, highly relevant files is BETTER than returning many tangential ones.\n` +
+            `- ORDER: core implementation → types/config → mount points → peripheral.\n\n` +
+            `Respond with ONLY the JSON array. Example: [3, 0, 5, 1]`;
 
         try {
             const response = await fetch('https://api.anthropic.com/v1/messages', {
