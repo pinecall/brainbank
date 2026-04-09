@@ -120,7 +120,7 @@ export class ContextBuilder {
         return parts.join('\n');
     }
 
-    /** Invoke ContextFormatterPlugins, deduplicating by base type for multi-repo. */
+    /** Invoke ContextFormatterPlugins. Multi-repo: each plugin formats its own results. */
     private _appendFormatterResults(
         results: SearchResult[],
         parts: string[],
@@ -129,13 +129,29 @@ export class ContextBuilder {
     ): void {
         const fields = resolvedFields ?? this._resolveFields(options);
         const seenFormatters = new Set<string>();
+
         for (const mod of this._registry.all) {
-            if (isContextFormatterPlugin(mod)) {
-                const baseType = mod.name.split(':')[0];
-                if (seenFormatters.has(baseType)) continue;
-                seenFormatters.add(baseType);
-                mod.formatContext(results, parts, fields);
+            if (!isContextFormatterPlugin(mod)) continue;
+            const baseType = mod.name.split(':')[0];
+
+            // Multi-repo plugin (e.g. 'code:servicehub-frontend'):
+            // scope results to this repo and let each plugin format its own
+            const colonIdx = mod.name.indexOf(':');
+            if (colonIdx > 0) {
+                const repoPrefix = mod.name.slice(colonIdx + 1);
+                const scoped = results.filter(r =>
+                    r.filePath?.startsWith(repoPrefix + '/'),
+                );
+                if (scoped.length > 0) {
+                    mod.formatContext(scoped, parts, fields);
+                }
+                continue;
             }
+
+            // Single-repo plugin: dedup by base type (old behavior)
+            if (seenFormatters.has(baseType)) continue;
+            seenFormatters.add(baseType);
+            mod.formatContext(results, parts, fields);
         }
     }
 
