@@ -5,7 +5,18 @@ All notable changes to BrainBank will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+### Added
+- **Query debug logger** — all search operations (`getContext`, `search`, `hybridSearch`, `searchBM25`) now log structured entries to `/tmp/brainbank.log`. Each entry includes: query text, embedding provider, pruner/reranker state, source attribution (`cli`/`mcp`/`daemon`/`api`), full result list with scores, pruned items, and wall-clock duration. Log auto-truncates at 10 MB (keeps newest half). New module: `src/lib/logger.ts`
+- **`source` field on `ContextOptions` and `SearchOptions`** — callers pass `'cli'`, `'mcp'`, `'daemon'`, or `'api'` so the log can attribute each query to its origin
+- **Pruner semantic ordering** — `Pruner.prune()` now returns IDs ordered by semantic relevance to the query (most relevant first). `pruneResults()` respects this order instead of preserving the original vector-score order. `HaikuPruner` prompt updated to rank results by how directly each file answers the query. Effectively combines noise filtering + semantic reranking in a single LLM call
+
+### Changed
+- **Config auto-generated on first index** — `brainbank index` no longer asks "Save selection to config.json?" — it just generates `.brainbank/config.json` automatically when one doesn't exist
+- **Pruner prompt in config setup** — config generation now prompts for noise pruner selection (none / haiku) alongside the embedding provider prompt
+
 ### Fixed
+- **Code plugin ghost files** — files deleted from disk were never removed from the index, causing stale chunks and vectors to accumulate. `CodeWalker.index()` now runs an orphan cleanup phase that compares `indexed_files` in DB against the current file walk and removes any entries not found on disk. CLI output shows `N removed` when orphans are cleaned up. `IndexResult` type extended with optional `removed` field
+- **CLI `--force` parsed as repo path** — `brainbank index --force` treated `--force` as a positional path argument, scanning `/cwd/--force` instead of the current directory. Fixed by using `stripFlags(args)` to extract positional arguments
 - **Pruner false negatives** — `pruneResults()` now sends full file content to the pruner instead of truncating to 50 lines. For oversized files (>8K chars), keeps top 60% + bottom 25% with an omission marker (preserves imports AND key exports/functions). Previously, the pruner only saw imports and boilerplate, causing it to incorrectly drop relevant files. Haiku prompt also improved with stronger conservatism rules and metadata filtering (skips noisy fields like `chunkIds` and `rrfScore`)
 - **Multi-repo `path` filter broken** — `path` prefix filter (e.g. `path: "servicehub-backend/src"`) returned zero results because indexed file paths were relative to sub-repo roots (e.g. `src/app.ts`) without the sub-repo name. Now `CompositeVectorSearch` and `CompositeBM25Search` prefix all result paths with the sub-repo name from the plugin name (e.g. `code:servicehub-backend` → `servicehub-backend/src/app.ts`). Code context formatter, call tree, dependency summary, and adjacent parts all respect the prefix
 - **CLI `--pruner` flag leaked into query** — `pruner` was missing from `VALUE_FLAGS` in CLI utils, causing `--pruner haiku` to append "haiku" to the query text
@@ -103,7 +114,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **CLI plugin loading** — replaced individual `loadCodePlugin`/`loadGitPlugin`/`loadDocsPlugin` with generic `PLUGIN_LOADERS` registry map. New `loadPlugin(name)` is the single entry point
 - **CLI builtin registration** — `registerBuiltins()` now iterates `pluginNames: string[]` generically. Per-plugin config resolved via `pluginCfg(config, name)` helper. Multi-repo support uses `MULTI_REPO_PLUGINS` set
 - **CLI scan** — `scanRepo()` returns `modules: ScanModule[]` instead of hardcoded fields. Each scanner produces a generic module descriptor with name, availability, summary, and details
-- **CLI commands** — `printScanTree()`, `promptModules()`, `buildDefaultModules()`, `offerSaveConfig()` all iterate modules generically
+- **CLI commands** — `printScanTree()`, `promptModules()`, `buildDefaultModules()`, `saveConfig()` all iterate modules generically
 - **CLI stats** — `cmdStats()` iterates `Object.entries(brain.stats())` dynamically instead of accessing hardcoded keys
 - **CLI DocsPlugin access** — `docs.ts`, `collection.ts`, `context.ts` use shared `findDocsPlugin(brain)` utility with `isDocsPlugin()` type guard instead of `brain.plugin<DocsPlugin>('docs')`
 - **`plugin-loader.ts`** — merged `provider-setup.ts` functionality (`setupProviders`, `resolveEmbeddingKey`). Added `registerPluginLoader()` for custom plugin loaders

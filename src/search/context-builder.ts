@@ -12,23 +12,29 @@
  * Plugin-agnostic — discovers formatters from ContextFormatterPlugin.
  */
 
-import type { ContextOptions, Pruner, SearchResult } from '@/types.ts';
+import type { ContextOptions, EmbeddingProvider, Pruner, SearchResult } from '@/types.ts';
 import type { SearchStrategy } from './types.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 
 import { isContextFormatterPlugin, isSearchable } from '@/plugin.ts';
 import { filterByPath } from './bm25-boost.ts';
 import { pruneResults } from '@/lib/prune.ts';
+import { logQuery } from '@/lib/logger.ts';
+import type { QueryLogResult } from '@/lib/logger.ts';
+import { providerKey } from '@/lib/provider-key.ts';
 
 export class ContextBuilder {
     constructor(
         private _search: SearchStrategy | undefined,
         private _registry: PluginRegistry,
         private _pruner?: Pruner,
+        private _embedding?: EmbeddingProvider,
+        private _rerankerName?: string,
     ) {}
 
     /** Build a full context block for a task. Returns markdown for system prompt. */
     async build(task: string, options: ContextOptions = {}): Promise<string> {
+        const t0 = Date.now();
         const src = options.sources ?? {};
         const { minScore = 0.25, useMMR = true, mmrLambda = 0.7 } = options;
 
@@ -45,6 +51,7 @@ export class ContextBuilder {
 
         // 3. LLM noise pruning (optional — per-request override or construction-time)
         const pruner = options.pruner ?? this._pruner;
+        const beforePrune = results;
         if (pruner && results.length > 1) {
             results = await pruneResults(task, results, pruner);
         }
@@ -58,6 +65,28 @@ export class ContextBuilder {
         const parts: string[] = [`# Context for: "${task}"\n`];
         this._appendFormatterResults(results, parts, options);
         await this._appendSearchableResults(task, src, minScore, parts);
+
+        // ── Log ──
+        const prunedResults = pruner
+            ? beforePrune.filter(r => !results.includes(r))
+            : [];
+        logQuery({
+            source: options.source ?? 'api',
+            method: 'getContext',
+            query: task,
+            embedding: this._embedding ? providerKey(this._embedding) : 'unknown',
+            pruner: pruner ? _prunerName(pruner) : null,
+            reranker: this._rerankerName ?? null,
+            options: {
+                sources: src,
+                pathPrefix: options.pathPrefix,
+                minScore,
+                affectedFiles: options.affectedFiles,
+            },
+            results: results.map(_toLogResult),
+            pruned: prunedResults.length > 0 ? prunedResults.map(_toLogResult) : undefined,
+            durationMs: Date.now() - t0,
+        });
 
         return parts.join('\n');
     }
@@ -101,3 +130,18 @@ export class ContextBuilder {
     }
 }
 
+// ── Helpers ──────────────────────────────────────────
+
+function _toLogResult(r: SearchResult): QueryLogResult {
+    const meta = r.metadata as Record<string, unknown> | undefined;
+    return {
+        filePath: r.filePath ?? 'unknown',
+        score: r.score,
+        type: r.type,
+        name: (meta?.name as string | undefined) ?? undefined,
+    };
+}
+
+function _prunerName(pruner: Pruner): string {
+    return pruner.constructor?.name ?? 'custom';
+}

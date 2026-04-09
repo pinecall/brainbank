@@ -4,6 +4,9 @@ All notable changes to `@brainbank/code` will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Concurrent file indexing (~10× speedup)** — files are now processed in parallel batches of 5 instead of sequentially. Additionally, the two `embedBatch` API calls per file (chunks + synopsis) are merged into a single call, halving round-trips. Net effect: ~10× faster indexing on API-based embedding providers
+
 ### Added
 - **Chunk density filter** — files with <20% matched chunks get 0.25x penalty on RRF score, catching extreme false positives like `jobs.service.ts` (1/15 = 7%)
 

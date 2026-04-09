@@ -21,5 +21,3 @@ Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node.
 ## Key Files
 `src/brainbank.ts` · `src/plugin.ts` · `src/constants.ts` · `src/services/collection.ts`
 `src/engine/search-api.ts` · `src/db/sqlite-adapter.ts` · `src/db/tracker.ts`
-
-## Always update README.md, ARCHITECTURE.md, and CHANGELOG.md when relevant.

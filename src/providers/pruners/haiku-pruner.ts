@@ -51,16 +51,17 @@ export class HaikuPruner implements Pruner {
 
         const prompt =
             `Query: "${query}"\n\nSearch results (full file content):\n${itemLines}\n\n` +
-            `You are a search result filter. You have access to the FULL source code of each file.\n` +
-            `Return a JSON array of #IDs to KEEP.\n\n` +
+            `You are a search result filter and ranker. You have access to the FULL source code of each file.\n` +
+            `Return a JSON array of #IDs to KEEP, ordered by relevance to the query (most relevant FIRST).\n\n` +
             `Rules:\n` +
             `- ONLY drop files that are CLEARLY AND OBVIOUSLY unrelated to the query.\n` +
             `- KEEP any file that mentions, implements, imports, configures, or tests anything related to the query — even indirectly.\n` +
             `- KEEP types, interfaces, entities, configs, DTOs, modules, stores, services, and controllers that touch the query domain.\n` +
             `- KEEP utility files if they contain functions used by the query domain.\n` +
             `- When in doubt, ALWAYS KEEP. False negatives (dropping a relevant file) are FAR WORSE than false positives.\n` +
-            `- You should typically keep 80-100% of results. Only drop obvious noise.\n\n` +
-            `Respond with ONLY the JSON array. Example: [0, 1, 2, 5, 8]`;
+            `- You should typically keep 80-100% of results. Only drop obvious noise.\n` +
+            `- ORDER by how directly each file answers or relates to the query. Core implementations first, then types/interfaces, then indirect/peripheral files last.\n\n` +
+            `Respond with ONLY the JSON array. Example: [3, 0, 5, 1, 8]`;
 
         try {
             const response = await fetch('https://api.anthropic.com/v1/messages', {

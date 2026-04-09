@@ -20,7 +20,7 @@ import type { Pruner, PrunerItem, SearchResult } from '@/types.ts';
  */
 const MAX_PREVIEW_CHARS = 8_000;
 
-/** Run the pruner on search results. Returns only results the pruner kept. */
+/** Run the pruner on search results. Returns results in the order the pruner chose. */
 export async function pruneResults(
     query: string,
     results: SearchResult[],
@@ -37,9 +37,12 @@ export async function pruneResults(
     }));
 
     const keepIds = await pruner.prune(query, items);
-    const keepSet = new Set(keepIds);
+    const validIds = new Set(Array.from({ length: results.length }, (_, i) => i));
 
-    return results.filter((_, i) => keepSet.has(i));
+    // Respect the pruner's ordering — map IDs to results in returned order
+    return keepIds
+        .filter(id => validIds.has(id))
+        .map(id => results[id]);
 }
 
 /**

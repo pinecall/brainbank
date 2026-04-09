@@ -116,6 +116,7 @@ export async function cmdContext(): Promise<void> {
     const context = await brain.getContext(task, {
         sources: Object.keys(sources).length > 0 ? sources : undefined,
         pathPrefix,
+        source: 'cli',
     });
     console.log(context);
     brain.close();

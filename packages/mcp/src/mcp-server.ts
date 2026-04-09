@@ -88,6 +88,7 @@ server.registerTool(
             affectedFiles,
             sources: resolvedSources,
             pathPrefix: path,
+            source: 'mcp',
         });
 
         return { content: [{ type: 'text' as const, text: context }] };

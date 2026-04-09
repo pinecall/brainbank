@@ -9,13 +9,14 @@ import type { ScanResult, ScanModule } from './scan.ts';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { c, args, getFlag, hasFlag } from '@/cli/utils.ts';
+import { c, args, getFlag, hasFlag, stripFlags } from '@/cli/utils.ts';
 import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory/index.ts';
 import { findDocsPlugin } from '@/cli/utils.ts';
 import { scanRepo } from './scan.ts';
 
 export async function cmdIndex(): Promise<void> {
-    const repoPath = args[1] || '.';
+    const positional = stripFlags(args);
+    const repoPath = positional[1] || '.';
     const force = hasFlag('force');
     const depth = parseInt(getFlag('depth') || '500', 10);
     const onlyRaw = getFlag('only');
@@ -60,9 +61,9 @@ export async function cmdIndex(): Promise<void> {
         modules.push('docs');
     }
 
-    // Offer to save config.json if it doesn't exist yet
+    // Auto-generate config.json if it doesn't exist yet
     if (!scan.config.exists && !skipPrompt) {
-        await offerSaveConfig(scan.repoPath, modules);
+        await saveConfig(scan.repoPath, modules);
     }
 
 
@@ -107,6 +108,7 @@ export async function cmdIndex(): Promise<void> {
         if (typeof v.indexed === 'number') {
             const parts = [`${v.indexed} indexed`, `${v.skipped ?? 0} skipped`];
             if (typeof v.chunks === 'number') parts.push(`${v.chunks} chunks`);
+            if (typeof v.removed === 'number' && v.removed > 0) parts.push(`${v.removed} removed`);
             console.log(`  ${c.green(name)}: ${parts.join(', ')}`);
         } else {
             console.log(`  ${c.green(name)}: done`);
@@ -216,15 +218,9 @@ function capitalizeFirst(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Offer to generate .brainbank/config.json from the selected modules. */
-async function offerSaveConfig(repoPath: string, modules: string[]): Promise<void> {
-    const { confirm, select } = await import('@inquirer/prompts');
-    const shouldSave = await confirm({
-        message: 'Save selection to .brainbank/config.json?',
-        default: true,
-    });
-
-    if (!shouldSave) return;
+/** Generate .brainbank/config.json from the selected modules. */
+async function saveConfig(repoPath: string, modules: string[]): Promise<void> {
+    const { select } = await import('@inquirer/prompts');
 
     // Embedding provider selection
     const envEmbedding = process.env.BRAINBANK_EMBEDDING;
@@ -251,6 +247,22 @@ async function offerSaveConfig(repoPath: string, modules: string[]): Promise<voi
         default: envEmbedding ?? 'perplexity-context',
     });
 
+    // Pruner selection
+    const pruner = await select<string>({
+        message: 'Noise pruner:',
+        choices: [
+            {
+                name: 'none   — no pruning (default)',
+                value: 'none',
+            },
+            {
+                name: 'haiku  — AI-powered noise filter (Claude Haiku)',
+                value: 'haiku',
+            },
+        ],
+        default: 'none',
+    });
+
     const configDir = path.join(repoPath, '.brainbank');
     const configPath = path.join(configDir, 'config.json');
 
@@ -259,7 +271,12 @@ async function offerSaveConfig(repoPath: string, modules: string[]): Promise<voi
         embedding,
     };
 
+    if (pruner !== 'none') {
+        config.pruner = pruner;
+    }
+
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
     console.log(c.green(`  ✓ Saved ${path.relative(process.cwd(), configPath)}`));
 }
+

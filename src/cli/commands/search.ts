@@ -69,8 +69,8 @@ function printFilterInfo(sources: Record<string, number>): void {
 }
 
 /** Build search options from sources map. */
-function buildSearchOptions(sources: Record<string, number>): { sources: Record<string, number> } {
-    return Object.keys(sources).length > 0 ? { sources } : { sources: {} };
+function buildSearchOptions(sources: Record<string, number>): { sources: Record<string, number>; source: 'cli' } {
+    return Object.keys(sources).length > 0 ? { sources, source: 'cli' } : { sources: {}, source: 'cli' };
 }
 
 export async function cmdSearch(): Promise<void> {

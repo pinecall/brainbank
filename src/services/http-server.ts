@@ -250,6 +250,7 @@ export class HttpServer {
             affectedFiles: req.affectedFiles,
             sources: resolvedSources,
             pathPrefix: req.pathPrefix,
+            source: 'daemon',
         });
 
         res.writeHead(200);

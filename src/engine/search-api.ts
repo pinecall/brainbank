@@ -21,6 +21,9 @@ import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
 import { CompositeBM25Search } from '@/search/keyword/composite-bm25-search.ts';
 import { CompositeVectorSearch } from '@/search/vector/composite-vector-search.ts';
+import { logQuery } from '@/lib/logger.ts';
+import type { QueryLogResult } from '@/lib/logger.ts';
+import { providerKey } from '@/lib/provider-key.ts';
 
 /** Dependencies injected at construction time. */
 export interface SearchAPIDeps {
@@ -30,6 +33,7 @@ export interface SearchAPIDeps {
     config:           ResolvedConfig;
     kvService:        KVService;
     contextBuilder?:  ContextBuilder;
+    embedding:        EmbeddingProvider;
 }
 
 /**
@@ -67,11 +71,12 @@ export function createSearchAPI(
 
     const bm25 = new CompositeBM25Search(registry);
 
-    const contextBuilder = new ContextBuilder(search, registry, config.pruner);
+    const rerankerName = config.reranker ? (config.reranker.constructor?.name ?? 'custom') : undefined;
+    const contextBuilder = new ContextBuilder(search, registry, config.pruner, embedding, rerankerName);
 
     return new SearchAPI({
         search, bm25, registry, config,
-        kvService, contextBuilder,
+        kvService, contextBuilder, embedding,
     });
 }
 
@@ -87,6 +92,7 @@ export class SearchAPI {
 
     /** Semantic search across all loaded modules. */
     async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
+        const t0 = Date.now();
         const lists: SearchResult[][] = [];
 
         if (this._d.search) {
@@ -95,13 +101,18 @@ export class SearchAPI {
 
         lists.push(...await this._collectSearchablePlugins(query, options));
 
-        if (lists.length === 0) return [];
-        if (lists.length === 1) return lists[0];
-        return reciprocalRankFusion(lists);
+        let results: SearchResult[];
+        if (lists.length === 0) results = [];
+        else if (lists.length === 1) results = lists[0];
+        else results = reciprocalRankFusion(lists);
+
+        this._logSearch('search', query, options, results, Date.now() - t0);
+        return results;
     }
 
     /** Hybrid search: vector + BM25 → RRF. */
     async hybridSearch(query: string, options?: SearchOptions): Promise<SearchResult[]> {
+        const t0 = Date.now();
         const src = options?.sources ?? {};
         const lists: SearchResult[][] = [];
 
@@ -116,17 +127,27 @@ export class SearchAPI {
         lists.push(...await this._collectSearchablePlugins(query, options));
         lists.push(...await this._collectKvCollections(query, src));
 
-        if (lists.length === 0) return [];
-        const fused = reciprocalRankFusion(lists);
-        if (this._d.config.reranker && fused.length > 1) {
-            return rerank(query, fused, this._d.config.reranker);
+        let results: SearchResult[];
+        if (lists.length === 0) results = [];
+        else {
+            const fused = reciprocalRankFusion(lists);
+            if (this._d.config.reranker && fused.length > 1) {
+                results = await rerank(query, fused, this._d.config.reranker);
+            } else {
+                results = fused;
+            }
         }
-        return fused;
+
+        this._logSearch('hybridSearch', query, options, results, Date.now() - t0);
+        return results;
     }
 
     /** BM25 keyword search only. */
     async searchBM25(query: string, options?: SearchOptions): Promise<SearchResult[]> {
-        return this._d.bm25?.search(query, options) ?? [];
+        const t0 = Date.now();
+        const results = await this._d.bm25?.search(query, options) ?? [];
+        this._logSearch('searchBM25', query, options, results, Date.now() - t0);
+        return results;
     }
 
     /** Rebuild FTS5 indices. */
@@ -162,4 +183,40 @@ export class SearchAPI {
         }
         return lists;
     }
+
+    /** Log a search/hybridSearch/searchBM25 call. */
+    private _logSearch(
+        method: 'search' | 'hybridSearch' | 'searchBM25',
+        query: string,
+        options: SearchOptions | undefined,
+        results: SearchResult[],
+        durationMs: number,
+    ): void {
+        logQuery({
+            source: options?.source ?? 'api',
+            method,
+            query,
+            embedding: providerKey(this._d.embedding),
+            pruner: null,
+            reranker: this._d.config.reranker ? (this._d.config.reranker.constructor?.name ?? 'custom') : null,
+            options: {
+                sources: options?.sources,
+                minScore: options?.minScore,
+            },
+            results: results.map(_toLogResult),
+            durationMs,
+        });
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────
+
+function _toLogResult(r: SearchResult): QueryLogResult {
+    const meta = r.metadata as Record<string, unknown> | undefined;
+    return {
+        filePath: r.filePath ?? 'unknown',
+        score: r.score,
+        type: r.type,
+        name: (meta?.name as string | undefined) ?? undefined,
+    };
 }

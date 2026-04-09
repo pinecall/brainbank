@@ -43,6 +43,9 @@ export interface CodeIndexOptions {
     onProgress?: ProgressCallback;
 }
 
+/** Number of files to embed in parallel. Tuned to saturate API latency without hitting rate limits. */
+const CONCURRENCY = 5;
+
 export class CodeWalker {
     private _chunker = new CodeChunker();
     private _deps: CodeWalkerDeps;
@@ -69,10 +72,13 @@ export class CodeWalker {
             knownFiles.add(path.relative(this._repoPath, f));
         }
 
+        // ── Phase 1: Collect changed files (CPU-only, sequential) ──
+        interface FileToIndex { filePath: string; rel: string; content: string; hash: string; fileIdx: number }
+        const toIndex: FileToIndex[] = [];
+
         for (let i = 0; i < files.length; i++) {
             const filePath = files[i];
             const rel = path.relative(this._repoPath, filePath);
-            onProgress?.(rel, i + 1, files.length);
 
             let content: string;
             try { content = fs.readFileSync(filePath, 'utf-8'); }
@@ -81,16 +87,34 @@ export class CodeWalker {
             const hash = this._hash(content);
             const existing = this._deps.db.prepare(
                 'SELECT file_hash FROM indexed_files WHERE file_path = ?'
-            ).get(rel) as any;
+            ).get(rel) as { file_hash: string } | undefined;
 
             if (!forceReindex && existing?.file_hash === hash) {
                 skipped++;
                 continue;
             }
 
-            const chunkCount = await this._indexFile(filePath, rel, content, hash, knownFiles);
-            indexed++;
-            totalChunks += chunkCount;
+            toIndex.push({ filePath, rel, content, hash, fileIdx: i });
+        }
+
+        // ── Phase 2: Index changed files in concurrent batches ──
+        for (let b = 0; b < toIndex.length; b += CONCURRENCY) {
+            const batch = toIndex.slice(b, b + CONCURRENCY);
+
+            // Report progress for each file in the batch (before embedding starts)
+            for (const f of batch) {
+                onProgress?.(f.rel, f.fileIdx + 1, files.length);
+            }
+
+            // Embed all files in this batch concurrently (API latency overlap)
+            const results = await Promise.all(
+                batch.map(f => this._indexFile(f.filePath, f.rel, f.content, f.hash, knownFiles)),
+            );
+
+            for (const chunkCount of results) {
+                indexed++;
+                totalChunks += chunkCount;
+            }
         }
 
         // Linking pass: build chunk-to-chunk call edges from code_refs → code_symbols
@@ -98,7 +122,20 @@ export class CodeWalker {
             this._linkCallEdges();
         }
 
-        return { indexed, skipped, chunks: totalChunks };
+        // ── Phase 3: Remove orphaned files (deleted from disk but still in DB) ──
+        const currentRelPaths = new Set(files.map(f => path.relative(this._repoPath, f)));
+        const dbFiles = loadKnownFiles(this._deps.db);
+        let removed = 0;
+
+        for (const dbPath of dbFiles) {
+            if (currentRelPaths.has(dbPath)) continue;
+            // File exists in DB but not on disk — clean it up
+            this._removeOldChunks(dbPath);
+            this._removeOldGraph(dbPath);
+            removed++;
+        }
+
+        return { indexed, skipped, chunks: totalChunks, removed };
     }
 
     /** Remove old chunks, chunk vectors, and HNSW entries for a file. */
@@ -156,14 +193,13 @@ export class CodeWalker {
             return parts.join('\n');
         });
 
-        // Batch-embed all chunks with their contextual headers
-        const chunkVecs = await this._deps.embedding.embedBatch(chunkEmbeddingTexts);
-
-        // ── File-level vector: embed the FULL file content ─────
-        // Whole-file vector captures broad file semantics for cross-level scoring.
-        // Files matching at BOTH file-level + chunk-level get a boost.
+        // ── Single embedBatch call for ALL vectors (chunks + synopsis) ──
+        // Merging into one API call halves the round-trips per file.
         const fileEmbeddingText = `File: ${rel}\n${content}`;
-        const [fileVec] = await this._deps.embedding.embedBatch([fileEmbeddingText]);
+        const allTexts = [...chunkEmbeddingTexts, fileEmbeddingText];
+        const allVecs = await this._deps.embedding.embedBatch(allTexts);
+        const chunkVecs = allVecs.slice(0, chunkEmbeddingTexts.length);
+        const fileVec = allVecs[chunkEmbeddingTexts.length];
 
         // Collect old chunk IDs for HNSW cleanup (includes old synopsis)
         const oldChunkRows = this._deps.db.prepare(

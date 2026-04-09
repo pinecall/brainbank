@@ -127,10 +127,11 @@ export interface PrunerItem {
 
 export interface Pruner {
     /**
-     * Filter noise from search results.
+     * Filter noise from search results and order by semantic relevance.
      * @param query - The search query
      * @param items - Items to evaluate (filePath + metadata + trimmed preview)
-     * @returns Array of item IDs to KEEP (everything else is dropped)
+     * @returns Array of item IDs to KEEP, ordered by relevance to the query
+     *          (most relevant first). Everything else is dropped.
      */
     prune(query: string, items: PrunerItem[]): Promise<number[]>;
     /** Release resources. */
@@ -355,6 +356,8 @@ export interface ContextOptions {
     excludeFiles?: Set<string>;
     /** Optional per-request pruner override (e.g. HaikuPruner for LLM noise filtering). */
     pruner?: Pruner;
+    /** Caller origin for debug logging. */
+    source?: 'cli' | 'mcp' | 'daemon' | 'api';
 }
 
 
@@ -406,6 +409,7 @@ export interface IndexResult {
     indexed: number;
     skipped: number;
     chunks?: number;
+    removed?: number;
 }
 
 

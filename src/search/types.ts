@@ -29,5 +29,7 @@ export interface SearchOptions {
     useMMR?: boolean;
     /** MMR lambda. Default: 0.7 */
     mmrLambda?: number;
+    /** Caller origin for debug logging. */
+    source?: 'cli' | 'mcp' | 'daemon' | 'api';
 }
 
