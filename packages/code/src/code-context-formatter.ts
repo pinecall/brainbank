@@ -218,7 +218,47 @@ function _buildFlatList(
 
     walkTree(callTree);
 
-    return result;
+    // 3. Remove chunks fully contained within another chunk from the same file.
+    // E.g. if the expander returns a file synopsis (L1-80) alongside individual
+    // function chunks (L5-30, L32-50), the synopsis already includes the others.
+    return _deduplicateContainedChunks(result);
+}
+
+/**
+ * Remove FlatChunks whose line range is fully contained within another
+ * chunk from the same file. Keeps the larger chunk which already
+ * contains the smaller one's content.
+ */
+function _deduplicateContainedChunks(chunks: FlatChunk[]): FlatChunk[] {
+    if (chunks.length <= 1) return chunks;
+
+    // Group by file
+    const byFile = new Map<string, FlatChunk[]>();
+    for (const c of chunks) {
+        const group = byFile.get(c.filePath) ?? [];
+        group.push(c);
+        byFile.set(c.filePath, group);
+    }
+
+    // Find chunks to remove
+    const remove = new Set<FlatChunk>();
+    for (const group of byFile.values()) {
+        if (group.length <= 1) continue;
+        for (let i = 0; i < group.length; i++) {
+            for (let j = 0; j < group.length; j++) {
+                if (i === j) continue;
+                const inner = group[i];
+                const outer = group[j];
+                // inner is fully contained within outer
+                if (inner.startLine >= outer.startLine && inner.endLine <= outer.endLine) {
+                    remove.add(inner);
+                }
+            }
+        }
+    }
+
+    if (remove.size === 0) return chunks;
+    return chunks.filter(c => !remove.has(c));
 }
 
 /** Check if a file path looks like a test file. */
