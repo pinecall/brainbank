@@ -127,6 +127,69 @@ const refs = extractCallRefs(chunkNode, 'typescript');
 
 Registry of all supported tree-sitter grammars. Each entry is a lazy-loading factory.
 
+## Architecture
+
+### Folder Structure
+
+```
+src/
+├── index.ts              # Public API — barrel re-exports
+├── plugin.ts             # CodePlugin — orchestrates all layers
+├── schema.ts             # SQLite schema + migrations
+│
+├── parsing/              # Layer 0 — AST analysis (no DB, no I/O)
+│   ├── chunker.ts        #   Tree-sitter code splitter
+│   ├── grammars.ts       #   Language grammar registry
+│   └── symbols.ts        #   Symbol & call-ref extraction
+│
+├── graph/                # Layer 1 — Import & call graph (reads DB)
+│   ├── import-extractor.ts  #   Regex-based import parsing
+│   ├── import-resolver.ts   #   Path resolution for imports
+│   ├── provider.ts          #   SqlCodeGraphProvider (graph queries)
+│   └── traversal.ts         #   BFS graph traversal algorithms
+│
+├── search/               # Layer 2 — Retrieval (reads DB + HNSW)
+│   └── vector-search.ts  #   Dual-level hybrid search + RRF fusion
+│
+├── indexing/              # Layer 2 — Ingestion (writes DB + HNSW)
+│   └── walker.ts          #   File walker + incremental indexer
+│
+└── formatting/            # Layer 3 — Output (reads graph, no writes)
+    └── context-formatter.ts  #   Workflow trace builder
+```
+
+### Layer Dependencies
+
+Imports flow **downward only** — no circular dependencies, no upward imports.
+
+```
+┌─────────────────────────────────────────────────┐
+│  plugin.ts  (orchestrator)                      │
+│  Imports from ALL layers below                  │
+└────────┬────────┬────────┬────────┬─────────────┘
+         │        │        │        │
+         ▼        ▼        ▼        ▼
+┌──────────┐ ┌────────┐ ┌────────┐ ┌──────────────┐
+│formatting│ │indexing │ │ search │ │   schema.ts  │
+│          │ │        │ │        │ │  (standalone) │
+└────┬─────┘ └──┬──┬──┘ └────────┘ └──────────────┘
+     │          │  │
+     │          │  │
+     ▼          ▼  ▼
+  ┌──────┐  ┌─────────┐
+  │graph │  │ parsing │
+  └──────┘  └─────────┘
+```
+
+| Layer | Folder | Reads | Writes | Imports from |
+|-------|--------|-------|--------|--------------|
+| **0** | `parsing/` | source code | nothing | `brainbank` types only |
+| **1** | `graph/` | SQLite (imports, symbols, chunks) | nothing | `brainbank`, `parsing/` |
+| **2** | `search/` | SQLite + HNSW | nothing | `brainbank` |
+| **2** | `indexing/` | filesystem, SQLite | SQLite + HNSW | `parsing/`, `graph/` |
+| **3** | `formatting/` | graph provider | nothing | `graph/` |
+| **∞** | `plugin.ts` | all layers | delegates to indexing | all layers |
+
 ## How It Works
 
 ### Indexing Pipeline

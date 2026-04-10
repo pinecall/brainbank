@@ -8,7 +8,7 @@
 import { BrainBank } from '../../../src/brainbank.ts';
 import { SQLiteAdapter } from '../../../src/db/sqlite-adapter.ts';
 import { code } from '../src/index.js';
-import { CodeChunker } from '../src/code-chunker.js';
+import { CodeChunker } from '../src/parsing/chunker.js';
 import {
     getLanguage, isSupported, isIgnoredDir, isIgnoredFile,
     SUPPORTED_EXTENSIONS, IGNORE_DIRS,

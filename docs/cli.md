@@ -12,6 +12,7 @@ BrainBank can be used entirely from the command line — no config file needed.
 | [`ksearch`](#search) | Keyword search (BM25, instant) |
 | [`dsearch`](#search) | Document search |
 | [`context`](#context) | Formatted context for LLM prompts |
+| [`files`](#files) | View full indexed files directly |
 | [`kv`](#kv-store) | Dynamic collection operations |
 | [`collection`](#document-collections) | Manage document collections |
 | [`docs`](#document-collections) | Index document collections |
@@ -65,7 +66,7 @@ Interactive checkboxes (via `@inquirer/prompts`) to choose which modules to inde
   ◉ Docs  — 2 collections (23 files)
 ```
 
-If no `.brainbank/config.json` exists, BrainBank offers to generate one from your selection (including embedding provider choice: `perplexity-context`, `perplexity`, `openai`, or `local`).
+If no `.brainbank/config.json` exists, BrainBank offers to generate one from your selection (including embedding provider choice: `perplexity-context`, `perplexity`, `openai`, or `local`) and pruner selection.
 
 ### Phase 3: Index
 
@@ -131,10 +132,46 @@ Get formatted markdown context for a task, ready for system prompt injection:
 
 ```bash
 brainbank context <task>                    # Get formatted context for a task
-brainbank context <task> --pruner haiku     # With LLM noise filter (drops irrelevant results)
+brainbank context <task> --pruner haiku     # With LLM noise filter
 brainbank context add <col> <path> <desc>   # Add context metadata for a path
 brainbank context list                      # List all context metadata entries
 ```
+
+### BrainBankQL Context Field Flags
+
+The `context` command supports field flags directly on the command line:
+
+```bash
+brainbank context "auth flow" --lines                 # Show source line numbers
+brainbank context "auth flow" --symbols               # Append symbol index
+brainbank context "auth flow" --compact               # Signatures only
+brainbank context "auth flow" --no-callTree           # Disable call tree
+brainbank context "auth flow" --callTree.depth=2      # Custom call tree depth
+brainbank context "auth flow" --no-imports            # Skip dependency summary
+brainbank context "auth flow" --expander              # LLM context expansion
+```
+
+---
+
+## Files
+
+Fetch full indexed file contents directly — bypasses search entirely:
+
+```bash
+brainbank files <path|glob> [...paths] [--lines]
+```
+
+Supports 4 resolution modes:
+
+```bash
+brainbank files src/auth/login.ts           # Exact path
+brainbank files src/graph/                  # All files under directory (trailing /)
+brainbank files "src/**/*.service.ts"       # Glob pattern
+brainbank files plugin.ts                   # Fuzzy basename match
+brainbank files src/auth/ --lines           # With source line numbers
+```
+
+> Use `brainbank files` after `brainbank context` to view the complete content of files identified by search.
 
 ---
 

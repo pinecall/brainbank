@@ -13,6 +13,7 @@ import { cmdKv } from './commands/kv.ts';
 import { cmdDocs, cmdDocSearch } from './commands/docs.ts';
 import { cmdSearch, cmdHybridSearch, cmdKeywordSearch } from './commands/search.ts';
 import { cmdContext } from './commands/context.ts';
+import { cmdFiles } from './commands/files.ts';
 import { cmdStats } from './commands/stats.ts';
 import { cmdReembed } from './commands/reembed.ts';
 import { cmdWatch } from './commands/watch.ts';
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
         case 'hsearch':     return cmdHybridSearch();
         case 'ksearch':     return cmdKeywordSearch();
         case 'context':     return cmdContext();
+        case 'files':       return cmdFiles();
         case 'stats':       return cmdStats();
         case 'reembed':     return cmdReembed();
         case 'watch':       return cmdWatch();

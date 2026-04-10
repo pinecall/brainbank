@@ -48,6 +48,7 @@ Every plugin receives a `PluginContext` during `initialize()`:
 | `ctx.loadVectors(table, idCol, hnsw, cache)` | Load existing vectors from a SQLite vectors table into HNSW + cache. Skipped on dimension mismatch force-init. Tries disk file first (fast), falls back to row-by-row from SQLite. |
 | `ctx.getOrCreateSharedHnsw(type, max?, dims?)` | Shared HNSW across same-type plugins (e.g. all `code:*` share one). Returns `{ hnsw, vecCache, isNew }`. Only the first caller (isNew=true) should `loadVectors`. |
 | `ctx.createTracker()` | Returns an `IncrementalTracker` scoped to the plugin name. Standardizes add/update/delete detection during indexing. See [Incremental Tracking](#incremental-tracking). |
+| `ctx.webhookServer?` | Optional `WebhookServer` for push-based watching. `undefined` if `webhookPort` not configured. |
 
 ### Data Storage Strategy
 
@@ -66,7 +67,7 @@ Use `ctx.db` and `MigratablePlugin` **only** when you need table relationships, 
 Use `ctx.createTracker()` to detect file changes without writing custom hash-checking logic. The tracker uses a shared `plugin_tracking` table with per-plugin namespacing — no custom tables needed.
 
 ```typescript
-import type { Plugin, PluginContext, IndexablePlugin, IndexResult, IncrementalTracker } from 'brainbank';
+import type { Plugin, PluginContext, IndexablePlugin, IndexResult } from 'brainbank';
 import { createHash } from 'node:crypto';
 
 async index(): Promise<IndexResult> {
@@ -135,9 +136,10 @@ Participates in `brain.index()`:
 ```typescript
 interface IndexablePlugin extends Plugin {
   index(options?: IndexOptions): Promise<IndexResult>;
+  indexItems?(ids: string[]): Promise<IndexResult>; // optional granular re-index
 }
 // IndexOptions: { forceReindex?, depth?, onProgress? }
-// IndexResult: { indexed: number, skipped: number, chunks?: number }
+// IndexResult: { indexed: number, skipped: number, chunks?: number, removed?: number }
 ```
 
 ### SearchablePlugin
@@ -171,7 +173,18 @@ Provides a domain-specific vector search strategy wired into CompositeVectorSear
 interface VectorSearchPlugin extends Plugin {
   createVectorSearch(): DomainVectorSearch | undefined;
 }
-// DomainVectorSearch: { search(queryVec, k, minScore, useMMR?, mmrLambda?): SearchResult[] }
+// DomainVectorSearch: { search(queryVec, k, minScore, useMMR?, mmrLambda?, queryText?): SearchResult[] }
+```
+
+### BM25SearchPlugin
+
+Provides FTS5 keyword search wired into `CompositeBM25Search`:
+
+```typescript
+interface BM25SearchPlugin extends Plugin {
+  searchBM25(query: string, k: number, minScore?: number): SearchResult[];
+  rebuildFTS?(): void;
+}
 ```
 
 ### ContextFormatterPlugin
@@ -180,7 +193,39 @@ Contributes markdown sections to `brain.getContext()` output:
 
 ```typescript
 interface ContextFormatterPlugin extends Plugin {
-  formatContext(results: SearchResult[], parts: string[], options?: Record<string, unknown>): void;
+  formatContext(results: SearchResult[], parts: string[], fields: Record<string, unknown>): void;
+}
+```
+
+### ContextFieldPlugin
+
+Declares configurable fields that appear in the `fields` option of `getContext()`:
+
+```typescript
+interface ContextFieldPlugin extends Plugin {
+  contextFields(): ContextFieldDef[];
+}
+// ContextFieldDef: { name, type: 'boolean'|'number'|'object', default, description }
+```
+
+### ExpandablePlugin
+
+Powers LLM context expansion (after pruning, before formatting):
+
+```typescript
+interface ExpandablePlugin extends Plugin {
+  buildManifest(excludeFilePaths: string[], excludeIds: number[]): ExpanderManifestItem[];
+  resolveChunks(ids: number[]): SearchResult[];
+}
+```
+
+### FileResolvablePlugin
+
+Enables `brain.resolveFiles()` and the `brainbank files` CLI command:
+
+```typescript
+interface FileResolvablePlugin extends Plugin {
+  resolveFiles(patterns: string[]): SearchResult[];
 }
 ```
 
@@ -193,17 +238,6 @@ interface ReembeddablePlugin extends Plugin {
   reembedConfig(): ReembedTable;
 }
 // ReembedTable: { name, textTable, vectorTable, idColumn, fkColumn, textBuilder }
-```
-
-### BM25SearchPlugin
-
-Provides FTS5 keyword search wired into `CompositeBM25Search`:
-
-```typescript
-interface BM25SearchPlugin extends Plugin {
-  searchBM25(query: string, k: number): SearchResult[];
-  rebuildFTS?(): void;
-}
 ```
 
 ### MigratablePlugin
@@ -241,7 +275,7 @@ A plugin that reads `.txt` files and makes them searchable, with **incremental i
 
 ```typescript
 import type { Plugin, PluginContext, IndexablePlugin, SearchablePlugin,
-             SearchResult, IndexResult, IncrementalTracker } from 'brainbank';
+             SearchResult, IndexResult } from 'brainbank';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -416,3 +450,4 @@ await brain.index();
 - [Plugins](plugins.md) — built-in plugins overview
 - [Collections](collections.md) — the KV store primitive plugins use internally
 - [Configuration](config.md) — per-plugin config in `.brainbank/config.json`
+- [Migrations](migrations.md) — versioned schema management

@@ -4,6 +4,12 @@ All notable changes to `@brainbank/code` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`resolveFiles()` — FileResolvablePlugin** — direct file viewer that bypasses search. Supports 4-tier resolution: exact path, directory prefix (trailing `/`), glob patterns (picomatch), and fuzzy basename matching. Used by `brainbank_files` MCP tool and `brainbank files` CLI command.
+
+### Changed
+- **Modular folder structure** — reorganized flat 13-file `src/` into domain-driven layers: `parsing/` (chunker, grammars, symbols), `graph/` (import extraction, resolution, traversal, provider), `search/` (vector search), `indexing/` (walker), `formatting/` (context formatter). Plugin entry point renamed `code-plugin.ts` → `plugin.ts`, schema renamed `code-schema.ts` → `schema.ts`. All imports updated, public API unchanged.
+
 ### Fixed
 - **Data objects respect `compact: false`** — removed index-time summarization of large data objects (e.g. XState machines, config constants). Previously, `_summarizeDataObject` replaced chunk content with a keys-only summary at index time, making it impossible to see the full body even with `compact: false`. Now data objects go through normal `_splitLargeBlock`, storing full content in the DB. The `compact` flag at render time controls display.
 - **Expander manifest sampling bias** — manifest query was `ORDER BY file_path LIMIT 300`, which systematically excluded files from the second half of the alphabet in large repos (e.g. `user.store.ts` starting with 'u' never made the manifest). Now uses `ROW_NUMBER() OVER (PARTITION BY file_path)` window function to sample up to 3 chunks per file, capped at 500 total, ensuring the manifest covers the entire codebase.

@@ -21,3 +21,13 @@ Stack: TypeScript (strict, ESM) · Node ≥18 · better-sqlite3 · hnswlib-node.
 ## Key Files
 `src/brainbank.ts` · `src/plugin.ts` · `src/constants.ts` · `src/services/collection.ts`
 `src/engine/search-api.ts` · `src/db/sqlite-adapter.ts` · `src/db/tracker.ts`
+
+## MCP Tools (2-step workflow)
+1. **`brainbank_context`** — Semantic search. Pass `task` to find relevant code by meaning. Returns chunks with BrainBankQL enrichments (call tree, symbols, imports, line numbers).
+2. **`brainbank_files`** — Direct file viewer. Use AFTER `brainbank_context` to fetch complete files identified by search. No search runs — reads directly from the index.
+
+`brainbank_files` supports:
+- Exact paths: `"src/auth/login.ts"`
+- Directories: `"src/graph/"` (trailing `/` = all files under path)
+- Glob patterns: `"src/**/*.service.ts"`
+- Fuzzy basename: `"plugin.ts"` (matches `src/plugin.ts` when exact fails)

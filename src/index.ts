@@ -29,12 +29,14 @@ export type {
     VectorSearchPlugin, ContextFormatterPlugin, ContextFieldPlugin,
     ContextFieldDef,
     MigratablePlugin, BM25SearchPlugin, ExpandablePlugin,
+    FileResolvablePlugin,
 } from './plugin.ts';
 export {
     isIndexable, isSearchable, isWatchable,
     isDocsPlugin, isCoEditPlugin, isReembeddable,
     isVectorSearchPlugin, isContextFormatterPlugin, isContextFieldPlugin,
     isMigratable, isBM25SearchPlugin, isExpandablePlugin,
+    isFileResolvable,
 } from './plugin.ts';
 
 // Constants (core-only)

@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 ### Added
+- **`brainbank_files` MCP tool** — standalone file viewer for fetching complete indexed files. Use after `brainbank_context` to view full file contents identified by search. Supports exact paths, directories (trailing `/`), glob patterns (picomatch), and fuzzy basename matching. No search runs — reads directly from `code_chunks`
+- **`FileResolvablePlugin` capability** — new plugin interface for direct file resolution. `CodePlugin` implements it with 4-tier resolution: exact → directory → glob → fuzzy. Type guard: `isFileResolvable()`
+- **`BrainBank.resolveFiles(patterns)`** — public API method that delegates to all `FileResolvablePlugin` instances
+- **`brainbank files` CLI command** — `brainbank files src/auth.ts src/graph/ --lines` for direct file viewing from the terminal
 - **BrainBankQL context fields** — GraphQL-inspired field system for context queries. Plugins declare configurable fields via `contextFields()`, resolved in 3 layers: plugin defaults ← `config.json` "context" ← per-query `fields`. Code plugin ships with 5 fields:
   - `lines: true` — prefix each code line with its source line number (`127| code`)
   - `callTree: false | { depth: N }` — toggle call tree expansion and control depth
@@ -19,7 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **MCP context field params** — `lines`, `symbols`, `compact`, `callTree`, `imports`, `expander` params on `brainbank_context` tool
 - **`Expander` interface + `HaikuExpander`** — LLM-powered context expansion pipeline step. After search + pruning, reviews a manifest of available chunks in matched files and selects additional chunks to include. Uses Haiku 4.5 for fast, low-cost expansion (~$0.001/call). Fail-open on errors. Returns `ExpanderResult { ids, note? }` — the optional `note` is a brief LLM observation (e.g. "file X not found", "module Y is deprecated") appended as a final `## Expansion Notes` section
 - **`ExpandablePlugin` capability** — plugins implement `buildManifest()` + `resolveChunks()` to support expansion. Code plugin implements this for `code_chunks`
-- **`expander` on `ResolvedConfig`** — auto-enabled when pruner is `haiku` (same API key), or explicit `"expander": "haiku"` in config
+- **`expander` on `ResolvedConfig`** — explicit opt-in via `"expander": "haiku"` in config.json or `--expander` CLI flag. Never auto-enabled
 - **Fix: expander cross-repo leak** — in multi-repo mode, the expander was building manifests from ALL code plugins and resolving from the first one found, causing backend chunks to appear in frontend-scoped queries. Now detects the repo prefix from search results, strips it for DB exclusion matching, only expands from the matching plugin, and re-adds the prefix to resolved chunks
 - **Fix: multi-repo call tree cross-contamination** — the formatter deduped code plugins by base type, so only the first alphabetical plugin (`code:servicehub-backend`) formatted ALL results. Its call tree queried the backend DB with frontend chunk IDs, causing accidental ID collisions to pull in backend methods. Now each multi-repo plugin formats only its own repo-scoped results, building the call tree from the correct DB
 - **Fix: overlapping chunk dedup** — when the expander returns multiple chunks from the same file with overlapping line ranges (e.g. synopsis L1-80 + function L5-30), the smaller chunk is now removed since it's already fully contained within the larger one. Prevents triple-rendering of the same file content
@@ -31,7 +35,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Config auto-generated on first index** — `brainbank index` no longer asks "Save selection to config.json?" — it just generates `.brainbank/config.json` automatically when one doesn't exist
 - **Pruner prompt in config setup** — config generation now prompts for noise pruner selection (none / haiku) alongside the embedding provider prompt
 
+### Removed
+- **`keyword-search.ts` deleted** — deprecated `KeywordSearch` class had zero consumers (no imports, no tests). All BM25 search flows use `CompositeBM25Search` via `brain.searchBM25()`. Per zero-backward-compat rule, dead code removed immediately
+
 ### Fixed
+- **Expander auto-enable removed** — `setupProviders()` silently enabled the expander whenever `pruner: haiku` was configured, potentially surprising users with unexpected Anthropic API costs. Now requires explicit `expander: "haiku"` in config.json or `--expander` CLI flag. The `expanderFlag` also reads from `flags?.expander` to support CLI flags consistently
 - **Code plugin ghost files** — files deleted from disk were never removed from the index, causing stale chunks and vectors to accumulate. `CodeWalker.index()` now runs an orphan cleanup phase that compares `indexed_files` in DB against the current file walk and removes any entries not found on disk. CLI output shows `N removed` when orphans are cleaned up. `IndexResult` type extended with optional `removed` field
 - **CLI `--force` parsed as repo path** — `brainbank index --force` treated `--force` as a positional path argument, scanning `/cwd/--force` instead of the current directory. Fixed by using `stripFlags(args)` to extract positional arguments
 - **Pruner false negatives** — `pruneResults()` now sends full file content to the pruner instead of truncating to 50 lines. For oversized files (>8K chars), keeps top 60% + bottom 25% with an omission marker (preserves imports AND key exports/functions). Previously, the pruner only saw imports and boilerplate, causing it to incorrectly drop relevant files. Haiku prompt also improved with stronger conservatism rules and metadata filtering (skips noisy fields like `chunkIds` and `rrfScore`)
@@ -335,7 +343,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Removed `@expose` decorator** — plugin methods are no longer injected onto `BrainBank` at runtime. Use `brain.docs.method()` or `brain.git.method()` for built-in plugins, `brain.plugin<T>('name').method()` for custom plugins
 - **Removed `CollectionPlugin` interface** — docs plugin now implements `SearchablePlugin` + `IndexablePlugin` directly
 - **`plugin()` returns `T | undefined`** — previously threw if plugin not found; now returns undefined for safe optional chaining
-- **Removed backward compat aliases** — `MultiIndexSearch`, `BM25Search` exports removed from barrel. Use `VectorSearch` and `KeywordSearch` directly
+- **Removed backward compat aliases** — `MultiIndexSearch`, `BM25Search` exports removed from barrel. Use `CompositeVectorSearch` and `CompositeBM25Search` directly
 - **Removed deprecated `builtins` config field** — use `plugins` instead in `.brainbank/config.json`
 - **Removed backward compat re-exports from `reembed.ts`** — import `setEmbeddingMeta`, `getEmbeddingMeta`, `detectProviderMismatch` from `services/embedding-meta.ts` directly
 - **Removed tree-sitter and simple-git from core** — `optionalDependencies` and subpath exports cleared. Install `@brainbank/code` for tree-sitter, `@brainbank/git` for simple-git

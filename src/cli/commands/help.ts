@@ -22,6 +22,7 @@ export function showHelp(): void {
     console.log(`  ${c.cyan('context')} <task>                     Get formatted context for a task`);
     console.log(`  ${c.cyan('context add')} <col> <path> <desc>    Add context metadata`);
     console.log(`  ${c.cyan('context list')}                       List all context metadata`);
+    console.log(`  ${c.cyan('files')} <path|glob> [...] [--lines]  View full indexed files directly`);
     console.log('');
     console.log(c.bold('KV Store:'));
     console.log(`  ${c.cyan('kv add')} <coll> <content>            Add item to a collection`);

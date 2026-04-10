@@ -321,6 +321,68 @@ const myPruner: Pruner = {
 
 ---
 
+## Expander (LLM Context Expansion)
+
+After pruning, BrainBank can run a second LLM pass to **discover additional relevant chunks** that search missed. The expander receives a lightweight manifest (~20 chars per chunk) of all available chunks not already in results, and returns additional chunk IDs to include.
+
+### How It Works
+
+```
+Pruned results (10 files)
+  │
+  ▼
+HaikuExpander: reviews manifest of ~500 available chunks
+  "Which of these would help with the task?"
+  │
+  ▼
+Expanded results (10 + 3 more) → ContextBuilder
+  + optional note: "auth module depends on crypto service"
+```
+
+The expander is **opt-in per query** via `fields: { expander: true }` — it never runs by default.
+
+### Cost Profile
+
+| Metric | Value |
+|--------|-------|
+| Input | ~2,000–3,000 tokens (manifest) |
+| Output | ~50–100 tokens (ID array + optional note) |
+| Cost | ~$0.001 per call |
+| Latency | ~300–600ms |
+
+### Enabling
+
+```typescript
+import { BrainBank, HaikuExpander } from 'brainbank';
+
+const brain = new BrainBank({
+  expander: new HaikuExpander(),  // requires ANTHROPIC_API_KEY
+});
+
+// Enable per-query
+const context = await brain.getContext('add rate limiting', {
+  fields: { expander: true },
+});
+```
+
+```bash
+# CLI
+brainbank context "add rate limiting" --expander
+```
+
+```jsonc
+// .brainbank/config.json — enable expander explicitly
+{ "expander": "haiku" }
+
+// Pruner + expander together (both must be declared)
+{ "pruner": "haiku", "expander": "haiku" }
+```
+
+> [!WARNING]
+> The expander **never activates automatically** — it always requires explicit configuration (`expander: "haiku"` in config.json, `--expander` CLI flag, or `fields: { expander: true }` per-query). Each call costs ~$0.001 via `ANTHROPIC_API_KEY`.
+
+---
+
 ## Re-embedding
 
 When switching providers, use `reembed()` to regenerate vectors without re-indexing:

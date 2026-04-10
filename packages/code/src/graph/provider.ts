@@ -9,7 +9,7 @@
 import {
     expandViaImportGraph, fetchBestChunks, buildDependencyGraph, fetchCalledChunks, buildCallTree,
     type DependencyGraph, type DependencyNode, type DependencyEdge, type CalledChunk, type CallTreeNode,
-} from './import-graph.js';
+} from './traversal.js';
 
 /** Summary of a code chunk for graph expansion results. */
 export interface CodeChunkSummary {

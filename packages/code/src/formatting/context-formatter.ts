@@ -17,7 +17,7 @@
 import type { SearchResult } from 'brainbank';
 import { isCodeResult } from 'brainbank';
 
-import type { CodeGraphProvider, CallTreeNode, AdjacentPart, SymbolInfo } from './sql-code-graph.js';
+import type { CodeGraphProvider, CallTreeNode, AdjacentPart, SymbolInfo } from '../graph/provider.js';
 
 // ── Public API ──────────────────────────────────────
 

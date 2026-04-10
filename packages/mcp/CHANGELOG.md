@@ -4,6 +4,9 @@ All notable changes to `@brainbank/mcp` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`brainbank_files` tool** — direct file viewer. Fetches full indexed file contents without search. Supports exact paths, directories (trailing `/`), glob patterns, and fuzzy basename matching. Optional `lines` param for source line numbers. Use after `brainbank_context` to view complete files.
+
 ### Breaking Changes
 - **Removed 5 MCP tools**: `brainbank_search`, `brainbank_stats`, `brainbank_history`, `brainbank_collection`, `brainbank_workspaces`. Server now exposes only `brainbank_context` (primary) and `brainbank_index`
 - `brainbank_context` description updated to reference Workflow Trace output

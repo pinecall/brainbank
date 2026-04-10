@@ -22,6 +22,24 @@ For large classes (>80 lines), the chunker descends into the class body and extr
 
 ---
 
+## Dual-Level Vectors
+
+`@brainbank/code` indexes each file at **two levels** simultaneously, stored as different chunk types in `code_chunks`:
+
+| Chunk type | What it is | Used for |
+|------------|-----------|----------|
+| `function` / `class` / `method` | AST-extracted semantic block | Precise function-level matching |
+| `synopsis` | Full-file embedding with imports header | Broad file-level matching |
+
+During search, HNSW hits are split by type and cross-level scored:
+- **Both levels match** → `max(scores) × 1.4` boost
+- **Chunk only** → `score × 0.7` penalty (likely noise)
+- **Synopsis only** → score unchanged
+
+This catches both "find files about X" and "find the specific function that does X".
+
+---
+
 ## Code Graph
 
 Beyond chunking, BrainBank builds a **relationship-aware code graph** during indexing. This gives the context builder (and your LLM) a deeper understanding of how code connects.
@@ -33,21 +51,16 @@ Beyond chunking, BrainBank builds a **relationship-aware code graph** during ind
 | **Imports** | `code_imports` | File-level dependencies | `agent.ts` → `call`, `config`, `emitter` |
 | **Symbols** | `code_symbols` | Function/class/method defs with line + chunk link | `TurnManager.on_vad_start` (method, L420) |
 | **Call Refs** | `code_refs` | Function calls within each chunk | `on_vad_start` calls `_clear_all_bot_audio`, `emit` |
+| **Call Edges** | `code_call_edges` | Chunk-to-chunk call graph | `handleRequest` (chunk #42) → `validateToken` (chunk #17) |
 
 ### Import Extraction
 
-Regex-based (fast, no AST needed) across all 20 languages:
+Regex-based (fast, no AST needed) across all 20 languages. After indexing, a **linking pass** builds `code_call_edges` from `code_refs → code_symbols`:
 
-| Language Family | Patterns Matched |
-|----------------|------------------|
-| JS/TS | `import ... from '...'`, `require('...')` |
-| Python | `import X`, `from X import Y` |
-| Go | `import "pkg"`, `import (...)` |
-| Ruby | `require 'X'`, `require_relative 'X'` |
-| Rust | `use X::Y`, `mod X` |
-| Java/Kotlin/Scala | `import X.Y.Z` |
-| C/C++ | `#include <X>`, `#include "X"` |
-| Others | PHP, Elixir, Lua, Swift, Bash, CSS, HTML |
+```
+Pass 1: exact name match  (validateToken → validateToken chunk)
+Pass 2: method suffix     (on_turn_end   → TurnController.on_turn_end chunk)
+```
 
 ### Enriched Embeddings
 
@@ -69,24 +82,15 @@ Searching for "VAD processing in turn manager" finds the right chunk even if the
 
 ### Context Output
 
-The `getContext()` / `brainbank context` output gains two enrichments from plugins implementing `ContextFormatterPlugin`:
+The `getContext()` output gains two enrichments from `@brainbank/code`'s `ContextFormatterPlugin`:
 
-**1. Call graph annotations** on each code block (from `code_refs` + `code_chunks`):
-```
-**method `on_vad_start` (L420-480)** — 95% match
-  *(calls: _clear_all_bot_audio, emit | called by: on_speech_ended)*
-```
+**1. V4 Workflow Trace** — flat `## Code Context` section:
+- Seed chunks first, then call tree DFS with `called by` annotations
+- Part-adjacency: if "foo (part 5)" matched → siblings ±2 included
+- Trivial wrappers (≤2 meaningful lines) → compact one-liner
+- Test files and infra files excluded from call tree
 
-**2. Related Code (Import Graph)** — 2-hop traversal of `code_imports` + sibling clustering:
-```markdown
-## Related Code (Import Graph)
-
-### domain/turn.py
-**class `Turn` (L1-45)**
-```python
-class Turn: ...
-```
-```
+**2. Dependency summary** — split into downstream (what matched code imports) and upstream (what imports matched code).
 
 ---
 
@@ -141,6 +145,12 @@ See [Custom Plugins — Incremental Tracking](custom-plugins.md#incremental-trac
 ### HNSW Consistency
 
 Code and git plugins apply HNSW mutations **after** the DB transaction commits. If the transaction rolls back, the in-memory HNSW stays consistent with the database. Old chunk IDs are collected before the transaction, then `hnsw.remove()` + `hnsw.add()` run only on successful commit.
+
+---
+
+## Concurrent File Indexing
+
+`@brainbank/code` processes files in **parallel batches of 5** (CONCURRENCY = 5). Within each file, chunk embeddings and the file synopsis are merged into a **single `embedBatch` call**, halving API round-trips. Net effect: ~10× faster indexing on API-based embedding providers.
 
 ---
 

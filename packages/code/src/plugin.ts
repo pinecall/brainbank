@@ -17,13 +17,14 @@
 import type { Plugin, PluginContext, ContextFieldDef, ExpanderManifestItem, EmbeddingProvider, IndexResult, ProgressCallback, ReembedTable, SearchResult } from 'brainbank';
 import type { HNSWIndex } from 'brainbank';
 import { runPluginMigrations, sanitizeFTS, normalizeBM25, escapeLike } from 'brainbank';
+import picomatch from 'picomatch';
 
-import { CodeWalker } from './code-walker.js';
-import { CodeVectorSearch } from './code-vector-search.js';
-import { SqlCodeGraphProvider } from './sql-code-graph.js';
-import { formatCodeContext } from './code-context-formatter.js';
-import { CODE_SCHEMA_VERSION, CODE_MIGRATIONS } from './code-schema.js';
-import type { CodeChunkRow } from './code-vector-search.js';
+import { CodeWalker } from './indexing/walker.js';
+import { CodeVectorSearch } from './search/vector-search.js';
+import { SqlCodeGraphProvider } from './graph/provider.js';
+import { formatCodeContext } from './formatting/context-formatter.js';
+import { CODE_SCHEMA_VERSION, CODE_MIGRATIONS } from './schema.js';
+import type { CodeChunkRow } from './search/vector-search.js';
 
 // Re-export Database type locally for class property
 type Database = PluginContext['db'];
@@ -273,6 +274,123 @@ class CodePlugin implements Plugin {
                 searchType,
             },
         };
+    }
+
+    // ── FileResolvablePlugin ────────────────────────────
+
+    /** Resolve file paths, directories, globs, or fuzzy basenames to full SearchResults. */
+    resolveFiles(patterns: string[]): SearchResult[] {
+        const allResults: SearchResult[] = [];
+        const seenPaths = new Set<string>();
+
+        for (const pattern of patterns) {
+            let chunks: CodeChunkRow[];
+
+            if (pattern.includes('*')) {
+                // Tier 3: Glob — fetch all paths, filter with picomatch
+                chunks = this._resolveGlob(pattern);
+            } else if (pattern.endsWith('/')) {
+                // Tier 2: Directory — all files under prefix
+                chunks = this._resolveDirectory(pattern);
+            } else {
+                // Tier 1: Exact match
+                chunks = this._fetchFileChunks(pattern);
+                // Tier 4: Fuzzy fallback (basename match)
+                if (chunks.length === 0) {
+                    chunks = this._resolveFuzzy(pattern);
+                }
+            }
+
+            // Group by file and build results, dedup across patterns
+            for (const result of this._chunksToFileResults(chunks)) {
+                const fp = result.filePath as string;
+                if (seenPaths.has(fp)) continue;
+                seenPaths.add(fp);
+                allResults.push(result);
+            }
+        }
+
+        return allResults;
+    }
+
+    /** Tier 1: Exact file path match. */
+    private _fetchFileChunks(filePath: string): CodeChunkRow[] {
+        return this.db.prepare(
+            `SELECT id, file_path, chunk_type, name, start_line, end_line, content, language
+             FROM code_chunks WHERE file_path = ? AND chunk_type != 'synopsis'
+             ORDER BY start_line`,
+        ).all(filePath) as CodeChunkRow[];
+    }
+
+    /** Tier 2: Directory prefix (trailing /). */
+    private _resolveDirectory(prefix: string): CodeChunkRow[] {
+        return this.db.prepare(
+            `SELECT id, file_path, chunk_type, name, start_line, end_line, content, language
+             FROM code_chunks WHERE file_path LIKE ? AND chunk_type != 'synopsis'
+             ORDER BY file_path, start_line`,
+        ).all(`${prefix}%`) as CodeChunkRow[];
+    }
+
+    /** Tier 3: Glob pattern (picomatch). */
+    private _resolveGlob(pattern: string): CodeChunkRow[] {
+        const allPaths = this.db.prepare(
+            `SELECT DISTINCT file_path FROM code_chunks`,
+        ).all() as { file_path: string }[];
+
+        const matcher = picomatch(pattern);
+        const matched = allPaths
+            .map(r => r.file_path)
+            .filter(fp => matcher(fp));
+
+        if (matched.length === 0) return [];
+
+        const placeholders = matched.map(() => '?').join(',');
+        return this.db.prepare(
+            `SELECT id, file_path, chunk_type, name, start_line, end_line, content, language
+             FROM code_chunks WHERE file_path IN (${placeholders}) AND chunk_type != 'synopsis'
+             ORDER BY file_path, start_line`,
+        ).all(...matched) as CodeChunkRow[];
+    }
+
+    /** Tier 4: Fuzzy basename match (fallback when exact fails). */
+    private _resolveFuzzy(basename: string): CodeChunkRow[] {
+        return this.db.prepare(
+            `SELECT id, file_path, chunk_type, name, start_line, end_line, content, language
+             FROM code_chunks
+             WHERE (file_path LIKE ? OR file_path = ?) AND chunk_type != 'synopsis'
+             ORDER BY file_path, start_line
+             LIMIT 200`,
+        ).all(`%/${basename}`, basename) as CodeChunkRow[];
+    }
+
+    /** Group chunks by file_path and build one SearchResult per file. */
+    private _chunksToFileResults(chunks: CodeChunkRow[]): SearchResult[] {
+        if (chunks.length === 0) return [];
+
+        // Group by file_path
+        const byFile = new Map<string, CodeChunkRow[]>();
+        for (const c of chunks) {
+            const group = byFile.get(c.file_path) ?? [];
+            group.push(c);
+            byFile.set(c.file_path, group);
+        }
+
+        return [...byFile.entries()].map(([filePath, fileChunks]) => ({
+            type: 'code' as const,
+            score: 1.0, // max score — user explicitly requested this file
+            filePath,
+            content: fileChunks.map(c => c.content).join('\n'),
+            metadata: {
+                id: fileChunks[0].id,
+                chunkIds: fileChunks.map(c => c.id),
+                chunkType: 'file' as const,
+                name: filePath.split('/').pop() ?? '',
+                startLine: fileChunks[0].start_line,
+                endLine: fileChunks[fileChunks.length - 1].end_line,
+                language: fileChunks[0].language,
+                searchType: 'file-resolve',
+            },
+        }));
     }
 }
 

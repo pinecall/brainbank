@@ -5,7 +5,7 @@
  * decorator handling, large file splitting, and fallback behavior.
  */
 
-import { CodeChunker } from '../../src/code-chunker.ts';
+import { CodeChunker } from '../../src/parsing/chunker.ts';
 
 export const name = 'Tree-Sitter Code Chunker';
 

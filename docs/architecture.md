@@ -1,4 +1,4 @@
-## Table of Contents
+# Table of Contents
 
 1. [What is BrainBank](#1-what-is-brainbank)
 2. [Repository Structure](#2-repository-structure)
@@ -20,7 +20,9 @@
     - 10.5 [MMR — Diversity](#105-mmr--diversity)
     - 10.6 [Reranking](#106-reranking)
     - 10.7 [ContextBuilder](#107-contextbuilder)
-    - 10.8 [DocumentSearch](#108-documentsearch)
+    - 10.8 [Pruning](#108-pruning)
+    - 10.9 [Expansion](#109-expansion)
+    - 10.10 [DocumentSearch](#1010-documentsearch)
 11. [Infrastructure](#11-infrastructure)
     - 11.1 [Database](#111-database)
     - 11.2 [HNSWIndex](#112-hnswindex)
@@ -31,6 +33,8 @@
     - 12.1 [Watch Service](#121-watch-service)
     - 12.2 [Reembed Engine](#122-reembed-engine)
     - 12.3 [EmbeddingMeta](#123-embeddingmeta)
+    - 12.4 [HTTP Daemon](#124-http-daemon)
+    - 12.5 [Query Logger](#125-query-logger)
 13. [Engine Layer](#13-engine-layer)
     - 13.1 [IndexAPI](#131-indexapi)
     - 13.2 [SearchAPI](#132-searchapi)
@@ -48,7 +52,7 @@
 
 BrainBank is a **local-first semantic knowledge engine** built as an extensible
 plugin framework. All data lives in SQLite files with two retrieval layers
-and an optional reranker on top:
+and optional post-processing on top:
 
 | Layer | Technology | Characteristic |
 |-------|-----------|----------------|
@@ -56,6 +60,8 @@ and an optional reranker on top:
 | Keyword search | FTS5 BM25 (SQLite) | Exact/stem match, O(log n) |
 | Hybrid | Vector + BM25 → RRF | Best of both |
 | Reranking | Cross-encoder (optional) | Position-aware score blending |
+| Pruning | LLM noise filter (optional) | Haiku 4.5 binary classification |
+| Expansion | LLM context expansion (optional) | Haiku 4.5 chunk selection |
 
 Everything is accessed through a **single facade** (`BrainBank`) that composes
 specialized subsystems via a **capability-based plugin architecture**. The core
@@ -95,7 +101,7 @@ interfaces. No plugin names are hardcoded in the core.
 **Three conceptual layers:**
 
 | Layer | Purpose | Key files |
-|-------|---------|-----------|
+|-------|---------|----------|
 | **Facade / Engine** | Public surface, delegation, init guards | `brainbank.ts`, `engine/` |
 | **Domain / Plugin** | Indexing, searching, formatting | `plugin.ts`, `packages/*/` |
 | **Infrastructure** | DB, vectors, embeddings, math | `db/`, `providers/`, `lib/`, `services/` |
@@ -107,16 +113,16 @@ interfaces. No plugin names are hardcoded in the core.
 ```
 brainbank/
 ├── src/                               ← Core library (published as "brainbank")
-│   ├── brainbank.ts                   ← Main facade (BrainBank class, 593 lines)
-│   ├── index.ts                       ← Public exports (143 lines)
-│   ├── types.ts                       ← All TypeScript interfaces (414 lines)
+│   ├── brainbank.ts                   ← Main facade (BrainBank class, 621 lines)
+│   ├── index.ts                       ← Public exports (160 lines)
+│   ├── types.ts                       ← All TypeScript interfaces (505 lines)
 │   ├── constants.ts                   ← HNSW.KV typed constant (14 lines)
-│   ├── config.ts                      ← resolveConfig() + DEFAULTS (48 lines)
-│   ├── plugin.ts                      ← Plugin interfaces, PluginContext, type guards (238 lines)
+│   ├── config.ts                      ← resolveConfig() + DEFAULTS (51 lines)
+│   ├── plugin.ts                      ← Plugin interfaces, PluginContext, type guards (324 lines)
 │   │
 │   ├── engine/
-│   │   ├── index-api.ts               ← runIndex(): orchestrates indexing across plugins (84 lines)
-│   │   ├── search-api.ts              ← SearchAPI + createSearchAPI(): plugin-agnostic wiring (166 lines)
+│   │   ├── index-api.ts               ← runIndex(): orchestrates indexing across plugins (86 lines)
+│   │   ├── search-api.ts              ← SearchAPI + createSearchAPI(): plugin-agnostic wiring (223 lines)
 │   │   └── reembed.ts                 ← reembedAll(): atomic vector swap without re-parsing (207 lines)
 │   │
 │   ├── db/
@@ -132,9 +138,12 @@ brainbank/
 │   │   │   ├── openai-embedding.ts    ← OpenAI API (1536d / 3072d) (168 lines)
 │   │   │   ├── perplexity-embedding.ts ← Perplexity standard (2560d, base64 int8) (166 lines)
 │   │   │   ├── perplexity-context-embedding.ts ← Contextualized (2560d, best quality) (196 lines)
-│   │   │   ├── resolve.ts             ← resolveEmbedding(key) + providerKey(provider) (35 lines)
+│   │   │   ├── resolve.ts             ← resolveEmbedding(key) + providerKey re-export (35 lines)
 │   │   │   ├── embedding-worker.ts    ← EmbeddingWorkerProxy (offloads to worker_threads) (142 lines)
 │   │   │   └── embedding-worker-thread.ts ← Worker script: zero-copy ArrayBuffer transfer (96 lines)
+│   │   ├── pruners/
+│   │   │   ├── haiku-pruner.ts         ← LLM noise filter via Anthropic Haiku 4.5 (113 lines)
+│   │   │   └── haiku-expander.ts       ← LLM context expansion via Haiku 4.5 (153 lines)
 │   │   ├── rerankers/
 │   │   │   └── qwen3-reranker.ts      ← Qwen3 cross-encoder via node-llama-cpp (181 lines)
 │   │   └── vector/
@@ -142,61 +151,72 @@ brainbank/
 │   │       └── hnsw-loader.ts         ← hnswPath, loadVectors, saveAllHnsw, reloadHnsw (130 lines)
 │   │
 │   ├── search/
-│   │   ├── types.ts                   ← SearchStrategy, DomainVectorSearch, SearchOptions (34 lines)
-│   │   ├── context-builder.ts         ← ContextBuilder: orchestrator only (76 lines)
-│   │   ├── bm25-boost.ts              ← boostWithBM25, filterByPath, resultKey (64 lines)
+│   │   ├── types.ts                   ← SearchStrategy, DomainVectorSearch, SearchOptions (36 lines)
+│   │   ├── context-builder.ts         ← ContextBuilder: search → prune → expand → format (299 lines)
+│   │   ├── bm25-boost.ts              ← boostWithBM25, filterByPath, resultKey (62 lines)
 │   │   ├── keyword/
-│   │   │   ├── composite-bm25-search.ts ← Discovers BM25SearchPlugin instances from registry (50 lines)
-│   │   │   └── keyword-search.ts      ← DEPRECATED legacy keyword search (165 lines)
+│   │   │   └── composite-bm25-search.ts ← Discovers BM25SearchPlugin instances from registry (63 lines)
 │   │   └── vector/
-│   │       ├── composite-vector-search.ts ← Generic: embed once, delegate + round-robin (85 lines)
+│   │       ├── composite-vector-search.ts ← Generic: embed once, delegate to strategies (77 lines)
 │   │       └── mmr.ts                 ← Maximum Marginal Relevance diversification (65 lines)
 │   │
 │   ├── services/
 │   │   ├── collection.ts              ← Collection: KV store (hybrid search, tags, TTL) (406 lines)
 │   │   ├── kv-service.ts              ← KVService: owns shared kvHnsw + kvVecs (66 lines)
 │   │   ├── plugin-registry.ts         ← PluginRegistry: registration + type-prefix lookup (110 lines)
-│   │   ├── watch.ts                   ← Watcher: plugin-driven + shared fs.watch fallback (340 lines)
-│   │   └── webhook-server.ts          ← WebhookServer: optional HTTP for push plugins (101 lines)
+│   │   ├── watch.ts                   ← Watcher: plugin-driven + shared fs.watch fallback (349 lines)
+│   │   ├── webhook-server.ts          ← WebhookServer: optional HTTP for push plugins (101 lines)
+│   │   ├── daemon.ts                  ← PID file management for HTTP daemon (88 lines)
+│   │   └── http-server.ts             ← HttpServer: JSON API + SimplePool for daemon mode (289 lines)
 │   │
 │   ├── lib/
 │   │   ├── fts.ts                     ← sanitizeFTS, normalizeBM25, escapeLike (58 lines)
-│   │   ├── languages.ts               ← SUPPORTED_EXTENSIONS, IGNORE_DIRS, IGNORE_FILES (167 lines)
+│   │   ├── languages.ts               ← SUPPORTED_EXTENSIONS, IGNORE_DIRS, IGNORE_FILES (181 lines)
 │   │   ├── math.ts                    ← cosineSimilarity, normalize, vecToBuffer (88 lines)
 │   │   ├── provider-key.ts            ← providerKey(): EmbeddingProvider → canonical key (21 lines)
+│   │   ├── prune.ts                   ← pruneResults: bridges SearchResult[] → Pruner (72 lines)
 │   │   ├── rerank.ts                  ← Position-aware score blending (34 lines)
 │   │   ├── rrf.ts                     ← reciprocalRankFusion + fuseRankedLists<T> (134 lines)
-│   │   └── write-lock.ts             ← Advisory file lock (O_EXCL, stale PID detection) (109 lines)
+│   │   ├── write-lock.ts              ← Advisory file lock (O_EXCL, stale PID detection) (109 lines)
+│   │   └── logger.ts                  ← Query debug logger → /tmp/brainbank.log (126 lines)
 │   │
 │   └── cli/
-│       ├── index.ts                   ← CLI dispatcher (56 lines)
+│       ├── index.ts                   ← CLI dispatcher (63 lines)
 │       ├── utils.ts                   ← Colors, arg parsing, result printer (122 lines)
+│       ├── server-client.ts           ← HTTP client for daemon delegation (136 lines)
 │       ├── factory/
 │       │   ├── index.ts               ← createBrain(context?) orchestrator (66 lines)
-│       │   ├── brain-context.ts       ← BrainContext type + contextFromCLI() (43 lines)
-│       │   ├── config-loader.ts       ← .brainbank/config.json loader + cache (70 lines)
-│       │   ├── plugin-loader.ts       ← Dynamic @brainbank/* loading + folder discovery (125 lines)
+│       │   ├── brain-context.ts       ← BrainContext type + contextFromCLI() (44 lines)
+│       │   ├── config-loader.ts       ← .brainbank/config.json loader + cache (73 lines)
+│       │   ├── plugin-loader.ts       ← Dynamic @brainbank/* loading + folder discovery (147 lines)
 │       │   └── builtin-registration.ts ← Multi-repo detection + plugin registration (124 lines)
-│       └── commands/                  ← index, scan, search, docs, collection, context, kv, etc.
+│       └── commands/                  ← 15 command files (index, scan, search, context, kv, etc.)
 │
 └── packages/
     ├── code/                          ← @brainbank/code (CODE_SCHEMA_VERSION = 5)
     │   └── src/
-    │       ├── code-plugin.ts         ← CodePlugin: 7 capability interfaces
-    │       ├── code-schema.ts         ← 5 migrations (v1→v5: chunk-level vectors)
-    │       ├── code-walker.ts         ← File walker + incremental indexer (399 lines)
-    │       ├── code-chunker.ts        ← AST-first chunker via tree-sitter (482 lines)
-    │       ├── code-vector-search.ts  ← Dual-level search: synopsis + chunks (274 lines)
-    │       ├── code-context-formatter.ts ← V4 Flat Workflow Trace (457 lines)
-    │       ├── sql-code-graph.ts      ← CodeGraphProvider: call info + import traversal (124 lines)
-    │       ├── import-graph.ts        ← Bidirectional BFS + call tree builder (633 lines)
-    │       ├── import-resolver.ts     ← Resolves specifiers to file paths (384 lines)
-    │       ├── grammars.ts            ← Grammar registry (20+ languages) (137 lines)
-    │       ├── import-extractor.ts    ← Regex import extraction (304 lines)
-    │       └── symbol-extractor.ts    ← AST symbol defs + call references (265 lines)
+    │       ├── index.ts               ← Public barrel exports (28 lines)
+    │       ├── plugin.ts              ← CodePlugin: 9 capability interfaces (401 lines)
+    │       ├── schema.ts              ← 5 migrations (v1→v5: chunk-level vectors) (176 lines)
+    │       ├── parsing/
+    │       │   ├── chunker.ts         ← AST-first tree-sitter chunker (413 lines)
+    │       │   ├── grammars.ts        ← Grammar registry (20+ languages) (137 lines)
+    │       │   └── symbols.ts         ← AST symbol defs + call references (265 lines)
+    │       ├── graph/
+    │       │   ├── import-extractor.ts ← Regex import extraction (304 lines)
+    │       │   ├── import-resolver.ts ← Resolves specifiers to file paths (384 lines)
+    │       │   ├── provider.ts        ← SqlCodeGraphProvider (238 lines)
+    │       │   └── traversal.ts       ← Bidirectional BFS + call tree builder (634 lines)
+    │       ├── search/
+    │       │   └── vector-search.ts    ← Dual-level hybrid search + RRF (308 lines)
+    │       ├── indexing/
+    │       │   └── walker.ts          ← File walker + incremental indexer (435 lines)
+    │       └── formatting/
+    │           └── context-formatter.ts ← V4 Flat Workflow Trace (638 lines)
     │
     ├── git/                           ← @brainbank/git (GIT_SCHEMA_VERSION = 1)
     │   └── src/
+    │       ├── index.ts               ← Public barrel exports (6 lines)
     │       ├── git-plugin.ts          ← GitPlugin: 7 capability interfaces (208 lines)
     │       ├── git-schema.ts          ← 1 migration (80 lines)
     │       ├── git-indexer.ts         ← 4-phase commit pipeline (287 lines)
@@ -206,7 +226,8 @@ brainbank/
     │
     ├── docs/                          ← @brainbank/docs (DOCS_SCHEMA_VERSION = 1)
     │   └── src/
-    │       ├── docs-plugin.ts         ← DocsPlugin: 7 capability interfaces (316 lines)
+    │       ├── index.ts               ← Public barrel exports (8 lines)
+    │       ├── docs-plugin.ts         ← DocsPlugin: 8 capability interfaces (316 lines)
     │       ├── docs-schema.ts         ← 1 migration (83 lines)
     │       ├── docs-indexer.ts        ← Smart markdown chunker (350 lines)
     │       ├── docs-vector-search.ts  ← DocsVectorSearch (87 lines)
@@ -215,7 +236,7 @@ brainbank/
     │
     └── mcp/                           ← @brainbank/mcp
         └── src/
-            ├── mcp-server.ts          ← MCP stdio server (2 tools) (184 lines)
+            ├── mcp-server.ts          ← MCP stdio server (3 tools) (266 lines)
             ├── workspace-pool.ts      ← Memory-pressure + TTL eviction pool (225 lines)
             └── workspace-factory.ts   ← Delegates to core createBrain() (67 lines)
 ```
@@ -238,7 +259,7 @@ brainbank/
 
 ## 3. BrainBank — Main Facade
 
-**File:** `src/brainbank.ts` (593 lines)
+**File:** `src/brainbank.ts` (621 lines)
 **Pattern:** Facade + EventEmitter
 
 `BrainBank` is a **thin orchestrator**. It owns state, enforces initialization
@@ -278,6 +299,7 @@ guards, and delegates every operation to specialized subsystems.
 │  .hybridSearch(query, opts)  vector + BM25 → RRF → optional rerank    │
 │  .searchBM25(query, opts)  keyword-only search                         │
 │  .getContext(task, opts)    formatted markdown for LLM system prompt    │
+│  .resolveFiles(patterns)   direct file lookup (no search)              │
 │  .ensureFresh()            hot-reload stale HNSW indices               │
 │  .memoryHint()             estimated HNSW memory footprint (bytes)     │
 │  .rebuildFTS()             rebuild FTS5 indices                        │
@@ -312,7 +334,7 @@ ensureFresh() (hot-reload stale HNSW before query):
   search, hybridSearch, searchBM25, getContext
 
 _requireInit() (throw if not initialized):
-  rebuildFTS, watch, stats, listCollectionNames, deleteCollection
+  rebuildFTS, watch, stats, listCollectionNames, deleteCollection, resolveFiles
 
 collection() — special: throws "Collections not ready" if _kvService undefined
 
@@ -326,6 +348,7 @@ _watcher?.close()
 _webhookServer?.close()
 for (plugin of registry.all): plugin.close?.()
 reranker?.close?.()
+pruner?.close?.()
 _embedding?.close().catch(() => {})
 for (db of _repoDBs.values()): db.close()   ← per-repo DBs
 _repoDBs.clear()
@@ -397,8 +420,8 @@ BrainBank._runInitialize({ force? })
 │     _indexDeps = { registry, emit, db, dbPath, sharedHnsw, kvHnsw }
 │
 └── 10. Snapshot Index Versions
-│     _loadedVersions = getVersions(db)
-│     _initialized = true
+      _loadedVersions = getVersions(db)
+      _initialized = true
 ```
 
 **Per-Repo Database Isolation (`_getOrCreatePluginDb`):**
@@ -474,7 +497,7 @@ brain
 
 ## 6. Plugin System & Plugin Context
 
-**File:** `src/plugin.ts` (238 lines)
+**File:** `src/plugin.ts` (324 lines)
 **Pattern:** Extension Point + Capability Interfaces + Dependency Injection
 
 ### 6.1 Plugin Interfaces
@@ -505,7 +528,17 @@ BM25SearchPlugin extends Plugin
 │  rebuildFTS?(): void
 
 ContextFormatterPlugin extends Plugin
-│  formatContext(results: SearchResult[], parts: string[], options?): void
+│  formatContext(results: SearchResult[], parts: string[], fields: Record<string, unknown>): void
+
+ContextFieldPlugin extends Plugin
+│  contextFields(): ContextFieldDef[]   ← declares configurable fields
+
+ExpandablePlugin extends Plugin
+│  buildManifest(excludeFilePaths: string[], excludeIds: number[]): ExpanderManifestItem[]
+│  resolveChunks(ids: number[]): SearchResult[]
+
+FileResolvablePlugin extends Plugin
+│  resolveFiles(patterns: string[]): SearchResult[]
 
 MigratablePlugin extends Plugin
 │  readonly schemaVersion: number
@@ -533,8 +566,11 @@ isCoEditPlugin(p)           → 'coEdits' in p && typeof suggest === 'function'
 isReembeddable(p)           → typeof p.reembedConfig === 'function'
 isVectorSearchPlugin(p)     → typeof p.createVectorSearch === 'function'
 isContextFormatterPlugin(p) → typeof p.formatContext === 'function'
+isContextFieldPlugin(p)     → typeof p.contextFields === 'function'
 isMigratable(p)             → typeof schemaVersion === 'number' && Array.isArray(migrations)
 isBM25SearchPlugin(p)       → typeof p.searchBM25 === 'function'
+isExpandablePlugin(p)       → typeof p.buildManifest + resolveChunks === 'function'
+isFileResolvable(p)         → typeof p.resolveFiles === 'function'
 ```
 
 ### 6.2 PluginContext — Dependency Injection Container
@@ -585,10 +621,6 @@ DocsPlugin    │ literal 'docs'                  │ All docs:* share  │ hnsw
 KV store      │ KVService._hnsw (kvHnsw)        │ All collections   │ hnsw-kv.index
 ```
 
-> **Key difference:** Code plugins use `this.name` (full name) as the shared HNSW key,
-> so each `code:X` gets its own HNSW index. Git and docs plugins use literal string
-> keys, so all instances of the same type share one HNSW.
-
 ---
 
 ## 7. Built-in Plugins
@@ -597,9 +629,13 @@ KV store      │ KVService._hnsw (kvHnsw)        │ All collections   │ hnsw
 
 **Files:** `packages/code/src/` — 12 source files, CODE_SCHEMA_VERSION = 5
 
-**Capabilities implemented:**
+**Capabilities implemented (9):**
 `IndexablePlugin`, `VectorSearchPlugin`, `BM25SearchPlugin`,
-`ContextFormatterPlugin`, `ReembeddablePlugin`
+`ContextFormatterPlugin`, `ContextFieldPlugin`, `ReembeddablePlugin`,
+`ExpandablePlugin`, `FileResolvablePlugin`, `MigratablePlugin`
+
+**Context fields declared:**
+`lines` (boolean), `callTree` (object), `imports` (boolean), `symbols` (boolean), `compact` (boolean)
 
 **Schema owned** (via `CODE_MIGRATIONS`, 5 versions):
 `code_chunks`, `code_vectors`, `indexed_files`, `code_imports` (v2: with `import_kind`, `resolved`),
@@ -632,8 +668,11 @@ CodePlugin.initialize(ctx)
 2. Build contextual embedding text per chunk:
      "File: src/api.ts\nmethod foo (L10-25)\nImports: express, zod\n---\n<code>"
 
-3. embedBatch(chunkEmbeddingTexts)        ← chunk-level vectors
-4. embedBatch([fileEmbeddingText])         ← file-level synopsis vector
+3. Single embedBatch call for ALL vectors (chunks + file synopsis)
+     ← merging into one API call halves round-trips
+
+4. Concurrent file processing (CONCURRENCY = 5)
+     ← ~10× faster indexing on API-based providers
 
 5. extractImportPaths + ImportResolver     ← resolved import graph
 6. extractSymbols + extractCallRefs        ← symbol index + call refs
@@ -646,7 +685,7 @@ CodePlugin.initialize(ctx)
 8. AFTER COMMIT: hnsw.remove(old) + hnsw.add(new) for chunks AND synopsis
 
 9. _linkCallEdges() — build code_call_edges from code_refs → code_symbols
-     Pass 1: Exact name match
+     Pass 1: Exact name match (function → function)
      Pass 2: Method suffix match (on_turn_end → TurnController.on_turn_end)
 ```
 
@@ -663,37 +702,53 @@ search(queryVec, k, minScore, ...):
        Chunk only        → chunkScore × CHUNK_ONLY_PENALTY (0.7)
        Synopsis only     → synopsisScore as-is
 
-  3. BM25 search on fts_code → aggregate best score per file
+  3. Chunk density filter:
+       matchedChunks/totalChunks < DENSITY_THRESHOLD (0.20) → 0.25× penalty
 
-  4. RRF fusion at FILE level (vector + BM25)
+  4. BM25 search on fts_code → aggregate best score per file
 
-  5. Return ONE result per file with all chunks concatenated (zero truncation)
+  5. RRF fusion at FILE level (vector + BM25, balanced 1:1)
+
+  6. Return ONE result per file with all chunks concatenated (zero truncation)
        metadata.chunkIds = array of code chunk IDs for call graph seeding
 ```
 
 **V4 Workflow Trace context formatter:**
 
 ```
-formatCodeContext(codeHits, parts, codeGraph):
+formatCodeContext(codeHits, parts, codeGraph, pathPrefix, fields):
   1. Collect seed chunk IDs from search hits
   2. _expandAdjacentParts: if 'foo (part 5)' matched → fetch ±2 sibling parts
-  3. buildCallTree(seedIds): recursive DFS on code_call_edges (MAX_DEPTH=1, MAX_NODES=40)
+  3. buildCallTree(seedIds, callTreeDepth): recursive DFS on code_call_edges
+     MAX_CALL_DEPTH=1 (configurable via callTree.depth), MAX_CALL_NODES=40
      Filters: test files, infra files, generic CRUD methods
      Requires import edge exists (ci.resolved=1) between caller/callee files
-  4. _buildFlatList: topologically ordered, deduplicated
+  4. _buildFlatList: topologically ordered, deduplicated, contained-chunk removal
      Search hits first → call tree DFS with calledBy annotations
   5. Render: file header → label + annotations → full code block
      Trivial wrappers (≤2 meaningful lines) → compact one-liner
-  6. _renderDependencySummary: downstream + upstream file lists
+     compact=true for non-hit chunks → signature only
+  6. _renderSymbolIndex (if symbols=true): all functions/classes from matched files
+  7. _renderDependencySummary (if imports≠false): downstream + upstream file lists
+```
+
+**FileResolvablePlugin (`resolveFiles`):**
+
+```
+4-tier resolution per pattern:
+  Tier 1: Exact file_path match
+  Tier 2: Directory prefix (trailing /) → all files under path
+  Tier 3: Glob pattern (picomatch) → filter all known paths
+  Tier 4: Fuzzy basename match → LIKE '%/basename' fallback
 ```
 
 ### 7.2 @brainbank/git
 
-**Files:** `packages/git/src/` — 6 source files, GIT_SCHEMA_VERSION = 1
+**Files:** `packages/git/src/` — 7 source files, GIT_SCHEMA_VERSION = 1
 
-**Capabilities implemented:**
+**Capabilities implemented (7):**
 `IndexablePlugin`, `VectorSearchPlugin`, `BM25SearchPlugin`,
-`ContextFormatterPlugin`, `ReembeddablePlugin`, `CoEditPlugin`
+`ContextFormatterPlugin`, `ReembeddablePlugin`, `CoEditPlugin`, `MigratablePlugin`
 
 **Schema owned:**
 `git_commits`, `commit_files`, `co_edits`, `git_vectors`, `fts_commits`
@@ -726,9 +781,10 @@ Phase 4: _updateHnsw() + _computeCoEdits()
 
 **Files:** `packages/docs/src/` — 7 source files, DOCS_SCHEMA_VERSION = 1
 
-**Capabilities implemented:**
+**Capabilities implemented (8):**
 `IndexablePlugin`, `VectorSearchPlugin`, `BM25SearchPlugin`,
-`ContextFormatterPlugin`, `SearchablePlugin`, `ReembeddablePlugin`
+`ContextFormatterPlugin`, `SearchablePlugin`, `ReembeddablePlugin`,
+`DocsPlugin`, `MigratablePlugin`
 
 **Schema owned:**
 `collections`, `doc_chunks`, `doc_vectors`, `path_contexts`, `fts_docs`
@@ -736,7 +792,7 @@ Phase 4: _updateHnsw() + _computeCoEdits()
 ```
 DocsPlugin.initialize(ctx):
   shared = await ctx.getOrCreateSharedHnsw('docs', undefined, embedding.dims)
-  ← literal 'docs' key → all docs:* plugins share ONE HNSW
+  ← literal 'docs' key → all docs:* share ONE HNSW
   indexer = new DocsIndexer(db, embedding, hnsw, vecCache, ctx.createTracker())
   _search = new DocumentSearch({ db, embedding, hnsw, vecCache, reranker })
 ```
@@ -765,17 +821,19 @@ ON CONFLICT(name) DO UPDATE SET ...
 
 **Files:** `packages/mcp/src/` — 3 source files
 
-**2 MCP tools** via `@modelcontextprotocol/sdk`:
+**3 MCP tools** via `@modelcontextprotocol/sdk`:
 
 | Tool | Description |
 |------|------------|
 | `brainbank_context` | Workflow Trace: search + call tree + `called by` annotations |
 | `brainbank_index` | Trigger incremental code/git/docs indexing |
+| `brainbank_files` | Direct file viewer: exact paths, directories, globs, fuzzy |
 
 `brainbank_context` params:
 - `task` (string), `affectedFiles` (string[]), `codeResults` (number=20),
   `gitResults` (number=5), `docsResults` (number?), `sources` (Record?),
   `path` (string?), `repo` (string?)
+- BrainBankQL fields: `lines`, `symbols`, `compact`, `callTree`, `imports`, `expander`
 
 **WorkspacePool** (`workspace-pool.ts`):
 
@@ -854,11 +912,10 @@ interface DomainVectorSearch {
 
 ### 10.2 CompositeVectorSearch
 
-**File:** `src/search/vector/composite-vector-search.ts` (85 lines)
+**File:** `src/search/vector/composite-vector-search.ts` (77 lines)
 
 Embeds the query **once**, delegates to registered `DomainVectorSearch` strategies.
-With multiple strategies (multi-repo), uses **round-robin interleaving** for
-balanced cross-repo representation.
+Results sorted by score, capped to requested K, normalized 0–1.
 
 ```
 search(query, options):
@@ -867,15 +924,14 @@ search(query, options):
     baseName = name.split(':')[0]
     k = src[name] ?? src[baseName] ?? DEFAULT_K (6)
     if k > 0: hits = strategy.search(queryVec, k, minScore, useMMR, mmrLambda, query)
+    multi-repo: prefix filePaths with sub-repo name
 
-  Single strategy → sort by score
-  Multiple strategies → _interleave(lists, maxK)
-    round-robin: take one from each in turn, preserving per-list rank order
+  sort by score, cap to requestedK, normalize globally
 ```
 
 ### 10.3 CompositeBM25Search
 
-**File:** `src/search/keyword/composite-bm25-search.ts` (50 lines)
+**File:** `src/search/keyword/composite-bm25-search.ts` (64 lines)
 
 ```
 search(query, options):
@@ -884,6 +940,7 @@ search(query, options):
     baseType = plugin.name.split(':')[0]
     k = sources[baseType] ?? DEFAULT_K (8)
     if k > 0: results.push(...plugin.searchBM25(query, k))
+    multi-repo: prefix filePaths with sub-repo name
   sort by score DESC
 ```
 
@@ -949,85 +1006,80 @@ rerank(query, results, reranker):
 
 ### 10.7 ContextBuilder
 
-**Files:** `src/search/context-builder.ts` (76 lines), `src/search/bm25-boost.ts` (64 lines)
-**Pattern:** Pure orchestrator + extracted helpers
-
-ContextBuilder is a thin orchestrator. All BM25 boosting, path filtering, and
-result keying logic lives in `bm25-boost.ts` as pure functions.
+**File:** `src/search/context-builder.ts` (299 lines)
+**Pattern:** Pipeline orchestrator
 
 ```
-context-builder.ts — Orchestrator
-  ContextBuilder(search?, registry, bm25?, pruner?)
+ContextBuilder(search?, registry, pruner?, embedding?, rerankerName?, configFields, expander?)
 
-  build(task, options?):
-    vectorResults = search?.search(task, ...)
-    results = boostWithBM25(vectorResults, bm25, task, sources)  ← bm25-boost.ts
-    results = filterByPath(results, pathPrefix)                  ← bm25-boost.ts
-    if pruner: results = pruneResults(pruner, task, results)      ← lib/prune.ts
+build(task, options?):
+  1. Primary: vector search (includes per-repo BM25 fusion internally)
+  2. Path scoping: filterByPath(results, pathPrefix)
+  3. LLM noise pruning (optional): pruneResults(task, results, pruner)
+  4. Session dedup: filter excludeFiles
+  5. LLM context expansion (optional — when expander field = true):
+       _expand(task, results) → buildManifest + expander.expand() + resolveChunks
+  6. Format output:
+       _appendFormatterResults: ContextFormatterPlugin per base type
+         Multi-repo: scope results to repo prefix per plugin
+       _appendSearchableResults: non-formatter SearchablePlugins
+  7. Append expander note (if any)
 
-    parts = [`# Context for: "${task}"\n`]
-    _appendFormatterResults(results, parts, options)
-    await _appendSearchableResults(task, parts, sources)
-    return parts.join('\n')
-
-  _appendFormatterResults:  ← dedup by baseType (multi-repo)
-    for mod in registry.all:
-      if isContextFormatterPlugin(mod):
-        baseType = mod.name.split(':')[0]
-        if !seenFormatters.has(baseType):
-          mod.formatContext(results, parts, options)
-
-  _appendSearchableResults:  ← non-formatter plugins
-    for mod in registry.all:
-      if isSearchable(mod) && NOT isContextFormatterPlugin(mod):
-        hits = await mod.search(task, ...)
-        parts.push(formatted hits)
-
-bm25-boost.ts — Pure functions
-  boostWithBM25(vectorResults, bm25, query, sources):
-    if !bm25 or empty results → return unchanged
-    bm25Hits = bm25.search(query, sources)
-    bm25Keys = Set(bm25Hits.map(resultKey))
-    for each vectorResult: if bm25Keys.has(resultKey(r)) → score += 0.15
-    re-sort by boosted score
-
-  filterByPath(results, pathPrefix?):
-    if !pathPrefix → return all
-    keep only where filePath.startsWith(pathPrefix)
-
-  resultKey(r: SearchResult): string
-    code     → "code:{filePath}"
-    commit   → "commit:{hash}"
-    document → "document:{filePath}:{collection}"
-    other    → "collection:{id or content[:80]}"
+  Logs all queries via logQuery() to /tmp/brainbank.log
 ```
 
-### 10.7.1 Pruning (LLM Noise Filter)
+**Field resolution:**
 
-**Files:** `src/lib/prune.ts`, `src/providers/pruners/haiku-pruner.ts`
-**Pattern:** Optional post-search filter using Haiku 4.5
+```
+_resolveFields(options):
+  1. Collect plugin defaults (from ContextFieldPlugin.contextFields())
+  2. Merge: defaults ← config.contextFields ← options.fields
+```
 
-The pruner runs **after** path scoping and **before** context formatting.
-Each search result is sent to Haiku with its file path, metadata, and **full
-file content** (capped at ~8K chars per item). For oversized files, the top
-60% + bottom 25% of lines are kept with an omission marker in between,
-preserving imports AND exports/key functions.
+### 10.8 Pruning
+
+**Files:** `src/lib/prune.ts` (72 lines), `src/providers/pruners/haiku-pruner.ts` (113 lines)
+
+Runs **after** path scoping and **before** context formatting.
 
 ```
 pruneResults(query, results, pruner):
-  items = results.map(r => { id, filePath, preview: _buildPreview(content), metadata })
+  items = results.map(r → { id, filePath, preview: _buildPreview(content), metadata })
   keepIds = await pruner.prune(query, items)   ← Haiku API call
-  return results.filter(r => keepIds.has(id))
+  return keepIds.filter(valid).map(id → results[id])
 
 _buildPreview(content):
   if content.length <= 8K chars → return as-is
   else → top 60% + "[... N lines omitted ...]" + bottom 25%
 ```
 
-**Fail-open:** If the API call fails or returns invalid JSON, all results
-pass through unchanged. Single results skip the pruner entirely.
+**Fail-open:** If the API call fails, all results pass through unchanged.
 
-### 10.8 DocumentSearch
+### 10.9 Expansion
+
+**Files:** `src/providers/pruners/haiku-expander.ts` (153 lines)
+
+Runs **after** pruning, only when `expander` field is `true`.
+
+```
+ContextBuilder._expand(task, results):
+  1. Detect multi-repo prefix from results
+  2. Collect excludeFilePaths + excludeIds from current results
+  3. For matching ExpandablePlugin:
+       manifest = plugin.buildManifest(excludeFilePaths, excludeIds)
+  4. expander.expand(task, excludeIds, manifest)
+       → { ids: number[], note?: string }
+  5. plugin.resolveChunks(ids) → additional SearchResults
+  6. Splice into results, return note for display
+
+HaikuExpander.expand(query, currentIds, manifest):
+  Compact manifest: "#42 src/auth.ts | method login L10-L25"
+  Haiku selects relevant chunk IDs + optional codebase observation
+  ~$0.001 per call, ~300-600ms latency
+  Fail-open: errors return empty array
+```
+
+### 10.10 DocumentSearch
 
 **File:** `packages/docs/src/document-search.ts` (225 lines)
 
@@ -1057,7 +1109,7 @@ _dedup: keep best-scoring per filePath
 
 ```
 DatabaseAdapter (interface):
-  prepare<T>(sql) → PreparedStatement<T>
+  prepare<T>(sql) → PreparedStatement<T>    { get, all, run, iterate }
   exec(sql)
   transaction<T>(fn: () => T): T
   batch<T>(sql, rows: T[])
@@ -1097,10 +1149,12 @@ HNSWIndex(dims, maxElements=2_000_000, M=16, efConstruction=200, efSearch=50)
 
 ```
 hnswPath(dbPath, name) → join(dirname(dbPath), 'hnsw-{name}.index')
+lockDir(dbPath)        → dirname(dbPath)
 saveAllHnsw()          → wraps in withLock(lockDir, 'hnsw', ...)
 reloadHnsw(deps)       → reinit + clear cache + tryLoad or loadVectors
 loadVectors()          → iterate rows → Float32Array → hnsw.add + cache.set
 loadVecCache()         → same but skips hnsw.add (graph loaded from file)
+countRows()            → SELECT COUNT(*) for staleness check
 ```
 
 ### 11.4 Embedding Providers
@@ -1146,7 +1200,7 @@ Qwen3Reranker({ modelUri?, cacheDir?, contextSize=2048 })
 
 ### 12.1 Watch Service
 
-**File:** `src/services/watch.ts` (340 lines)
+**File:** `src/services/watch.ts` (349 lines)
 **Pattern:** Plugin-driven watching with shared fs.watch fallback
 
 ```
@@ -1238,13 +1292,46 @@ getVersions(db): Map<string, number>
 getVersion(db, name): number (0 if not found)
 ```
 
+### 12.4 HTTP Daemon
+
+**Files:** `src/services/daemon.ts` (88 lines), `src/services/http-server.ts` (289 lines)
+
+PID file at `~/.cache/brainbank/server.pid` (JSON: `{ pid, port }`).
+
+```
+HttpServer(options: HttpServerOptions)
+  _pool: SimplePool (30min TTL, 5min eviction interval)
+  Routes:
+    POST /context  → brain.getContext()
+    POST /index    → brain.index()
+    GET  /health   → { ok, pid, uptime, port, workspaces }
+
+CLI delegation (src/cli/server-client.ts):
+  tryServerContext() → tries running daemon before local fallback
+  tryServerIndex()
+  serverHealth()
+```
+
+### 12.5 Query Logger
+
+**File:** `src/lib/logger.ts` (126 lines)
+
+```
+logQuery(entry: QueryLogEntry): void
+  Appends to /tmp/brainbank.log
+  Covers: getContext, search, hybridSearch, searchBM25
+  Includes: source, method, query, embedding, pruner, reranker,
+            options, results, pruned items, durationMs
+  Auto-truncates at 10MB (keeps newest half)
+```
+
 ---
 
 ## 13. Engine Layer
 
 ### 13.1 IndexAPI
 
-**File:** `src/engine/index-api.ts` (84 lines)
+**File:** `src/engine/index-api.ts` (86 lines)
 
 ```
 runIndex(deps: IndexDeps, options):
@@ -1268,7 +1355,7 @@ runIndex(deps: IndexDeps, options):
 
 ### 13.2 SearchAPI
 
-**File:** `src/engine/search-api.ts` (166 lines)
+**File:** `src/engine/search-api.ts` (223 lines)
 
 ```
 createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw):
@@ -1283,10 +1370,13 @@ createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw):
     : undefined
 
   bm25 = new CompositeBM25Search(registry)
-  contextBuilder = new ContextBuilder(search, registry, bm25, config.pruner)
+  contextBuilder = new ContextBuilder(search, registry, config.pruner,
+    embedding, rerankerName, config.contextFields, config.expander)
 
-  return new SearchAPI({ search, bm25, registry, config, kvService, contextBuilder })
+  return new SearchAPI({ search, bm25, registry, config, kvService, contextBuilder, embedding })
 ```
+
+All search methods log via `logQuery()` with timing, results, and provider info.
 
 ---
 
@@ -1300,7 +1390,7 @@ createBrain(contextOrRepo?)  [src/cli/factory/index.ts]
   config = loadConfig(rp)
   folderPlugins = discoverFolderPlugins(rp)
   brainOpts = { repoPath, ...config?.brainbank }
-  setupProviders(brainOpts, config, flags, env)  ← embedding + reranker
+  setupProviders(brainOpts, config, flags, env)  ← embedding + reranker + pruner + expander
   builtins = config?.plugins ?? ['code', 'git', 'docs']
   ignorePatterns from ctxFlag('ignore')
 
@@ -1345,11 +1435,14 @@ interface BrainContext {
 | `search <query>` | `cmdSearch` | Vector search |
 | `hsearch <query>` | `cmdHybridSearch` | Hybrid (best quality) |
 | `ksearch <query>` | `cmdKeywordSearch` | BM25 keyword |
-| `context <task>` | `cmdContext` | Formatted LLM context |
+| `context <task>` | `cmdContext` | Formatted LLM context (with BrainBankQL field flags) |
+| `files <path\|glob>` | `cmdFiles` | Direct file viewer (no search) |
 | `stats` | `cmdStats` | Index statistics |
 | `reembed` | `cmdReembed` | Re-generate all vectors |
 | `watch` | `cmdWatch` | Plugin-driven auto-reindex |
-| `serve` | `cmdServe` | MCP server (imports @brainbank/mcp) |
+| `mcp` | `cmdMcp` | MCP server (imports @brainbank/mcp) |
+| `daemon [start\|stop\|restart]` | `cmdDaemon` | HTTP daemon (foreground or background) |
+| `status` | `cmdStatus` | Daemon status |
 
 ---
 
@@ -1389,7 +1482,7 @@ plugin_versions        plugin_name TEXT PRIMARY KEY, version INTEGER, applied_at
 ━━━ CORE: MULTI-PROCESS COORDINATION ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 index_state
-  name TEXT PRIMARY KEY          ← 'code', 'git', 'docs', 'kv'
+  name TEXT PRIMARY KEY          ← 'code:backend', 'git', 'docs', 'kv'
   version INTEGER DEFAULT 0      ← monotonic, bumped after indexing
   writer_pid INTEGER
   updated_at INTEGER
@@ -1482,7 +1575,7 @@ new BrainBank({ embeddingProvider: openai })
     │  7. WebhookServer (if configured)                  │
     │  8. saveAllHnsw() → write .index files             │
     │  9. createSearchAPI() → discover VectorSearchPlugin│
-    │  10. snapshot _loadedVersions                       │
+    │  10. snapshot _loadedVersions                      │
     │     _initialized = true                            │
     └───────────────────────────────────────────────────┘
 ```
@@ -1523,7 +1616,6 @@ embed once →           discovers
 HNSW per strategy      BM25SearchPlugin
 code:fe, code:be,      per plugin
 git, docs              [kwResults]                  [pluginResults]
-interleave if multi
 [vecResults]
     │                   │                             │
     └───────────────────┴─────────────────────────────┘
@@ -1540,26 +1632,29 @@ interleave if multi
 ### 16.4 Context Building Flow
 
 ```
-brain.getContext("add rate limiting to the auth API")
+brain.getContext("add rate limiting to the auth API", { fields: { expander: true } })
   │
   ContextBuilder.build(task):
-    vectorResults = CompositeVectorSearch.search(task)
+    1. vectorResults = CompositeVectorSearch.search(task)
+    2. filterByPath(results, pathPrefix)
+    3. if pruner: pruneResults(task, results, pruner)
+    4. if excludeFiles: filter session dedup
+    5. if expander field=true && _expander:
+         buildManifest → expander.expand() → resolveChunks()
+         splice expanded results + capture note
 
-    boostWithBM25(vectorResults, bm25, task, sources)   ← bm25-boost.ts
-      score += 0.15 for keyword matches; re-sort
+    6. _appendFormatterResults (per plugin, multi-repo scoped):
+         CodePlugin.formatContext():
+           expand adjacent parts → build call tree → flat workflow trace
+         GitPlugin.formatContext():
+           commit history + diff snippets + co-edit suggestions
+         DocsPlugin.formatContext():
+           document results grouped by collection + title
 
-    filterByPath(results, pathPrefix)                    ← bm25-boost.ts
+    7. _appendSearchableResults:
+         SearchablePlugins (not ContextFormatters): generic bullet list
 
-    _appendFormatterResults (deduplicated by baseType):
-      CodePlugin.formatContext():
-        expand adjacent parts → build call tree → flat workflow trace
-      GitPlugin.formatContext():
-        commit history + diff snippets + co-edit suggestions
-      DocsPlugin.formatContext():
-        document results grouped by collection + title
-
-    _appendSearchableResults:
-      SearchablePlugins (not ContextFormatters): generic bullet list
+    8. Append expander note (if any)
 
     → markdown for LLM system prompt
 ```
@@ -1606,12 +1701,12 @@ brain.reembed()
 | 18 | **Atomic Swap** | `reembedTable()` | Temp table → TRANSACTION DELETE+INSERT |
 | 19 | **Incremental Processing** | `CodeWalker`, `DocsIndexer`, `GitIndexer` | Content-hash skip |
 | 20 | **Discriminated Union** | `SearchResult` | `isCodeResult()`, `matchResult()` |
-| 21 | **Pipeline** | Hybrid search → RRF → rerank | Composable stages |
+| 21 | **Pipeline** | Hybrid search → RRF → prune → expand → format | Composable stages |
 | 22 | **Memory-Aware Pool** | `WorkspacePool` | Memory-pressure + TTL eviction |
 | 23 | **Plugin Migrations** | `runPluginMigrations()` | Per-plugin versioned schema |
-| 24 | **Round-Robin Interleave** | `CompositeVectorSearch._interleave()` | Balanced cross-repo diversity |
-| 25 | **Per-Repo DB Isolation** | `_getOrCreatePluginDb()` | Namespaced plugins get separate SQLite files |
-| 26 | **Fan-Out Routing** | `Watcher._startSharedFsWatch()` | One fs.watch tree → multiple plugins |
+| 24 | **Per-Repo DB Isolation** | `_getOrCreatePluginDb()` | Namespaced plugins get separate SQLite files |
+| 25 | **Fan-Out Routing** | `Watcher._startSharedFsWatch()` | One fs.watch tree → multiple plugins |
+| 26 | **Field Resolution** | `ContextBuilder._resolveFields()` | Plugin defaults ← config ← per-query |
 
 ---
 
@@ -1633,7 +1728,10 @@ brain.reembed()
           └──────┬────────┘   │   │  CodePlugin (per-repo HNSW + DB)     │
                  │            │   │    ├── CodeWalker (tree-sitter AST)   │
                  │            │   │    ├── CodeVectorSearch (dual-level)  │
-                 │            │   │    ├── code-context-formatter (V4)    │
+                 │            │   │    ├── context-formatter (V4 trace)   │
+                 │            │   │    ├── SqlCodeGraphProvider           │
+                 │            │   │    ├── ExpandablePlugin (manifest)    │
+                 │            │   │    ├── FileResolvablePlugin           │
                  │            │   │    └── code-schema (5 migrations)     │
                  │            │   │                                      │
                  │            │   │  GitPlugin (shared 'git' HNSW)       │
@@ -1650,12 +1748,13 @@ brain.reembed()
                  │            │
           ┌──────▼────────────▼──────────────────────────────────────────┐
           │                     Search Layer                             │
-          │  CompositeVectorSearch (round-robin interleave if multi)     │
+          │  CompositeVectorSearch (score-based merge if multi-repo)     │
           │  CompositeBM25Search (per-plugin keyword search)             │
-          │  ContextBuilder (orchestrator) + bm25-boost.ts (pure fns)    │
+          │  ContextBuilder (orchestrator + field resolution + expander) │
           │  reciprocalRankFusion + fuseRankedLists<T>                   │
           │  rerank (position-aware blending)                            │
           │  searchMMR (diversity)                                       │
+          │  pruneResults (LLM noise filter)                             │
           └──────────────────────────────────────────────────────────────┘
 
      ┌──────────────────────────────────────────────────────────────────┐
@@ -1674,6 +1773,8 @@ brain.reembed()
      │                                                                  │
      │  EmbeddingProviders: Local, OpenAI, Perplexity, PerplexityContext│
      │  Qwen3Reranker ── node-llama-cpp (optional)                      │
+     │  HaikuPruner ── Anthropic Haiku 4.5 (optional)                   │
+     │  HaikuExpander ── Anthropic Haiku 4.5 (optional)                 │
      └──────────────────────────────────────────────────────────────────┘
 
      ┌──────────────────────────────────────────────────────────────────┐
@@ -1682,7 +1783,9 @@ brain.reembed()
      │  reembedAll (atomic swap, per-table)                             │
      │  Watcher (plugin-driven + shared fs.watch fallback + debounce)   │
      │  WebhookServer (optional HTTP for push-based plugins)            │
+     │  HttpServer + SimplePool (daemon mode for CLI delegation)        │
      │  EmbeddingMeta (provider tracking + mismatch detection)          │
+     │  Logger (structured query log to /tmp/brainbank.log)             │
      └──────────────────────────────────────────────────────────────────┘
 
      ┌──────────────────────────────────────────────────────────────────┐
@@ -1691,13 +1794,14 @@ brain.reembed()
      │    setupProviders + registerBuiltins (multi-repo detection)      │
      │  BrainContext: portable factory input (flags, env, repoPath)     │
      │  scan.ts: scanRepo() → ScanResult (no BrainBank init)           │
-     │  Commands: index, search, context, kv, collection, docs, etc.    │
+     │  server-client.ts: daemon delegation (context, index, health)    │
+     │  Commands: index, search, context, files, kv, collection, etc.   │
      └──────────────────────────────────────────────────────────────────┘
 
      ┌──────────────────────────────────────────────────────────────────┐
      │                     @brainbank/mcp                               │
      │  WorkspacePool: memory-pressure + TTL eviction, active-op guard │
-     │  2 tools: context (Workflow Trace), index (re-index)             │
+     │  3 tools: context (Workflow Trace), index, files                 │
      │  WorkspaceFactory → createBrain() (no hardcoded plugins)        │
      └──────────────────────────────────────────────────────────────────┘
 ```
@@ -1722,6 +1826,8 @@ brain.reembed()
 | `@brainbank/code` | `code-graph.test.ts` | code_imports, code_symbols, code_refs + cascade delete |
 | `@brainbank/code` | `import-extractor.test.ts` | Regex per 19 languages |
 | `@brainbank/code` | `symbol-extractor.test.ts` | AST symbol defs + call refs + builtin filtering |
+| `@brainbank/code` | `context-fields.test.ts` | BrainBankQL fields: lines, callTree, imports, symbols, compact |
+| `@brainbank/code` | `chunk-density.test.ts` | Density threshold scoring for false positive filtering |
 | `@brainbank/git` | `git.test.ts` | Real git repo → commits → co-edits → fileHistory |
 | `@brainbank/docs` | `docs.test.ts` | Smart chunking → register → index → search → context |
 
@@ -1790,6 +1896,7 @@ acquireLock(dir, name): O_CREAT | O_EXCL → retry with exponential backoff
 releaseLock(dir, name): unlink
 withLock(dir, name, fn): acquire → fn() → release (guaranteed via finally)
 Stale detection: process.kill(pid, 0) → steal if dead
+Max wait: 30 seconds
 ```
 
 #### 3. Hot-Reload (`ensureFresh()`)
@@ -1821,9 +1928,15 @@ Active ops tracked: pool never evicts during in-flight queries.
 `EmbeddingWorkerProxy` offloads to `worker_threads.Worker`.
 Vectors transferred via `Transferable` `ArrayBuffer` for zero-copy.
 
+#### 7. HTTP Daemon
+
+`HttpServer` with `SimplePool` manages per-repo BrainBank instances.
+CLI commands check `isServerRunning()` (PID file) before cold-loading.
+Daemon supports foreground + background (`fork` + `detached`) modes.
+
 ### Known Limitations
 
 1. Long indexing holds SQLite write lock during transaction
 2. No WAL checkpoint control (SQLite auto-checkpoints at 1000 pages)
 3. HNSW graphs are in-memory; large repos with many chunks use significant RAM during indexing and search
-```
+

@@ -11,18 +11,17 @@
  *   const brain = new BrainBank().use(code({ repoPath: '.' }));
  */
 
-export { code } from './code-plugin.js';
-export type { CodePluginOptions } from './code-plugin.js';
-export { CodeChunker } from './code-chunker.js';
-export type { ChunkerConfig } from './code-chunker.js';
-export { CodeWalker } from './code-walker.js';
-export type { CodeWalkerDeps, CodeIndexOptions } from './code-walker.js';
-export { GRAMMARS } from './grammars.js';
-export type { LangGrammar } from './grammars.js';
-export { extractImports, extractImportPaths } from './import-extractor.js';
-export type { ImportEdge, ImportKind } from './import-extractor.js';
-export { ImportResolver } from './import-resolver.js';
-export { extractSymbols, extractCallRefs } from './symbol-extractor.js';
-export type { SymbolDef } from './symbol-extractor.js';
-export type { DependencyGraph, DependencyNode, DependencyEdge } from './sql-code-graph.js';
-
+export { code } from './plugin.js';
+export type { CodePluginOptions } from './plugin.js';
+export { CodeChunker } from './parsing/chunker.js';
+export type { ChunkerConfig } from './parsing/chunker.js';
+export { CodeWalker } from './indexing/walker.js';
+export type { CodeWalkerDeps, CodeIndexOptions } from './indexing/walker.js';
+export { GRAMMARS } from './parsing/grammars.js';
+export type { LangGrammar } from './parsing/grammars.js';
+export { extractImports, extractImportPaths } from './graph/import-extractor.js';
+export type { ImportEdge, ImportKind } from './graph/import-extractor.js';
+export { ImportResolver } from './graph/import-resolver.js';
+export { extractSymbols, extractCallRefs } from './parsing/symbols.js';
+export type { SymbolDef } from './parsing/symbols.js';
+export type { DependencyGraph, DependencyNode, DependencyEdge } from './graph/provider.js';

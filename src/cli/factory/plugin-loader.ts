@@ -118,9 +118,9 @@ export async function setupProviders(
         brainOpts.pruner = new HaikuPruner();
     }
 
-    // Expander: automatically enabled when pruner is haiku (same API key), or explicit config
-    const expanderFlag = config?.expander as string | undefined;
-    if (expanderFlag === 'haiku' || (prunerFlag === 'haiku' && expanderFlag !== 'none')) {
+    // Expander: explicit opt-in only (config.json `expander: "haiku"` or --expander flag)
+    const expanderFlag = flags?.expander ?? (config?.expander as string | undefined);
+    if (expanderFlag === 'haiku') {
         try {
             const { HaikuExpander } = await import('@/providers/pruners/haiku-expander.ts');
             brainOpts.expander = new HaikuExpander();

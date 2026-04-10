@@ -1,6 +1,6 @@
 # MCP Server
 
-BrainBank ships with an MCP server (stdio) for AI tool integration — Antigravity, Claude Desktop, Cursor, and any MCP-compatible client.
+BrainBank ships with an MCP server (stdio) for AI tool integration — Google Antigravity, Claude Desktop, Cursor, and any MCP-compatible client.
 
 ## Setup
 
@@ -52,6 +52,8 @@ Add to `.cursor/mcp.json` in your project:
 ### CLI (standalone)
 
 ```bash
+brainbank mcp
+# or alias:
 brainbank serve
 ```
 
@@ -63,7 +65,7 @@ The MCP server auto-detects everything:
 
 - **Repo path** — from `repo` tool param > `BRAINBANK_REPO` env > `findRepoRoot(cwd)` (walks up looking for `.git/`)
 - **Embedding provider** — from `.brainbank/config.json` > `BRAINBANK_EMBEDDING` env > `provider_key` stored in DB > falls back to local
-- **Plugins** — reads `plugins` array from `config.json` (default: `['code']`). Plugins are loaded dynamically by the core factory — no hardcoded imports
+- **Plugins** — reads `plugins` array from `config.json` (default: `['code', 'git', 'docs']`). Loaded dynamically by the core factory — no hardcoded imports
 - **Ignore patterns** — reads `code.ignore` from `config.json`
 
 > Index your repo once with the CLI:
@@ -74,33 +76,45 @@ The MCP server auto-detects everything:
 
 ---
 
-## Tool: `brainbank_context`
+## Tools (3)
 
-The server exposes a **single tool**: `brainbank_context`.
+### `brainbank_context`
+
+**Primary tool.** Returns a Workflow Trace: search hits + full call tree with `called by` annotations, topologically ordered. All source code included — no trimming, no truncation.
 
 ```typescript
 brainbank_context({
   task: string,              // what you're trying to understand or implement
   affectedFiles?: string[],  // files you plan to modify (improves co-edit suggestions)
-  codeResults?: number,      // max code results (default: 6)
+  codeResults?: number,      // max code results (default: 20)
   gitResults?: number,       // max git commit results (default: 5)
+  docsResults?: number,      // max document results (omit to skip docs)
+  sources?: Record<string, number>, // per-source overrides (e.g. { code: 10, git: 0, docs: 5 })
+  path?: string,             // filter results to files under this path prefix
   repo?: string,             // repository path (default: auto-detect)
+  // BrainBankQL context fields:
+  lines?: boolean,           // prefix each code line with source line number
+  symbols?: boolean,         // append symbol index for matched files
+  compact?: boolean,         // show only function/class signatures, skip bodies
+  callTree?: boolean | { depth: number }, // call tree expansion (default: true)
+  imports?: boolean,         // dependency/import summary (default: true)
+  expander?: boolean,        // LLM-powered context expansion via HaikuExpander
 })
 ```
 
 Returns a **Workflow Trace** — a single flat `## Code Context` section with:
-- **Search hits** with `% match` scores
-- **Full call tree** (3 levels deep) with `called by` annotations
-- **Part adjacency boost** — multi-part functions shown complete (no gaps)
-- **Trivial wrapper collapse** — delegation functions shown as one-liners
-- **Test file filtering** — `test/`, `tests/`, `__tests__`, `.spec.`, `.test.` excluded
+- Search hits with `% match` scores
+- Full call tree (configurable depth) with `called by` annotations
+- Part adjacency boost — multi-part functions shown complete (no gaps)
+- Trivial wrapper collapse — delegation functions shown as one-liners
+- Test file and infra file filtering from call tree
 - All source code included — **no trimming, no truncation**
 
-If the project is **not indexed**, the tool returns an error with the CLI command to run.
+If the project is **not indexed**, the tool returns an error with the exact CLI command to run, plus a template `config.json`.
 
 ### `brainbank_index`
 
-A secondary tool for re-indexing from the AI agent. Requires `.brainbank/config.json` to exist.
+Re-index code/git/docs. Requires `.brainbank/config.json` to exist. Incremental — only changed files are processed.
 
 ```typescript
 brainbank_index({
@@ -109,20 +123,56 @@ brainbank_index({
 })
 ```
 
+Returns a summary: files indexed/skipped per plugin + total chunk/commit counts.
+
+### `brainbank_files`
+
+Direct file viewer — use **after** `brainbank_context` to fetch the complete content of files identified by search. No semantic search runs — reads directly from the code index.
+
+```typescript
+brainbank_files({
+  files: string[],     // file paths, directories, globs, or fuzzy basenames
+  repo?: string,       // repository path (default: auto-detect)
+  lines?: boolean,     // prefix each line with source line number (default: false)
+})
+```
+
+Supports 4 resolution tiers (via `FileResolvablePlugin`):
+
+| Mode | Example | Behavior |
+|------|---------|----------|
+| **Exact** | `"src/auth/login.ts"` | Exact file path match |
+| **Directory** | `"src/graph/"` | All indexed files under path (trailing `/`) |
+| **Glob** | `"src/**/*.service.ts"` | Picomatch glob pattern |
+| **Fuzzy** | `"plugin.ts"` | Basename match when exact fails |
+
+```typescript
+// View all files in a directory with line numbers
+brainbank_files({ files: ["src/db/"], lines: true })
+
+// Glob match across the entire codebase
+brainbank_files({ files: ["src/**/*.test.ts"] })
+
+// Multiple patterns in one call
+brainbank_files({ files: ["src/auth/login.ts", "src/auth/middleware.ts"] })
+```
+
 ---
 
 ## Multi-Workspace
 
-The MCP server manages a **`WorkspacePool`** of BrainBank instances — one per unique `repo` path. The pool uses **memory-pressure eviction** (configurable max memory, default 2GB) and **TTL eviction** (configurable idle timeout, default 30 minutes):
+The MCP server manages a **`WorkspacePool`** of BrainBank instances — one per unique `repo` path. The pool uses:
+
+- **Memory-pressure eviction** — oldest idle workspace evicted when total exceeds `BRAINBANK_MAX_MEMORY_MB` (default 2048 MB). Memory is estimated via `brain.memoryHint()` (HNSW vector count × dims × 4 bytes).
+- **TTL eviction** — workspaces idle longer than `BRAINBANK_TTL_MINUTES` (default 30 min) are evicted every 60 seconds.
+- **Active-op tracking** — `entry.activeOps` increments during in-flight queries; eviction skips entries with `activeOps > 0`.
 
 ```typescript
 brainbank_context({ task: "login flow", repo: "/project-a" })
 brainbank_context({ task: "API routes", repo: "/project-b" })
 ```
 
-Instances are cached in memory after first initialization (~480ms). On each request, the server calls `brain.ensureFresh()` to detect whether another process (e.g. a CLI `brainbank index`) has updated the HNSW indices. Stale indices are hot-reloaded automatically.
-
-Active operations are tracked — the pool never evicts a workspace with in-flight queries.
+Instances are cached in memory after first initialization (~480ms). On each pool hit, `brain.ensureFresh()` is called — if another process (e.g. CLI `brainbank index`) has updated the HNSW indices, stale in-memory copies are hot-reloaded automatically.
 
 ---
 
@@ -138,63 +188,68 @@ All optional — the server works without any env vars.
 | `BRAINBANK_TTL_MINUTES` | Idle workspace eviction timeout in minutes | `30` |
 | `OPENAI_API_KEY` | Required when embedding provider is `openai` | — |
 | `PERPLEXITY_API_KEY` | Required when embedding provider is `perplexity` / `perplexity-context` | — |
+| `ANTHROPIC_API_KEY` | Required when using `expander: true` (HaikuExpander) | — |
 
 ---
 
 ## AI Agent Integration
 
-Configure your AI agent rules to use **only** `brainbank_context`:
+Recommended agent rules for using BrainBank tools effectively:
 
 ```
-brainbank_context({ task: "<what you're trying to understand>" })
+Workflow:
+1. brainbank_context({ task: "<what you're working on>" })
+   → Get semantic search results + call tree + git history
+2. brainbank_files({ files: ["<specific files from step 1>"] })
+   → Fetch complete file contents for files you'll modify
+
+Tips:
+- Pass affectedFiles to get co-edit suggestions
+- Use path to scope results to a subsystem
+- Use callTree: { depth: 2 } for deeper call exploration
+- Use expander: true for LLM-powered chunk discovery
 ```
 
-After each call, batch-read the full output in 800-line chunks. The output is a
-complete, untrimmed Workflow Trace with `called by` annotations and full source.
-
-> **Configuration:** Add BrainBank rules to your agent's system prompt (GEMINI.md,
-> AGENTS.md, .cursor/rules) pointing it to use `brainbank_context` only.
-
-| Agent | How to connect |
-|-------|---------------|
-| **Antigravity** | Add `AGENTS.md` to project root |
-| **Claude Code** | Add `AGENTS.md` to project root |
-| **Cursor** | Add rules in `.cursor/rules` |
-| **MCP** (any agent) | JSON config above |
+| Agent | Configuration location |
+|-------|----------------------|
+| **Antigravity** | `AGENTS.md` in project root |
+| **Claude Code** | `AGENTS.md` in project root |
+| **Cursor** | `.cursor/rules` |
+| **Any MCP client** | JSON config as shown above |
 
 ---
 
 ## How It Works
 
 ```
-AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→  SQLite
+AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→  SQLite + HNSW
 ```
 
 1. Agent sends `brainbank_context({ task: "..." })`
-2. `WorkspacePool` resolves `repo` → gets/creates a BrainBank instance
-3. BrainBank calls `ensureFresh()` → hot-reloads stale HNSW if needed
-4. BrainBank executes search + call tree + formatting
-5. Workflow Trace returned as markdown to the agent
+2. `WorkspacePool.get(repoPath)` → gets/creates a BrainBank instance
+3. `brain.ensureFresh()` → compares `_loadedVersions` vs `index_state` table (~5μs); hot-reloads stale HNSW if needed
+4. `brain.getContext(task, options)` → `ContextBuilder.build()`:
+   - `CompositeVectorSearch`: embed query once, query all domain HNSW indices
+   - Optional path scoping → optional `HaikuPruner` → optional `HaikuExpander`
+   - `ContextFormatterPlugin` per plugin: `CodePlugin` → Workflow Trace, `GitPlugin` → commit history + co-edits
+5. Markdown Workflow Trace returned to agent
 
 ### Architecture
 
 ```
-@brainbank/mcp
-├── mcp-server.ts          ← MCP stdio server (1 tool: brainbank_context)
+packages/mcp/src/
+├── mcp-server.ts          ← MCP stdio server (3 tools: context, index, files)
 ├── workspace-pool.ts      ← Memory-pressure + TTL eviction, active-op tracking
 └── workspace-factory.ts   ← Delegates to core createBrain() — no plugin hardcoding
 ```
 
-The MCP server imports `createBrain()` from the core `brainbank` package. Plugin packages are optional `peerDependencies` — discovered and loaded dynamically by the core factory.
-
-### Corruption Recovery
-
-If `initialize()` fails with `Invalid the given array length` (corrupted DB), the server auto-deletes the DB file and retries with a fresh instance.
+`WorkspaceFactory.createWorkspaceBrain()` imports `createBrain()` from core, passes a `BrainContext` with `repoPath` and `env`. Console output is redirected to stderr during initialization to prevent ANSI escape codes from corrupting the MCP JSON-RPC stdio transport.
 
 ---
 
 ## See Also
 
 - [Multi-Repo](multi-repo.md) — multi-workspace indexing
-- [Configuration](config.md) — embedding config
+- [Configuration](config.md) — embedding config, plugin config
+- [Search](search.md) — BrainBankQL context fields
 - [packages/mcp/README.md](../packages/mcp/README.md) — package-level docs

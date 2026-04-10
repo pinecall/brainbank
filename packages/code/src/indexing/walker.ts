@@ -9,10 +9,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
-import { CodeChunker } from './code-chunker.js';
-import { extractImports, extractImportPaths } from './import-extractor.js';
-import { ImportResolver, isStdlib } from './import-resolver.js';
-import { extractSymbols, extractCallRefs, type SymbolDef } from './symbol-extractor.js';
+import { CodeChunker } from '../parsing/chunker.js';
+import { extractImports, extractImportPaths } from '../graph/import-extractor.js';
+import { ImportResolver, isStdlib } from '../graph/import-resolver.js';
+import { extractSymbols, extractCallRefs, type SymbolDef } from '../parsing/symbols.js';
 import { SUPPORTED_EXTENSIONS, isIgnoredDir, isIgnoredFile } from 'brainbank';
 import { vecToBuffer } from 'brainbank';
 import type { EmbeddingProvider, ProgressCallback, IndexResult, CodeChunk } from 'brainbank';

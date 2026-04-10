@@ -20,7 +20,7 @@ npm install --legacy-peer-deps
 ```
 
 This single command:
-- Installs root deps (`better-sqlite3`, `hnswlib-node`, `tsup`, `tsx`, etc.)
+- Installs root deps (`better-sqlite3`, `hnswlib-node`, `tsup`, `tsx`, tree-sitter grammars, etc.)
 - Auto-symlinks all `@brainbank/*` workspace packages in `node_modules/`
 - Runs `postinstall` → creates `node_modules/brainbank` symlink to local root
 
@@ -64,6 +64,32 @@ node_modules/brainbank       → ..                  → src/index.ts
 The `bin/brainbank.ts` shim uses `#!/usr/bin/env node --import tsx` to register the TypeScript loader before imports execute. Every edit to any `.ts` file takes effect immediately — no rebuild cycle.
 
 > **Building is only needed for `npm publish`.** The `prepublishOnly` script runs `tsup` to generate `dist/` for the npm registry.
+
+---
+
+## Repository Structure
+
+```
+brainbank/
+├── src/                     ← Core library (published as "brainbank")
+│   ├── brainbank.ts         ← Main facade (BrainBank class)
+│   ├── index.ts             ← Public exports
+│   ├── types.ts             ← All TypeScript interfaces
+│   ├── plugin.ts            ← Plugin interfaces + type guards
+│   ├── engine/              ← Index + Search API + Reembed
+│   ├── db/                  ← DatabaseAdapter, SQLiteAdapter, migrations, tracker
+│   ├── providers/           ← Embeddings, rerankers, pruners, HNSW
+│   ├── search/              ← CompositeVector, CompositeBM25, ContextBuilder, RRF, MMR
+│   ├── services/            ← Collection, KVService, Watcher, HttpServer, daemon
+│   ├── lib/                 ← Pure utilities: fts, math, rrf, rerank, prune, logger
+│   └── cli/                 ← CLI commands + factory (createBrain)
+│
+└── packages/
+    ├── code/                ← @brainbank/code (tree-sitter, import graph, call tree)
+    ├── git/                 ← @brainbank/git (commits, co-edits, diffs)
+    ├── docs/                ← @brainbank/docs (smart markdown chunking)
+    └── mcp/                 ← @brainbank/mcp (MCP stdio server, WorkspacePool)
+```
 
 ---
 
@@ -118,6 +144,27 @@ Packages use `.js` extensions for local imports (e.g., `from './git-plugin.js'`)
 
 ---
 
+## Testing
+
+The project uses a custom test runner (`test/run.ts`) that discovers:
+- `test/{unit,integration}/` — core tests
+- `packages/*/test/{unit,integration}/` — plugin tests
+
+Tests export `{ name, tests }` — plain objects with assert methods. A hash-based `hashEmbedding()` provider is used for deterministic test results without API keys.
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test file pattern
+npm test -- --filter "Code Indexer"
+
+# Integration tests (requires tree-sitter grammars, ~30s)
+npm run test:integration
+```
+
+---
+
 ## Troubleshooting
 
 ### `npm install` shows peer dep conflicts
@@ -146,4 +193,11 @@ Only happens when running `tsup` for publishing. Stale `.d.ts` from a previous b
 ```bash
 rm -rf dist && npm run build:core
 ```
-This is already handled by the `build:core` script, but can happen if you run `npx tsup` directly.
+
+### HNSW dimension mismatch on startup
+
+If you see `BrainBank: Embedding dimension mismatch`, the stored vectors use a different provider than the configured one:
+```bash
+brainbank reembed   # regenerates all vectors with current provider
+```
+Or programmatically: `await brain.initialize({ force: true })` then `await brain.reembed()`.

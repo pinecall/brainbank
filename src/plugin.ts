@@ -304,3 +304,20 @@ export function isExpandablePlugin(p: Plugin): p is ExpandablePlugin {
     return typeof (p as ExpandablePlugin).buildManifest === 'function'
         && typeof (p as ExpandablePlugin).resolveChunks === 'function';
 }
+
+
+/** Plugin that can resolve file paths/patterns directly to SearchResults (no search). */
+export interface FileResolvablePlugin extends Plugin {
+    /**
+     * Resolve file paths, directories, and glob patterns to SearchResults.
+     * Each entry is resolved: exact → directory → glob → fuzzy basename fallback.
+     *
+     * @param patterns - File paths, directory prefixes (trailing `/`), or glob patterns (`*`).
+     */
+    resolveFiles(patterns: string[]): SearchResult[];
+}
+
+/** Check if a plugin can resolve files directly. */
+export function isFileResolvable(p: Plugin): p is FileResolvablePlugin {
+    return typeof (p as FileResolvablePlugin).resolveFiles === 'function';
+}

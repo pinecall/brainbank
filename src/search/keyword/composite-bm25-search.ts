@@ -3,7 +3,6 @@
  *
  * Generic BM25 coordinator that discovers BM25SearchPlugin instances
  * from the registry and delegates per-source keyword search.
- * Replaces the hardcoded KeywordSearch class.
  */
 
 import type { SearchResult } from '@/types.ts';

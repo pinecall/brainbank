@@ -39,7 +39,7 @@ import { setEmbeddingMeta, getEmbeddingMeta, detectProviderMismatch, getVersions
 import { runIndex } from './engine/index-api.ts';
 import { reembedAll } from './engine/reembed.ts';
 import { SearchAPI, createSearchAPI } from './engine/search-api.ts';
-import { isReembeddable } from './plugin.ts';
+import { isReembeddable, isFileResolvable } from './plugin.ts';
 
 import { resolveEmbedding } from './providers/embeddings/resolve.ts';
 import { HNSWIndex } from './providers/vector/hnsw-index.ts';
@@ -275,6 +275,23 @@ export class BrainBank extends EventEmitter {
         await this.initialize();
         await this.ensureFresh();
         return this._searchAPI?.getContext(task, options) ?? '';
+    }
+
+    /**
+     * Resolve file paths, directories, and glob patterns to full SearchResults.
+     * Bypasses search entirely — reads directly from plugin indexes.
+     *
+     * @example
+     * const files = brain.resolveFiles(['src/auth/login.ts', 'src/graph/']);
+     */
+    resolveFiles(patterns: string[]): SearchResult[] {
+        this._requireInit('resolveFiles');
+        const results: SearchResult[] = [];
+        for (const mod of this._registry.all) {
+            if (!isFileResolvable(mod)) continue;
+            results.push(...mod.resolveFiles(patterns));
+        }
+        return results;
     }
 
     /** Rebuild FTS5 indices. */

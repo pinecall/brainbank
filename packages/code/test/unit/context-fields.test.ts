@@ -9,9 +9,9 @@
  * - `compact`: signatures only
  */
 
-import { formatCodeContext } from '../../src/code-context-formatter.ts';
+import { formatCodeContext } from '../../src/formatting/context-formatter.ts';
 import type { SearchResult } from 'brainbank';
-import type { CodeGraphProvider, CallTreeNode, SymbolInfo } from '../../src/sql-code-graph.ts';
+import type { CodeGraphProvider, CallTreeNode, SymbolInfo } from '../../src/graph/provider.ts';
 
 export const name = 'BrainBankQL Context Fields';
 

@@ -26,7 +26,7 @@ The built-in `@brainbank/code`, `@brainbank/git`, and `@brainbank/docs` all use 
 
 ## How It Works
 
-BrainBank core owns only infrastructure tables (`kv_data`, `kv_vectors`, `embedding_meta`, `plugin_versions`, `index_state`). **Domain tables** — `code_chunks`, `git_commits`, `doc_chunks`, etc. — are created by their plugins via the **versioned migration system**.
+BrainBank core owns only infrastructure tables (`kv_data`, `kv_vectors`, `embedding_meta`, `plugin_versions`, `index_state`, `plugin_tracking`). **Domain tables** — `code_chunks`, `git_commits`, `doc_chunks`, etc. — are created by their plugins via the **versioned migration system**.
 
 ```
 ┌──────────────────────┐          ┌────────────────────┐
@@ -34,14 +34,14 @@ BrainBank core owns only infrastructure tables (`kv_data`, `kv_vectors`, `embedd
 │  ┌─────────┬───────┐ │   check  │  ┌───────────────┐ │
 │  │ plugin  │ ver   │ │◄─────────│  │ schemaVersion │ │
 │  ├─────────┼───────┤ │          │  │ migrations[]  │ │
-│  │ code    │   1   │ │  apply   │  └───────────────┘ │
+│  │ code    │   5   │ │  apply   │  └───────────────┘ │
 │  │ git     │   1   │ │◄─────────│                    │
 │  │ docs    │   1   │ │          │                    │
 │  └─────────┴───────┘ │          └────────────────────┘
 └──────────────────────┘
 ```
 
-1. Plugin declares `schemaVersion` (e.g. `1`) and a `migrations` array
+1. Plugin declares `schemaVersion` (e.g. `5`) and a `migrations` array
 2. On `initialize()`, plugin calls `runPluginMigrations(db, name, version, migrations)`
 3. Core reads the stored version from `plugin_versions`
 4. Runs only migrations whose `version > stored version`, each in its own transaction
@@ -86,19 +86,20 @@ The `isMigratable(plugin)` type guard checks for this capability at runtime.
 
 ## Built-in Plugin Schemas
 
-### @brainbank/code (v1)
+### @brainbank/code (CODE_SCHEMA_VERSION = 5)
 
 | Table | Purpose |
 |-------|---------|
-| `code_chunks` | AST-extracted code blocks (function, class, method) |
-| `code_vectors` | Embedding vectors for each chunk |
+| `code_chunks` | AST-extracted code blocks (function, class, method, synopsis) |
+| `code_vectors` | Embedding vectors for each chunk (keyed by `chunk_id`) |
 | `indexed_files` | File hash tracking for incremental indexing |
-| `code_imports` | File-level import/require dependencies |
-| `code_symbols` | Function/class/method definitions with line numbers |
+| `code_imports` | File-level import/require dependencies (v2: with `import_kind`, `resolved`) |
+| `code_symbols` | Function/class/method definitions with line numbers + chunk link |
 | `code_refs` | Function call references within each chunk |
+| `code_call_edges` | Chunk-to-chunk call graph (v3) |
 | `fts_code` | FTS5 full-text index on file_path, name, content |
 
-### @brainbank/git (v1)
+### @brainbank/git (GIT_SCHEMA_VERSION = 1)
 
 | Table | Purpose |
 |-------|---------|
@@ -108,7 +109,7 @@ The `isMigratable(plugin)` type guard checks for this capability at runtime.
 | `git_vectors` | Embedding vectors for each commit |
 | `fts_commits` | FTS5 full-text index on message, author, diff |
 
-### @brainbank/docs (v1)
+### @brainbank/docs (DOCS_SCHEMA_VERSION = 1)
 
 | Table | Purpose |
 |-------|---------|
@@ -265,7 +266,7 @@ SELECT * FROM plugin_versions;
 
 -- plugin_name │ version │ applied_at
 -- ────────────┼─────────┼───────────
--- code        │       1 │ 1711929600
+-- code        │       5 │ 1711929600
 -- git         │       1 │ 1711929600
 -- docs        │       1 │ 1711929600
 ```
