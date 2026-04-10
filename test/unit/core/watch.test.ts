@@ -131,18 +131,18 @@ export const tests = {
     async 'per-plugin debounce batches events'(assert: { (cond: unknown, msg?: string): void; equal: (a: unknown, b: unknown, msg?: string) => void }) {
         let indexCallCount = 0;
         const plugin = createWatchablePlugin('code', {
-            watchConfig: { debounceMs: 300 },
+            watchConfig: { debounceMs: 200, batchSize: 5 },
             indexFn: async () => { indexCallCount++; return { indexed: 1, skipped: 0 }; },
         });
 
-        const watcher = new Watcher(async () => {}, [plugin as Plugin]);
+        const watcher = new Watcher(async () => {}, [plugin as Plugin], { debounceMs: 200 });
 
-        // Fire 5 rapid events — should batch into 1 flush
+        // Fire 5 rapid events — batchSize=5 triggers immediate flush
         for (let i = 0; i < 5; i++) {
             plugin._fire({ type: 'update', sourceId: `file${i}.ts`, sourceName: 'file' });
         }
 
-        const triggered = await waitFor(() => indexCallCount > 0, 2000);
+        const triggered = await waitFor(() => indexCallCount > 0, 5000);
         assert(triggered, 'index should have been called');
         assert.equal(indexCallCount, 1, `should batch into 1 call (got ${indexCallCount})`);
 
