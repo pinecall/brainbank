@@ -106,6 +106,17 @@ export async function setupProviders(
     flags?: Record<string, string | undefined>,
     env?: Record<string, string | undefined>,
 ): Promise<void> {
+    // Resolve API keys: config.keys > env vars
+    const keys = config?.keys ?? {};
+    const anthropicKey = keys.anthropic || process.env.ANTHROPIC_API_KEY;
+    const perplexityKey = keys.perplexity || process.env.PERPLEXITY_API_KEY;
+    const openaiKey = keys.openai || process.env.OPENAI_API_KEY;
+
+    // Inject resolved keys into process.env so downstream providers auto-detect them
+    if (anthropicKey) process.env.ANTHROPIC_API_KEY = anthropicKey;
+    if (perplexityKey) process.env.PERPLEXITY_API_KEY = perplexityKey;
+    if (openaiKey) process.env.OPENAI_API_KEY = openaiKey;
+
     const rerankerFlag = flags?.reranker ?? (config?.reranker as string | undefined);
     if (rerankerFlag === 'qwen3') {
         const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');
@@ -115,7 +126,7 @@ export async function setupProviders(
     const prunerFlag = flags?.pruner ?? (config?.pruner as string | undefined);
     if (prunerFlag === 'haiku') {
         const { HaikuPruner } = await import('@/providers/pruners/haiku-pruner.ts');
-        brainOpts.pruner = new HaikuPruner();
+        brainOpts.pruner = new HaikuPruner({ apiKey: anthropicKey });
     }
 
     // Expander: explicit opt-in only (config.json `expander: "haiku"` or --expander flag)
@@ -123,7 +134,7 @@ export async function setupProviders(
     if (expanderFlag === 'haiku') {
         try {
             const { HaikuExpander } = await import('@/providers/pruners/haiku-expander.ts');
-            brainOpts.expander = new HaikuExpander();
+            brainOpts.expander = new HaikuExpander({ apiKey: anthropicKey });
         } catch {
             // Fail-open: if API key missing, skip expander silently
         }

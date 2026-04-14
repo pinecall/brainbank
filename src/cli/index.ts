@@ -26,6 +26,7 @@ const command = args[0];
 
 async function main(): Promise<void> {
     switch (command) {
+        case 'i':
         case 'index':       return cmdIndex();
         case 'collection':  return cmdCollection();
         case 'kv':          return cmdKv();

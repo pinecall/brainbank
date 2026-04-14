@@ -1,6 +1,6 @@
 {
     "name": "@brainbank/docs",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Document collection indexing plugin for BrainBank — smart markdown chunking + hybrid search",
     "type": "module",
     "main": "dist/index.js",
@@ -12,9 +12,10 @@
         "./src/*": "./src/*",
         "./dist/*": "./dist/*"
     },
-    "files": ["src"],
+    "files": ["dist", "src"],
     "scripts": {
-        "build": "tsup"
+        "build": "tsup",
+        "prepublishOnly": "npm run build"
     },
     "peerDependencies": {
         "brainbank": ">=0.7.0"

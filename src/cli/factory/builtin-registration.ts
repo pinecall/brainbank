@@ -28,12 +28,12 @@ function detectGitSubdirs(parentPath: string, repos?: string[]): { name: string;
     try {
         const entries = fs.readdirSync(parentPath, { withFileTypes: true });
         let subdirs = entries
-            .filter(e =>
-                e.isDirectory() &&
-                !e.name.startsWith('.') &&
-                !e.name.startsWith('node_modules') &&
-                fs.existsSync(path.join(parentPath, e.name, '.git')),
-            )
+            .filter(e => {
+                if (e.name.startsWith('.') || e.name.startsWith('node_modules')) return false;
+                // Follow symlinks: isDirectory() is false for symlinks, so check via statSync
+                const isDir = e.isDirectory() || (e.isSymbolicLink() && fs.statSync(path.join(parentPath, e.name)).isDirectory());
+                return isDir && fs.existsSync(path.join(parentPath, e.name, '.git'));
+            })
             .map(e => ({ name: e.name, path: path.join(parentPath, e.name) }));
 
         if (repos && repos.length > 0) {

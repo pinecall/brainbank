@@ -21,6 +21,12 @@ export interface ProjectConfig {
     maxFileSize?: number;
     indexers?: Plugin[];
     brainbank?: Partial<BrainBankConfig>;
+    /** Optional API keys — override env vars. Kept out of version control. */
+    keys?: {
+        anthropic?: string;
+        perplexity?: string;
+        openai?: string;
+    };
     /** Context field defaults (e.g. { lines: true, callTree: true, symbols: false }). */
     context?: Record<string, unknown>;
     /** Per-plugin config sections (e.g. code, git, docs). */

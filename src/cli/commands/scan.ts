@@ -73,9 +73,11 @@ function scanCodeModule(repoPath: string): ScanModule {
         catch { return; }
 
         for (const entry of entries) {
-            if (entry.isDirectory()) {
+            const fullPath = path.join(dir, entry.name);
+            const isDir = entry.isDirectory() || (entry.isSymbolicLink() && (() => { try { return fs.statSync(fullPath).isDirectory(); } catch { return false; } })());
+            if (isDir) {
                 if (isIgnoredDir(entry.name)) continue;
-                walk(path.join(dir, entry.name));
+                walk(fullPath);
             } else if (entry.isFile()) {
                 if (isIgnoredFile(entry.name)) continue;
                 const ext = path.extname(entry.name).toLowerCase();
@@ -261,10 +263,12 @@ function countDocs(dir: string): number {
     let count = 0;
     try {
         for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-            if (e.isDirectory()) {
+            const ePath = path.join(dir, e.name);
+            const isDir = e.isDirectory() || (e.isSymbolicLink() && (() => { try { return fs.statSync(ePath).isDirectory(); } catch { return false; } })());
+            if (isDir) {
                 if (isIgnoredDir(e.name)) continue;
-                count += countDocs(path.join(dir, e.name));
-            } else if (e.isFile() && /\.mdx?$/i.test(e.name)) {
+                count += countDocs(ePath);
+            } else if ((e.isFile() || e.isSymbolicLink()) && /\.mdx?$/i.test(e.name)) {
                 count++;
             }
         }
@@ -324,7 +328,11 @@ function scanGitSubdirs(repoPath: string): ScanResult['gitSubdirs'] {
 
     try {
         let subdirs = fs.readdirSync(repoPath, { withFileTypes: true })
-            .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+            .filter(e => {
+                if (e.name.startsWith('.')) return false;
+                const isDir = e.isDirectory() || (e.isSymbolicLink() && (() => { try { return fs.statSync(path.join(repoPath, e.name)).isDirectory(); } catch { return false; } })());
+                return isDir;
+            })
             .filter(e => fs.existsSync(path.join(repoPath, e.name, '.git')))
             .map(e => ({ name: e.name }));
 

@@ -1,15 +1,19 @@
 {
     "name": "@brainbank/git",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Git history indexing plugin for BrainBank — commit search + co-edit analysis",
     "type": "module",
-    "main": "src/index.ts",
+    "main": "dist/index.js",
     "exports": {
-        ".": "./src/index.ts"
+        ".": {
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        }
     },
-    "files": ["src"],
+    "files": ["dist", "src"],
     "scripts": {
-        "build": "tsup"
+        "build": "tsup",
+        "prepublishOnly": "npm run build"
     },
     "peerDependencies": {
         "brainbank": ">=0.7.0"

@@ -391,14 +391,17 @@ export class CodeWalker {
         catch { return files; }
 
         for (const entry of entries) {
-            if (entry.isDirectory()) {
+            // Follow symlinks: isDirectory() is false for symlinks, resolve via statSync
+            const entryPath = path.join(dir, entry.name);
+            const isDir = entry.isDirectory() || (entry.isSymbolicLink() && (() => { try { return fs.statSync(entryPath).isDirectory(); } catch { return false; } })());
+            if (isDir) {
                 if (isIgnoredDir(entry.name)) continue;
                 // Check custom ignores against relative dir path
                 if (this._isIgnored) {
-                    const relDir = path.relative(this._repoPath, path.join(dir, entry.name));
+                    const relDir = path.relative(this._repoPath, entryPath);
                     if (this._isIgnored(relDir) || this._isIgnored(relDir + '/')) continue;
                 }
-                this._walkRepo(path.join(dir, entry.name), files);
+                this._walkRepo(entryPath, files);
             } else if (entry.isFile()) {
                 if (isIgnoredFile(entry.name)) continue;
                 const ext = path.extname(entry.name).toLowerCase();

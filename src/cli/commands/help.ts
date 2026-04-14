@@ -5,7 +5,7 @@ import { c } from '@/cli/utils.ts';
 export function showHelp(): void {
     console.log(c.bold('\n━━━ BrainBank — Semantic Knowledge Bank ━━━\n'));
     console.log(c.bold('Indexing:'));
-    console.log(`  ${c.cyan('index')} [path]                      Index code + git history`);
+    console.log(`  ${c.cyan('index')} ${c.dim('(i)')} [path]                  Index code + git history`);
     console.log(`  ${c.cyan('collection add')} <path> --name      Add a document collection`);
     console.log(`  ${c.cyan('collection list')}                    List collections`);
     console.log(`  ${c.cyan('collection remove')} <name>           Remove a collection`);

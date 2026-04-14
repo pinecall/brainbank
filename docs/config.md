@@ -57,6 +57,13 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
     "hnswM": 16,
     "hnswEfConstruction": 200,
     "hnswEfSearch": 50
+  },
+
+  // Optional API keys (override env vars — useful for CI/CD, MCP, GUI apps)
+  "keys": {
+    "anthropic": "sk-ant-...",    // pruner & expander
+    "perplexity": "pplx-...",     // Perplexity embeddings
+    "openai": "sk-..."            // OpenAI embeddings
   }
 }
 ```
@@ -181,17 +188,38 @@ No config file? The CLI uses all built-in plugins with local embeddings — **ze
 
 ---
 
+## API Keys
+
+API keys can be provided in **config.json** or via **environment variables**. Config keys take priority.
+
+```jsonc
+{
+  "keys": {
+    "anthropic": "sk-ant-...",   // for pruner & expander
+    "perplexity": "pplx-...",    // for Perplexity embeddings
+    "openai": "sk-..."           // for OpenAI embeddings
+  }
+}
+```
+
+> **Resolution order:** `config.json keys` → `environment variables` → error.
+>
+> Keys in config.json are useful for CI/CD, MCP servers, and environments where shell env vars aren't available (GUI apps like Cursor, Antigravity).
+> For local dev, env vars via shell profile (`~/.zshrc`) work fine too.
+
+---
+
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
 | `BRAINBANK_DEBUG` | Show full stack traces in CLI errors |
-| `OPENAI_API_KEY` | Required when using `--embedding openai` |
-| `PERPLEXITY_API_KEY` | Required when using `--embedding perplexity` or `perplexity-context` |
-| `ANTHROPIC_API_KEY` | Required when using `--pruner haiku` or `expander: haiku` |
+| `OPENAI_API_KEY` | Required when using `--embedding openai` (or set `keys.openai` in config) |
+| `PERPLEXITY_API_KEY` | Required when using `--embedding perplexity` or `perplexity-context` (or set `keys.perplexity` in config) |
+| `ANTHROPIC_API_KEY` | Required when using `--pruner haiku` or `expander: haiku` (or set `keys.anthropic` in config) |
 | `BRAINBANK_EMBEDDING` | Fallback embedding key (`local`, `openai`, `perplexity`, `perplexity-context`) |
 
-> **Recommended:** Set `"embedding"` in `.brainbank/config.json` instead of relying on env vars — the interactive `brainbank index` prompt saves it for you automatically.
+> **Recommended:** Set keys in `.brainbank/config.json` `keys` section instead of relying on env vars — keeps your environment clean and works across all contexts (CLI, MCP, CI).
 
 ---
 
