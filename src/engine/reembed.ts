@@ -198,8 +198,8 @@ async function rebuildHnsw(
     ).all() as VectorRow[];
 
     for (const row of rows) {
-        const buf = Buffer.from(row.embedding);
-        const vec = new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+        const emb = row.embedding;
+        const vec = new Float32Array(emb.buffer.slice(emb.byteOffset, emb.byteOffset + emb.byteLength));
         hnsw.add(vec, row.id);
         vecs.set(row.id, vec);
     }

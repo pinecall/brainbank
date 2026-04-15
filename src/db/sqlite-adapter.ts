@@ -1,14 +1,15 @@
 /**
  * BrainBank — SQLite Adapter
  *
- * Implements `DatabaseAdapter` using `better-sqlite3`.
- * Drop-in replacement for the old `Database` class.
+ * Implements `DatabaseAdapter` using Node.js built-in `node:sqlite`.
+ * Zero native addons — no ABI issues across Node versions.
  * Handles WAL mode, directory creation, schema init, and transactions.
  */
 
 import type { DatabaseAdapter, AdapterCapabilities, PreparedStatement, ExecuteResult } from './adapter.ts';
+import type { DatabaseSync as DatabaseSyncType, StatementSync as StatementSyncType } from 'node:sqlite';
 
-import BetterSqlite3 from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -112,24 +113,27 @@ export function getSchemaVersion(adapter: DatabaseAdapter): number {
 
 // ── Statement Wrapper ───────────────────────────────────────────────
 
-/** Wraps a `better-sqlite3` Statement into a `PreparedStatement<T>`. */
-function wrapStatement<T>(stmt: BetterSqlite3.Statement): PreparedStatement<T> {
+/** SQLite parameter type accepted by node:sqlite. */
+type SqlParam = string | number | bigint | null | Uint8Array;
+
+/** Wraps a `node:sqlite` StatementSync into a `PreparedStatement<T>`. */
+function wrapStatement<T>(stmt: StatementSyncType): PreparedStatement<T> {
     return {
         get(...params: unknown[]): T | undefined {
-            return stmt.get(...params) as T | undefined;
+            return stmt.get(...(params as SqlParam[])) as T | undefined;
         },
         all(...params: unknown[]): T[] {
-            return stmt.all(...params) as T[];
+            return stmt.all(...(params as SqlParam[])) as T[];
         },
         run(...params: unknown[]): ExecuteResult {
-            const info = stmt.run(...params);
+            const info = stmt.run(...(params as SqlParam[]));
             return {
                 lastInsertRowid: info.lastInsertRowid,
-                changes: info.changes,
+                changes: Number(info.changes),
             };
         },
         iterate(...params: unknown[]): IterableIterator<T> {
-            return stmt.iterate(...params) as IterableIterator<T>;
+            return stmt.iterate(...(params as SqlParam[])) as IterableIterator<T>;
         },
     };
 }
@@ -138,7 +142,7 @@ function wrapStatement<T>(stmt: BetterSqlite3.Statement): PreparedStatement<T> {
 // ── SQLiteAdapter ───────────────────────────────────────────────────
 
 export class SQLiteAdapter implements DatabaseAdapter {
-    private _db: BetterSqlite3.Database;
+    private _db: DatabaseSyncType;
 
     readonly capabilities: AdapterCapabilities = {
         fts: 'fts5',
@@ -154,11 +158,11 @@ export class SQLiteAdapter implements DatabaseAdapter {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        this._db = new BetterSqlite3(dbPath);
-        this._db.pragma('journal_mode = WAL');
-        this._db.pragma('busy_timeout = 5000');
-        this._db.pragma('synchronous = NORMAL');
-        this._db.pragma('foreign_keys = ON');
+        this._db = new DatabaseSync(dbPath);
+        this._db.exec('PRAGMA journal_mode = WAL');
+        this._db.exec('PRAGMA busy_timeout = 5000');
+        this._db.exec('PRAGMA synchronous = NORMAL');
+        this._db.exec('PRAGMA foreign_keys = ON');
 
         // Initialize schema
         createSchema(this);
@@ -176,19 +180,25 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
     /** Run a function inside a transaction. Auto-commits on success, auto-rollbacks on error. */
     transaction<T>(fn: () => T): T {
-        const tx = this._db.transaction(fn);
-        return tx();
+        this._db.exec('BEGIN');
+        try {
+            const result = fn();
+            this._db.exec('COMMIT');
+            return result;
+        } catch (err) {
+            this._db.exec('ROLLBACK');
+            throw err;
+        }
     }
 
     /** Run a prepared statement on multiple rows. Wraps in a single transaction. */
     batch<T extends unknown[]>(sql: string, rows: T[]): void {
         const stmt = this._db.prepare(sql);
-        const tx = this._db.transaction(() => {
+        this.transaction(() => {
             for (const row of rows) {
-                stmt.run(...row);
+                stmt.run(...(row as SqlParam[]));
             }
         });
-        tx();
     }
 
     /** Close the database. */
@@ -197,7 +207,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     }
 
     /**
-     * Access the underlying `better-sqlite3` Database instance.
+     * Access the underlying `node:sqlite` DatabaseSync instance.
      *
      * @deprecated Use `DatabaseAdapter` methods instead. This exists
      * only for gradual migration of plugins that depend on driver internals.

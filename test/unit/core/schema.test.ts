@@ -87,15 +87,15 @@ export const tests = {
 
     'WAL mode is active'(assert: any) {
         const db = freshDb();
-        const mode = db.raw<{ pragma(s: string): unknown[] }>()!.pragma('journal_mode') as { journal_mode: string }[];
-        assert.equal(mode[0].journal_mode, 'wal');
+        const mode = db.prepare('PRAGMA journal_mode').get() as { journal_mode: string };
+        assert.equal(mode.journal_mode, 'wal');
         db.close();
     },
 
     'busy_timeout is set'(assert: any) {
         const db = freshDb();
-        const timeout = db.raw<{ pragma(s: string): unknown[] }>()!.pragma('busy_timeout') as { timeout: number }[];
-        assert.equal(timeout[0].timeout, 5000);
+        const timeout = db.prepare('PRAGMA busy_timeout').get() as { timeout: number };
+        assert.equal(timeout.timeout, 5000);
         db.close();
     },
 

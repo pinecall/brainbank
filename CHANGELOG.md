@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- **`better-sqlite3` → `node:sqlite`** — replaced the `better-sqlite3` native addon with Node.js built-in `node:sqlite` (`DatabaseSync`). Eliminates ABI mismatches across Node versions, removes native compilation requirements, and drops `better-sqlite3` + `@types/better-sqlite3` from dependencies. Zero API changes for consumers — the `DatabaseAdapter` interface is unchanged
+- **Minimum Node version bumped to ≥22** — required for `node:sqlite` support
+- **Build target updated to `node22`** — `tsup.config.ts` target and `engines.node` both reflect the new minimum
+- **BLOB types `Buffer` → `Uint8Array`** — `KvVectorRow.embedding` and `VectorRow.embedding` now use `Uint8Array` (what `node:sqlite` returns for BLOBs). `Buffer` extends `Uint8Array` so existing code that reads these values continues to work
+
+### Fixed
+- **Pragma tests used driver internals** — `WAL mode` and `busy_timeout` tests used `db.raw().pragma()` (a `better-sqlite3`-specific API). Replaced with standard `db.prepare('PRAGMA ...').get()` which works with any SQLite driver
+
 ## [0.8.6] — 2026-04-15
 
 ### Added

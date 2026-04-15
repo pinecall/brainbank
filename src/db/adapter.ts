@@ -6,7 +6,7 @@
  * is the built-in implementation; future adapters (LibSQL, Turso,
  * PostgreSQL) implement the same contract.
  *
- * Phase 1: sync-first API matching the existing `better-sqlite3` usage.
+ * Phase 1: sync-first API matching the existing synchronous SQLite usage.
  * Async variants will be added when needed by async-native adapters.
  */
 
@@ -95,7 +95,7 @@ export interface KvDataRow {
 
 export interface KvVectorRow {
     data_id: number;
-    embedding: Buffer;
+    embedding: Uint8Array;
 }
 
 export interface EmbeddingMetaRow {
@@ -104,7 +104,7 @@ export interface EmbeddingMetaRow {
 
 export interface VectorRow {
     id: number;
-    embedding: Buffer;
+    embedding: Uint8Array;
 }
 
 export interface CountRow {

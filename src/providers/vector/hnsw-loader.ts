@@ -65,7 +65,7 @@ export function loadVectors(
     hnsw: HNSWIndex,
     cache: Map<number, Float32Array>,
 ): void {
-    const iter = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).iterate() as IterableIterator<{ embedding: Buffer; [key: string]: unknown }>;
+    const iter = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).iterate() as IterableIterator<{ embedding: Uint8Array; [key: string]: unknown }>;
     for (const row of iter) {
         const vec = new Float32Array(
             row.embedding.buffer.slice(
@@ -85,7 +85,7 @@ export function loadVecCache(
     idCol: string,
     cache: Map<number, Float32Array>,
 ): void {
-    const iter = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).iterate() as IterableIterator<{ embedding: Buffer; [key: string]: unknown }>;
+    const iter = db.prepare(`SELECT ${idCol}, embedding FROM ${table}`).iterate() as IterableIterator<{ embedding: Uint8Array; [key: string]: unknown }>;
     for (const row of iter) {
         const vec = new Float32Array(
             row.embedding.buffer.slice(

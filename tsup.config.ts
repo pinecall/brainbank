@@ -7,14 +7,13 @@ export default defineConfig({
     },
     tsconfig: 'tsconfig.build.json',
     format: ['esm'],
-    target: 'node18',
+    target: 'node22',
     dts: true,
     splitting: true,
     sourcemap: true,
     clean: true,
     external: [
         // dependencies — let consumers resolve
-        'better-sqlite3',
         'hnswlib-node',
         // optional deps
         '@xenova/transformers',
@@ -32,4 +31,19 @@ export default defineConfig({
         options.keepNames = true;
         options.alias = { '@': './src' };
     },
+    // Restore `node:` prefix that esbuild strips — required for node:sqlite
+    // which has no bare-name fallback (unlike fs, path, etc.).
+    onSuccess: `node -e "
+        const fs = require('fs');
+        const glob = require('path');
+        for (const f of fs.readdirSync('dist')) {
+            if (!f.endsWith('.js')) continue;
+            const p = 'dist/' + f;
+            let c = fs.readFileSync(p, 'utf8');
+            if (c.includes('from \\"sqlite\\"')) {
+                c = c.replace(/from \\"sqlite\\"/g, 'from \\"node:sqlite\\"');
+                fs.writeFileSync(p, c);
+            }
+        }
+    "`,
 });
