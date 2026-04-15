@@ -81,6 +81,7 @@
         "@types/node": "^22.0.0",
         "@types/picomatch": "^4.0.2",
         "ai": "^6.0.134",
+        "brainbank": "^0.8.6",
         "tsup": "^8.4.0",
         "tsx": "^4.19.0",
         "typescript": "^5.7.0"

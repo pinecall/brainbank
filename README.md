@@ -24,6 +24,15 @@ BrainBank gives LLMs a long-term memory that persists between sessions.
 npm i -g brainbank @brainbank/code @brainbank/git @brainbank/docs
 ```
 
+> [!IMPORTANT]
+> **Node 23+ users:** `@brainbank/code` uses [tree-sitter](https://github.com/tree-sitter/node-tree-sitter) native bindings for AST parsing. On **Node 23 and 24**, V8 headers require C++20 but tree-sitter's `binding.gyp` defaults to C++17, causing the install to fail with `"C++20 or later required."`. Fix it by setting the C++ standard before install:
+>
+> ```bash
+> CXXFLAGS="-std=c++20" npm i -g brainbank
+> ```
+>
+> Node ≤22 is unaffected — prebuilt binaries are available and no compilation is needed.
+
 > If you get `ERESOLVE` errors, use `npm i --legacy-peer-deps` — tree-sitter grammars have overlapping peer dep ranges.
 
 ### CLI — zero code

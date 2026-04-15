@@ -11,6 +11,15 @@ npm i -g @brainbank/code @brainbank/git @brainbank/docs    # plugins you need
 
 `brainbank` is the core framework with the CLI. Plugins are separate `@brainbank/*` packages — install only what you need. Each plugin declares `brainbank` as a peer dependency.
 
+> [!IMPORTANT]
+> **Node 23+ users:** `@brainbank/code` uses [tree-sitter](https://github.com/tree-sitter/node-tree-sitter) native bindings for AST parsing. On **Node 23 and 24**, V8 headers require C++20 but tree-sitter's `binding.gyp` defaults to C++17, causing the install to fail with `"C++20 or later required."`. Fix it by setting the C++ standard before install:
+>
+> ```bash
+> CXXFLAGS="-std=c++20" npm i -g brainbank
+> ```
+>
+> Node ≤22 is unaffected — prebuilt binaries are available and no compilation is needed.
+
 ### Tree-Sitter Grammars
 
 `@brainbank/code` bundles **5 grammars** out of the box: JavaScript, TypeScript (JSX/TSX), Python, and HTML. For additional languages, install individual `tree-sitter-*` packages globally:

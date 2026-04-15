@@ -43,8 +43,11 @@ export function resolveRepoPath(targetRepo?: string): string {
  * - Folder plugin auto-discovery
  */
 export async function createWorkspaceBrain(repoPath: string): Promise<BrainBank> {
-    const { createBrain, resetFactoryCache } = await import('brainbank') as typeof import('brainbank');
-    resetFactoryCache();
+    const brainModule = await import('brainbank') as typeof import('brainbank');
+    const { createBrain } = brainModule;
+    if (typeof brainModule.resetFactoryCache === 'function') {
+        brainModule.resetFactoryCache();
+    }
 
     const context: BrainContext = {
         repoPath,
