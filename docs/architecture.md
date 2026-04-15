@@ -152,8 +152,8 @@ brainbank/
 │   │
 │   ├── search/
 │   │   ├── types.ts                   ← SearchStrategy, DomainVectorSearch, SearchOptions (36 lines)
-│   │   ├── context-builder.ts         ← ContextBuilder: search → prune → expand → format (299 lines)
-│   │   ├── bm25-boost.ts              ← boostWithBM25, filterByPath, resultKey (62 lines)
+│   │   ├── context-builder.ts         ← ContextBuilder: search → prune → expand → format (301 lines)
+│   │   ├── bm25-boost.ts              ← boostWithBM25, filterByPath, filterByIgnore, resultKey (68 lines)
 │   │   ├── keyword/
 │   │   │   └── composite-bm25-search.ts ← Discovers BM25SearchPlugin instances from registry (63 lines)
 │   │   └── vector/
@@ -832,7 +832,7 @@ ON CONFLICT(name) DO UPDATE SET ...
 `brainbank_context` params:
 - `task` (string), `affectedFiles` (string[]), `codeResults` (number=20),
   `gitResults` (number=5), `docsResults` (number?), `sources` (Record?),
-  `path` (string?), `repo` (string?)
+  `path` (string?), `ignore` (string[]?), `repo` (string?)
 - BrainBankQL fields: `lines`, `symbols`, `compact`, `callTree`, `imports`, `expander`
 
 **WorkspacePool** (`workspace-pool.ts`):
@@ -1006,7 +1006,7 @@ rerank(query, results, reranker):
 
 ### 10.7 ContextBuilder
 
-**File:** `src/search/context-builder.ts` (299 lines)
+**File:** `src/search/context-builder.ts` (301 lines)
 **Pattern:** Pipeline orchestrator
 
 ```
@@ -1015,15 +1015,16 @@ ContextBuilder(search?, registry, pruner?, embedding?, rerankerName?, configFiel
 build(task, options?):
   1. Primary: vector search (includes per-repo BM25 fusion internally)
   2. Path scoping: filterByPath(results, pathPrefix)
-  3. LLM noise pruning (optional): pruneResults(task, results, pruner)
-  4. Session dedup: filter excludeFiles
-  5. LLM context expansion (optional — when expander field = true):
+  3. Path exclusion: filterByIgnore(results, ignorePaths)
+  4. LLM noise pruning (optional): pruneResults(task, results, pruner)
+  5. Session dedup: filter excludeFiles
+  6. LLM context expansion (optional — when expander field = true):
        _expand(task, results) → buildManifest + expander.expand() + resolveChunks
-  6. Format output:
+  7. Format output:
        _appendFormatterResults: ContextFormatterPlugin per base type
          Multi-repo: scope results to repo prefix per plugin
        _appendSearchableResults: non-formatter SearchablePlugins
-  7. Append expander note (if any)
+  8. Append expander note (if any)
 
   Logs all queries via logQuery() to /tmp/brainbank.log
 ```
@@ -1040,7 +1041,7 @@ _resolveFields(options):
 
 **Files:** `src/lib/prune.ts` (72 lines), `src/providers/pruners/haiku-pruner.ts` (113 lines)
 
-Runs **after** path scoping and **before** context formatting.
+Runs **after** path scoping + ignore filtering and **before** context formatting.
 
 ```
 pruneResults(query, results, pruner):
@@ -1637,13 +1638,14 @@ brain.getContext("add rate limiting to the auth API", { fields: { expander: true
   ContextBuilder.build(task):
     1. vectorResults = CompositeVectorSearch.search(task)
     2. filterByPath(results, pathPrefix)
-    3. if pruner: pruneResults(task, results, pruner)
-    4. if excludeFiles: filter session dedup
-    5. if expander field=true && _expander:
+    3. filterByIgnore(results, ignorePaths)
+    4. if pruner: pruneResults(task, results, pruner)
+    5. if excludeFiles: filter session dedup
+    6. if expander field=true && _expander:
          buildManifest → expander.expand() → resolveChunks()
          splice expanded results + capture note
 
-    6. _appendFormatterResults (per plugin, multi-repo scoped):
+    7. _appendFormatterResults (per plugin, multi-repo scoped):
          CodePlugin.formatContext():
            expand adjacent parts → build call tree → flat workflow trace
          GitPlugin.formatContext():
@@ -1651,10 +1653,10 @@ brain.getContext("add rate limiting to the auth API", { fields: { expander: true
          DocsPlugin.formatContext():
            document results grouped by collection + title
 
-    7. _appendSearchableResults:
+    8. _appendSearchableResults:
          SearchablePlugins (not ContextFormatters): generic bullet list
 
-    8. Append expander note (if any)
+    9. Append expander note (if any)
 
     → markdown for LLM system prompt
 ```

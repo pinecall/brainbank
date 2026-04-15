@@ -137,6 +137,17 @@ brainbank context add <col> <path> <desc>   # Add context metadata for a path
 brainbank context list                      # List all context metadata entries
 ```
 
+### Path Scoping & Exclusion
+
+```bash
+brainbank context "auth flow" --path src/auth/       # Only files under src/auth/
+brainbank context "auth flow" --ignore src/tests/     # Exclude test files
+brainbank context "auth flow" --ignore src/tests/,src/mocks/  # Exclude multiple paths
+brainbank context "auth flow" --ignore src/tests/ --ignore vendor/  # Repeated flags
+```
+
+`--ignore` accepts comma-separated values or repeated flags. Results whose `filePath` starts with any prefix are excluded from the context output.
+
 ### BrainBankQL Context Field Flags
 
 The `context` command supports field flags directly on the command line:

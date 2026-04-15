@@ -116,6 +116,7 @@ const context = await brain.getContext('add rate limiting to the API', {
   sources: { code: 6, git: 5 },
   affectedFiles: ['src/api/routes.ts'],
   pathPrefix: 'src/api/',
+  ignorePaths: ['src/api/tests/', 'src/api/mocks/'],
   fields: {
     lines: true,                  // prefix each line with source line number
     callTree: { depth: 2 },       // call tree expansion depth
@@ -137,6 +138,7 @@ interface ContextOptions {
   useMMR?: boolean;                  // default: true
   mmrLambda?: number;                // default: 0.7
   pathPrefix?: string;               // filter to files under this path
+  ignorePaths?: string[];            // exclude results whose filePath starts with any prefix
   excludeFiles?: Set<string>;        // session-level dedup
   pruner?: Pruner;                   // per-request pruner override
   fields?: Record<string, unknown>;  // BrainBankQL field overrides
@@ -180,26 +182,28 @@ getContext(task, options)
   │
   ├── 1. CompositeVectorSearch.search(task)  ← primary retrieval
   │
-  ├── 2. filterByPath(results, pathPrefix)   ← path scoping
+  ├── 2. filterByPath(results, pathPrefix)   ← path scoping (include)
   │
-  ├── 3. pruneResults(task, results, pruner) ← LLM noise filter (optional)
+  ├── 3. filterByIgnore(results, ignorePaths) ← path exclusion (exclude)
+  │
+  ├── 4. pruneResults(task, results, pruner) ← LLM noise filter (optional)
   │        └── HaikuPruner: send file previews to Haiku 4.5 for keep/drop
   │
-  ├── 4. Filter excludeFiles                 ← session dedup
+  ├── 5. Filter excludeFiles                 ← session dedup
   │
-  ├── 5. _expand(task, results)              ← LLM context expansion (if expander=true)
+  ├── 6. _expand(task, results)              ← LLM context expansion (if expander=true)
   │        ├── buildManifest from ExpandablePlugin
   │        ├── HaikuExpander.expand() → additional chunk IDs
   │        └── resolveChunks(ids) → splice into results
   │
-  ├── 6. _appendFormatterResults             ← ContextFormatterPlugin per plugin
+  ├── 7. _appendFormatterResults             ← ContextFormatterPlugin per plugin
   │        ├── CodePlugin.formatContext()    → Workflow Trace (call tree, annotations)
   │        ├── GitPlugin.formatContext()     → commit history + co-edits
   │        └── DocsPlugin.formatContext()    → document sections
   │
-  ├── 7. _appendSearchableResults            ← SearchablePlugin fallback (generic list)
+  ├── 8. _appendSearchableResults            ← SearchablePlugin fallback (generic list)
   │
-  └── 8. Append expander note (if any)
+  └── 9. Append expander note (if any)
 ```
 
 ---

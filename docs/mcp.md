@@ -91,6 +91,7 @@ brainbank_context({
   docsResults?: number,      // max document results (omit to skip docs)
   sources?: Record<string, number>, // per-source overrides (e.g. { code: 10, git: 0, docs: 5 })
   path?: string,             // filter results to files under this path prefix
+  ignore?: string[],         // exclude results whose filePath starts with any prefix
   repo?: string,             // repository path (default: auto-detect)
   // BrainBankQL context fields:
   lines?: boolean,           // prefix each code line with source line number
@@ -206,6 +207,7 @@ Workflow:
 Tips:
 - Pass affectedFiles to get co-edit suggestions
 - Use path to scope results to a subsystem
+- Use ignore to exclude paths (e.g. ["src/tests/", "vendor/"])
 - Use callTree: { depth: 2 } for deeper call exploration
 - Use expander: true for LLM-powered chunk discovery
 ```
