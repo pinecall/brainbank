@@ -53,6 +53,12 @@ export function filterByPath(results: SearchResult[], prefix: string | undefined
     return results.filter(r => r.filePath?.startsWith(prefix));
 }
 
+/** Exclude results whose filePath starts with any of the given prefixes. */
+export function filterByIgnore(results: SearchResult[], ignorePaths: string[] | undefined): SearchResult[] {
+    if (!ignorePaths || ignorePaths.length === 0) return results;
+    return results.filter(r => !r.filePath || !ignorePaths.some(p => r.filePath!.startsWith(p)));
+}
+
 /** Generate a dedup key for a search result (file:startLine:endLine). */
 export function resultKey(r: SearchResult): string {
     const sl = 'startLine' in r.metadata ? r.metadata.startLine : '';

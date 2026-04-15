@@ -1,6 +1,6 @@
 {
     "name": "@brainbank/mcp",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "description": "MCP (Model Context Protocol) server for BrainBank",
     "type": "module",
     "main": "dist/mcp-server.js",
@@ -24,9 +24,15 @@
         "@brainbank/docs": ">=0.1.0"
     },
     "peerDependenciesMeta": {
-        "@brainbank/code": { "optional": true },
-        "@brainbank/git": { "optional": true },
-        "@brainbank/docs": { "optional": true }
+        "@brainbank/code": {
+            "optional": true
+        },
+        "@brainbank/git": {
+            "optional": true
+        },
+        "@brainbank/docs": {
+            "optional": true
+        }
     },
     "repository": {
         "type": "git",

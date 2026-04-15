@@ -9,9 +9,10 @@
  *   --no-git     Skip git results
  *   --no-code    Skip code results
  *   --path <dir> Filter results to files under this path prefix
+ *   --ignore <paths> Exclude paths (comma-separated or repeated: --ignore a,b --ignore c)
  */
 
-import { c, args, stripFlags, getFlag, findDocsPlugin } from '@/cli/utils.ts';
+import { c, args, stripFlags, getFlag, getFlagAll, findDocsPlugin } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory/index.ts';
 import { tryServerContext } from '@/cli/server-client.ts';
 
@@ -96,6 +97,7 @@ export async function cmdContext(): Promise<void> {
 
     const sources = parseContextFlags();
     const pathPrefix = getFlag('path');
+    const ignorePaths = getFlagAll('ignore');
     const repo = getFlag('repo');
 
     // Parse BrainBankQL field flags
@@ -119,6 +121,7 @@ export async function cmdContext(): Promise<void> {
     const context = await brain.getContext(task, {
         sources: Object.keys(sources).length > 0 ? sources : undefined,
         pathPrefix,
+        ignorePaths: ignorePaths.length > 0 ? ignorePaths : undefined,
         source: 'cli',
         fields: Object.keys(fields).length > 0 ? fields : undefined,
     });

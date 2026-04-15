@@ -72,6 +72,7 @@ server.registerTool(
             docsResults: z.number().optional().describe('Max document results (omit to skip docs)'),
             sources: z.record(z.number()).optional().describe('Per-source result limits, overrides codeResults/gitResults/docsResults (e.g. { code: 10, git: 0, docs: 5 })'),
             path: z.string().optional().describe('Filter results to files under this path prefix (e.g. src/services/)'),
+            ignore: z.array(z.string()).optional().describe('Exclude results whose filePath starts with any of these prefixes (e.g. ["src/tests/", "src/mocks/"])'),
             repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
             // BrainBankQL context fields
             lines: z.boolean().optional().describe('Prefix each code line with its source line number (e.g. 127| code)'),
@@ -82,7 +83,7 @@ server.registerTool(
             expander: z.boolean().optional().describe('Enable LLM-powered context expansion to discover related chunks not found by search'),
         }),
     },
-    async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, repo, lines, symbols, compact, callTree, imports, expander }) => {
+    async ({ task, affectedFiles, codeResults, gitResults, docsResults, sources, path, ignore, repo, lines, symbols, compact, callTree, imports, expander }) => {
         const repoPath = resolveRepoPath(repo);
         const brainbank = await getBrainBank(repo);
 
@@ -104,6 +105,7 @@ server.registerTool(
             affectedFiles,
             sources: resolvedSources,
             pathPrefix: path,
+            ignorePaths: ignore,
             source: 'mcp',
             fields: Object.keys(fields).length > 0 ? fields : undefined,
         });

@@ -18,7 +18,7 @@ import type { SearchStrategy } from './types.ts';
 import type { PluginRegistry } from '@/services/plugin-registry.ts';
 
 import { isContextFormatterPlugin, isContextFieldPlugin, isExpandablePlugin, isSearchable } from '@/plugin.ts';
-import { filterByPath } from './bm25-boost.ts';
+import { filterByPath, filterByIgnore } from './bm25-boost.ts';
 import { pruneResults } from '@/lib/prune.ts';
 import { logQuery } from '@/lib/logger.ts';
 import type { QueryLogResult } from '@/lib/logger.ts';
@@ -59,8 +59,9 @@ export class ContextBuilder {
             })
             : [];
 
-        // 2. Path scoping
+        // 2. Path scoping + ignore filtering
         results = filterByPath(results, options.pathPrefix);
+        results = filterByIgnore(results, options.ignorePaths);
 
         // 3. LLM noise pruning (optional — per-request override or construction-time)
         const pruner = options.pruner ?? this._pruner;
@@ -109,6 +110,7 @@ export class ContextBuilder {
             options: {
                 sources: src,
                 pathPrefix: options.pathPrefix,
+                ignorePaths: options.ignorePaths,
                 minScore,
                 affectedFiles: options.affectedFiles,
             },

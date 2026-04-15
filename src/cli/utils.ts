@@ -29,6 +29,22 @@ export function getFlag(name: string): string | undefined {
     return idx >= 0 ? args[idx + 1] : undefined;
 }
 
+/** Collect all values for a repeated flag (--ignore a --ignore b) or comma-separated (--ignore a,b). */
+export function getFlagAll(name: string): string[] {
+    const values: string[] = [];
+    const flag = `--${name}`;
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === flag && args[i + 1] && !args[i + 1].startsWith('--')) {
+            for (const v of args[i + 1].split(',')) {
+                const trimmed = v.trim();
+                if (trimmed) values.push(trimmed);
+            }
+            i++;
+        }
+    }
+    return values;
+}
+
 export function hasFlag(name: string): boolean {
     return args.includes(`--${name}`);
 }

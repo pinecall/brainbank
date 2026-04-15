@@ -397,6 +397,8 @@ export interface ContextOptions {
     mmrLambda?: number;
     /** Filter results to files under this path prefix (e.g. 'src/services/'). */
     pathPrefix?: string;
+    /** Exclude results whose filePath starts with any of these prefixes (e.g. ['src/tests/', 'src/mocks/']). */
+    ignorePaths?: string[];
     /** File paths to exclude from results (e.g. files already returned in a previous query). */
     excludeFiles?: Set<string>;
     /** Optional per-request pruner override (e.g. HaikuPruner for LLM noise filtering). */

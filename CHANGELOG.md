@@ -5,7 +5,12 @@ All notable changes to BrainBank will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+
+## [0.8.6] — 2026-04-15
+
 ### Added
+- **`ignorePaths` context option** — exclude results whose `filePath` starts with any of the given prefixes (e.g. `['src/tests/', 'src/mocks/']`). Available in `ContextOptions`, CLI (`--ignore path1,path2` or `--ignore path1 --ignore path2`), and MCP tool (`ignore` param). Runs after path scoping in the context pipeline
+- **`getFlagAll()` CLI utility** — collect all values for a repeated flag or comma-separated values (e.g. `--ignore a,b --ignore c`)
 - **`brainbank_files` MCP tool** — standalone file viewer for fetching complete indexed files. Use after `brainbank_context` to view full file contents identified by search. Supports exact paths, directories (trailing `/`), glob patterns (picomatch), and fuzzy basename matching. No search runs — reads directly from `code_chunks`
 - **`FileResolvablePlugin` capability** — new plugin interface for direct file resolution. `CodePlugin` implements it with 4-tier resolution: exact → directory → glob → fuzzy. Type guard: `isFileResolvable()`
 - **`BrainBank.resolveFiles(patterns)`** — public API method that delegates to all `FileResolvablePlugin` instances
