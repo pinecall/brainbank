@@ -41,7 +41,7 @@ interface McpConfig {
  * Build the brainbank MCP server config block.
  * Resolves node binary, dist/cli.js path, and API keys.
  */
-function buildBrainbankMcpBlock(config: ProjectConfig | null, repoPath: string): McpServerConfig {
+function buildBrainbankMcpBlock(config: ProjectConfig | null): McpServerConfig {
     const nodeBin = process.execPath;
 
     // Resolve dist/cli.js from the global install location (node_prefix/lib/node_modules/brainbank/dist/cli.js)
@@ -61,9 +61,6 @@ function buildBrainbankMcpBlock(config: ProjectConfig | null, repoPath: string):
     if (perplexityKey) env.PERPLEXITY_API_KEY = perplexityKey;
     if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
     if (openaiKey) env.OPENAI_API_KEY = openaiKey;
-
-    // Inject repo path so the MCP server knows where the index lives
-    env.BRAINBANK_REPO = path.resolve(repoPath);
 
     const block: McpServerConfig = {
         command: nodeBin,
@@ -129,7 +126,7 @@ export async function autoExportMcp(repoPath: string): Promise<void> {
     if (hasBrainbankMcpEntry(target.configPath)) return;
 
     const config = await getConfig(repoPath);
-    const block = buildBrainbankMcpBlock(config, repoPath);
+    const block = buildBrainbankMcpBlock(config);
     mergeAndWrite(target.configPath, block);
     console.log(`  ${c.green('✓')} Exported MCP config to ${c.dim(path.relative(process.env.HOME ?? '', target.configPath))}`);
 }
@@ -200,11 +197,11 @@ function replaceGeminiSection(geminiPath: string): void {
     fs.writeFileSync(geminiPath, before + section + after);
 }
 
-/** CLI command: brainbank mcp:export [target] */
+/** CLI command: brainbank mcp:export [target] [--force] */
 export async function cmdMcpExport(): Promise<void> {
     const targetName = args[1] || getFlag('target') || 'antigravity';
     const repoPath = getFlag('repo') || '.';
-    const { confirm } = await import('@inquirer/prompts');
+    const force = args.includes('--force') || args.includes('-f');
 
     const target = TARGETS[targetName];
     if (!target) {
@@ -214,7 +211,7 @@ export async function cmdMcpExport(): Promise<void> {
     }
 
     const config = await getConfig(repoPath);
-    const block = buildBrainbankMcpBlock(config, repoPath);
+    const block = buildBrainbankMcpBlock(config);
 
     console.log(c.bold(`\n━━━ MCP Export: ${target.label} ━━━\n`));
 
@@ -222,12 +219,13 @@ export async function cmdMcpExport(): Promise<void> {
     const mcpExists = hasBrainbankMcpEntry(target.configPath);
     let writeMcp = true;
 
-    if (mcpExists) {
+    if (mcpExists && !force) {
         console.log(`  ${c.yellow('●')} MCP config already has brainbank entry`);
         const cliPath = block.args.find(a => !a.startsWith('--')) ?? block.args[0];
         console.log(`  ${c.dim('  New:')} ${block.command} ${cliPath}`);
         const envKeys = block.env ? Object.keys(block.env) : [];
         if (envKeys.length > 0) console.log(`  ${c.dim('  Keys:')} ${envKeys.join(', ')}`);
+        const { confirm } = await import('@inquirer/prompts');
         writeMcp = await confirm({ message: 'Override existing brainbank MCP entry?', default: true });
     }
 
@@ -242,22 +240,34 @@ export async function cmdMcpExport(): Promise<void> {
     const geminiHasSection = hasGeminiSection(GLOBAL_GEMINI);
 
     if (geminiHasSection) {
-        console.log(`  ${c.yellow('●')} ~/.gemini/GEMINI.md already has BrainBank section`);
-        const override = await confirm({ message: 'Override existing BrainBank section?', default: false });
-        if (override) {
+        if (force) {
             replaceGeminiSection(GLOBAL_GEMINI);
             console.log(`  ${c.green('✓')} Replaced BrainBank section in ${c.dim('~/.gemini/GEMINI.md')}`);
         } else {
-            console.log(`  ${c.dim('GEMINI.md — skipped')}`);
+            console.log(`  ${c.yellow('●')} ~/.gemini/GEMINI.md already has BrainBank section`);
+            const { confirm } = await import('@inquirer/prompts');
+            const override = await confirm({ message: 'Override existing BrainBank section?', default: false });
+            if (override) {
+                replaceGeminiSection(GLOBAL_GEMINI);
+                console.log(`  ${c.green('✓')} Replaced BrainBank section in ${c.dim('~/.gemini/GEMINI.md')}`);
+            } else {
+                console.log(`  ${c.dim('GEMINI.md — skipped')}`);
+            }
         }
     } else {
-        const addGemini = await confirm({
-            message: 'Add BrainBank instructions to ~/.gemini/GEMINI.md? (teaches AI tools how to use BrainBank)',
-            default: true,
-        });
-        if (addGemini) {
+        if (force) {
             appendGeminiSection(GLOBAL_GEMINI);
             console.log(`  ${c.green('✓')} Added BrainBank section to ${c.dim('~/.gemini/GEMINI.md')}`);
+        } else {
+            const { confirm } = await import('@inquirer/prompts');
+            const addGemini = await confirm({
+                message: 'Add BrainBank instructions to ~/.gemini/GEMINI.md? (teaches AI tools how to use BrainBank)',
+                default: true,
+            });
+            if (addGemini) {
+                appendGeminiSection(GLOBAL_GEMINI);
+                console.log(`  ${c.green('✓')} Added BrainBank section to ${c.dim('~/.gemini/GEMINI.md')}`);
+            }
         }
     }
 

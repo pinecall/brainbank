@@ -24,7 +24,7 @@ brainbank mcp:export cursor        # Cursor
 brainbank mcp:export claude        # Claude Desktop
 ```
 
-`mcp:export` resolves node binary, `cli.js` path, API keys, and injects `BRAINBANK_REPO` into the MCP config env.
+`mcp:export` resolves node binary, `cli.js` path, and API keys. Use `--force` to skip prompts.
 
 ### Manual
 
@@ -35,10 +35,7 @@ Add to your IDE's MCP config:
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"],
-      "env": {
-        "BRAINBANK_REPO": "/absolute/path/to/your/project"
-      }
+      "args": ["-y", "@brainbank/mcp"]
     }
   }
 }

@@ -14,10 +14,11 @@ brainbank mcp:export cursor        # Cursor
 brainbank mcp:export claude        # Claude Desktop
 ```
 
-`mcp:export` does three things:
+`mcp:export` does two things:
 1. **MCP config** — resolves node binary, `cli.js` path, and API keys from `.brainbank/config.json` or env vars
-2. **`BRAINBANK_REPO` env** — injects the repo root so the MCP server always knows where the index lives
-3. **`~/.gemini/GEMINI.md`** (Antigravity only) — appends a concise BrainBank section with agent rules
+2. **`~/.gemini/GEMINI.md`** (Antigravity only) — appends a concise BrainBank section with agent rules
+
+Use `--force` to skip all confirmation prompts (useful for scripted setup).
 
 ### Manual
 
@@ -28,10 +29,7 @@ Add to your IDE's MCP config:
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"],
-      "env": {
-        "BRAINBANK_REPO": "/absolute/path/to/your/project"
-      }
+      "args": ["-y", "@brainbank/mcp"]
     }
   }
 }

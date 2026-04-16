@@ -1,6 +1,6 @@
 {
     "name": "brainbank",
-    "version": "0.9.5",
+    "version": "0.9.6",
     "description": "Pluggable semantic memory for AI agents — hybrid search (vector + BM25) in a single SQLite file. Built-in code, git, and docs indexers. Bring your own.",
     "type": "module",
     "main": "dist/index.js",

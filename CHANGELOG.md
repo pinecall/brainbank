@@ -6,16 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.6] — 2026-04-16
+
+### Changed
+- **`mcp:export` no longer injects `BRAINBANK_REPO`** — MCP server serves multiple repos, `repo` is passed per-call
+- **`mcp:export --force`** — skips all confirmation prompts (MCP config override + GEMINI.md override)
+
 ## [0.9.5] — 2026-04-16
 
 ### Changed
-- **`mcp:export` injects `BRAINBANK_REPO`** — repo root env var injected into MCP config so the server always knows where the index lives
+- **`mcp:export` no longer injects `BRAINBANK_REPO`** — MCP server serves multiple repos, `repo` is passed per-call
+- **`mcp:export --force`** — skips all confirmation prompts (MCP config override + GEMINI.md override)
 - **`repo` param required** on `brainbank_context` and `brainbank_files` MCP tools
 
 ### Docs
-- Updated MCP docs: `mcp:export` setup, 2 tools (index tool removed), `repo` required
+- Updated MCP docs: `mcp:export` setup, 2 tools (index tool removed), `repo` required, `--force` flag
 - Updated architecture docs: MCP section reflects 2-tool design
-- Updated CLI docs: added `mcp:export` command reference
+- Updated CLI docs: added `mcp:export` command reference with `--force`
 - Updated README: MCP table, docs table
 
 ## [0.9.4] — 2026-04-16
