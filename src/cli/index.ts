@@ -18,14 +18,20 @@ import { cmdStats } from './commands/stats.ts';
 import { cmdReembed } from './commands/reembed.ts';
 import { cmdWatch } from './commands/watch.ts';
 import { cmdMcp } from './commands/mcp.ts';
+import { cmdMcpExport } from './commands/mcp-export.ts';
 import { cmdDaemon } from './commands/daemon.ts';
 import { cmdStatus } from './commands/status.ts';
 import { showHelp } from './commands/help.ts';
+import { VERSION } from '@/constants.ts';
 
 const command = args[0];
 
 async function main(): Promise<void> {
     switch (command) {
+        case '--version':
+        case '-v':
+            console.log(`brainbank v${VERSION}`);
+            break;
         case 'i':
         case 'index':       return cmdIndex();
         case 'collection':  return cmdCollection();
@@ -41,6 +47,7 @@ async function main(): Promise<void> {
         case 'reembed':     return cmdReembed();
         case 'watch':       return cmdWatch();
         case 'mcp':         return cmdMcp();
+        case 'mcp:export':  return cmdMcpExport();
         case 'serve':        return cmdMcp(); // backward compat
         case 'daemon':      return cmdDaemon();
         case 'status':      return cmdStatus();

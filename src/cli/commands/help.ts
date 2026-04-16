@@ -36,11 +36,13 @@ export function showHelp(): void {
     console.log(`  ${c.cyan('reembed')}                            Re-embed all vectors`);
     console.log(`  ${c.cyan('watch')}                              Watch files, auto-re-index`);
     console.log(`  ${c.cyan('mcp')}                                Start MCP server (stdio)`);
+    console.log(`  ${c.cyan('mcp:export')} [target]                Export MCP config (antigravity)`);
     console.log(`  ${c.cyan('daemon')}                             Start HTTP daemon (foreground)`);
     console.log(`  ${c.cyan('daemon start')}                       Start HTTP daemon (background)`);
     console.log(`  ${c.cyan('daemon stop')}                        Stop background daemon`);
     console.log(`  ${c.cyan('daemon restart')}                     Restart background daemon`);
     console.log(`  ${c.cyan('status')}                             Show daemon status`);
+    console.log(`  ${c.cyan('--version')} ${c.dim('(-v)')}                      Show version`);
     console.log('');
     console.log(c.bold('Options:'));
     console.log(`  ${c.dim('--repo <path>')}           Repository path (default: .)`);
@@ -69,4 +71,5 @@ export function showHelp(): void {
     console.log(c.dim('  brainbank context "auth flow" | pbcopy               # → clipboard'));
     console.log(c.dim('  brainbank daemon start                               # background HTTP'));
     console.log(c.dim('  brainbank mcp                                        # MCP stdio'));
+    console.log(c.dim('  brainbank mcp:export antigravity                     # export MCP config'));
 }

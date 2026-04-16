@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-04-16
+
+### Added
+- **`brainbank --version` / `-v`** — display the installed version
+- **`brainbank mcp:export [target]`** — auto-generate MCP server config for AI IDEs. Detects node binary, `dist/cli.js` path, and API keys from `.brainbank/config.json` or env vars. Merges into existing config without overwriting other servers. Currently supports `antigravity` target
+- **Post-index auto-export** — after `brainbank index`, automatically exports MCP config to Antigravity if `~/.gemini/antigravity/` exists and brainbank isn't already configured
+- **Key management in setup** — `brainbank index` (first-time config) now detects API keys from env vars and offers to save them to `.brainbank/config.json` for portability
+
+### Changed
+- **Default pruner changed to `haiku`** — AI-powered noise filter is now the recommended default during first-time config setup (was `none`)
+
+
 ## [0.9.0] — 2026-04-16
 
 ### Changed

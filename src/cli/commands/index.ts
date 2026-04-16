@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { c, args, getFlag, hasFlag, stripFlags } from '@/cli/utils.ts';
 import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory/index.ts';
 import { findDocsPlugin } from '@/cli/utils.ts';
+import { autoExportMcp } from './mcp-export.ts';
 import { scanRepo } from './scan.ts';
 
 export async function cmdIndex(): Promise<void> {
@@ -126,6 +127,9 @@ export async function cmdIndex(): Promise<void> {
     }
 
     brain.close();
+
+    // Auto-export MCP config to Antigravity if detected and not already configured
+    await autoExportMcp(repoPath);
 }
 
 
@@ -220,7 +224,7 @@ function capitalizeFirst(s: string): string {
 
 /** Generate .brainbank/config.json from the selected modules. */
 async function saveConfig(repoPath: string, modules: string[]): Promise<void> {
-    const { select } = await import('@inquirer/prompts');
+    const { select, confirm } = await import('@inquirer/prompts');
 
     // Embedding provider selection
     const envEmbedding = process.env.BRAINBANK_EMBEDDING;
@@ -252,15 +256,15 @@ async function saveConfig(repoPath: string, modules: string[]): Promise<void> {
         message: 'Noise pruner:',
         choices: [
             {
-                name: 'none   — no pruning (default)',
-                value: 'none',
-            },
-            {
-                name: 'haiku  — AI-powered noise filter (Claude Haiku)',
+                name: 'haiku  — AI-powered noise filter (recommended)',
                 value: 'haiku',
             },
+            {
+                name: 'none   — no pruning',
+                value: 'none',
+            },
         ],
-        default: 'none',
+        default: 'haiku',
     });
 
     const configDir = path.join(repoPath, '.brainbank');
@@ -273,6 +277,33 @@ async function saveConfig(repoPath: string, modules: string[]): Promise<void> {
 
     if (pruner !== 'none') {
         config.pruner = pruner;
+    }
+
+    // Key management: detect available keys and offer to save
+    const detectedKeys: Record<string, string> = {};
+    const needsPerplexity = embedding.startsWith('perplexity');
+    const needsAnthropic = pruner === 'haiku';
+    const needsOpenai = embedding === 'openai';
+
+    if (needsPerplexity && process.env.PERPLEXITY_API_KEY) {
+        detectedKeys.perplexity = process.env.PERPLEXITY_API_KEY;
+    }
+    if (needsAnthropic && process.env.ANTHROPIC_API_KEY) {
+        detectedKeys.anthropic = process.env.ANTHROPIC_API_KEY;
+    }
+    if (needsOpenai && process.env.OPENAI_API_KEY) {
+        detectedKeys.openai = process.env.OPENAI_API_KEY;
+    }
+
+    if (Object.keys(detectedKeys).length > 0) {
+        const keyNames = Object.keys(detectedKeys).join(', ');
+        const saveKeys = await confirm({
+            message: `Save API keys (${keyNames}) to config.json? (portable, no env vars needed)`,
+            default: true,
+        });
+        if (saveKeys) {
+            config.keys = detectedKeys;
+        }
     }
 
     fs.mkdirSync(configDir, { recursive: true });
