@@ -146,7 +146,7 @@ function buildGeminiSection(): string {
 
 When \`brainbank_context\` and \`brainbank_files\` MCP tools are available, **always use them instead of \`grep_search\` or \`list_dir\`**.
 
-**\`brainbank_context\`** — semantic search. Use \`path:\` to scope, \`compact: false\`, \`sources: { code: 25, docs: 0, git: 0 }\`.
+**\`brainbank_context\`** — semantic search. \`repo\` is **required** (the project root where \`brainbank index\` was run). Use \`path:\` to scope within it, \`compact: false\`, \`sources: { code: 25, docs: 0, git: 0 }\`.
 
 **\`brainbank_files\`** — read full indexed files (\`lines: true\` always). Only works with files tracked by the index — for \`.env\`, \`docker-compose.yml\`, etc. use \`view_file\`.
 

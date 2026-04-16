@@ -75,7 +75,7 @@ server.registerTool(
             sources: z.record(z.number()).optional().describe('Per-source result limits, overrides codeResults/gitResults/docsResults (e.g. { code: 10, git: 0, docs: 5 })'),
             path: z.string().optional().describe('Filter results to files under this path prefix (e.g. src/services/)'),
             ignore: z.array(z.string()).optional().describe('Exclude results whose filePath starts with any of these prefixes (e.g. ["src/tests/", "src/mocks/"])'),
-            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
+            repo: z.string().describe('Repository path (default: BRAINBANK_REPO)'),
             // BrainBankQL context fields
             lines: z.boolean().optional().describe('Prefix each code line with its source line number (e.g. 127| code)'),
             symbols: z.boolean().optional().describe('Append symbol index (all functions, classes, interfaces) for matched files'),
@@ -136,7 +136,7 @@ server.registerTool(
                 'File paths to fetch. Exact paths, directories (trailing /), ' +
                 'glob patterns (e.g. src/**/*.ts), or fuzzy basenames.',
             ),
-            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
+            repo: z.string().describe('Repository path (default: BRAINBANK_REPO)'),
             lines: z.boolean().optional().describe('Prefix each line with source line number'),
         }),
     },

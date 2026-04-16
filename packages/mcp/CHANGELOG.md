@@ -4,8 +4,13 @@ All notable changes to `@brainbank/mcp` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-04-16
+
 ### Removed
-- **`brainbank_index` tool** — indexing is now CLI-only (`brainbank index`). Removed from MCP to prevent AI tools from triggering re-index during conversations
+- **`brainbank_index` tool** — indexing is now CLI-only (`brainbank index`)
+
+### Changed
+- **`repo` param now required** on `brainbank_context` and `brainbank_files` — forces AI tools to always specify the project root
 
 ## [0.3.2] — 2026-04-15
 

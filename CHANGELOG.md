@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-04-16
+
+### Changed
+- **`mcp:export` targets `~/.gemini/GEMINI.md`** — global, one-time, with override detection for both MCP config and GEMINI.md
+- **GEMINI.md section shortened** to ~20 lines: paste-output hack, docs-only rule, indexed-files-only note
+- **`brainbank_index` removed from MCP server** — indexing is CLI-only (`brainbank index`)
+- **Docs rule in GEMINI.md** — default to code-only queries, never mix code and docs
+
 ## [0.9.3] — 2026-04-16
 
 ### Added
