@@ -41,7 +41,7 @@ interface McpConfig {
  * Build the brainbank MCP server config block.
  * Resolves node binary, dist/cli.js path, and API keys.
  */
-function buildBrainbankMcpBlock(config: ProjectConfig | null): McpServerConfig {
+function buildBrainbankMcpBlock(config: ProjectConfig | null, repoPath: string): McpServerConfig {
     const nodeBin = process.execPath;
 
     // Resolve dist/cli.js from the global install location (node_prefix/lib/node_modules/brainbank/dist/cli.js)
@@ -61,6 +61,9 @@ function buildBrainbankMcpBlock(config: ProjectConfig | null): McpServerConfig {
     if (perplexityKey) env.PERPLEXITY_API_KEY = perplexityKey;
     if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
     if (openaiKey) env.OPENAI_API_KEY = openaiKey;
+
+    // Inject repo path so the MCP server knows where the index lives
+    env.BRAINBANK_REPO = path.resolve(repoPath);
 
     const block: McpServerConfig = {
         command: nodeBin,
@@ -126,7 +129,7 @@ export async function autoExportMcp(repoPath: string): Promise<void> {
     if (hasBrainbankMcpEntry(target.configPath)) return;
 
     const config = await getConfig(repoPath);
-    const block = buildBrainbankMcpBlock(config);
+    const block = buildBrainbankMcpBlock(config, repoPath);
     mergeAndWrite(target.configPath, block);
     console.log(`  ${c.green('✓')} Exported MCP config to ${c.dim(path.relative(process.env.HOME ?? '', target.configPath))}`);
 }
@@ -211,7 +214,7 @@ export async function cmdMcpExport(): Promise<void> {
     }
 
     const config = await getConfig(repoPath);
-    const block = buildBrainbankMcpBlock(config);
+    const block = buildBrainbankMcpBlock(config, repoPath);
 
     console.log(c.bold(`\n━━━ MCP Export: ${target.label} ━━━\n`));
 
