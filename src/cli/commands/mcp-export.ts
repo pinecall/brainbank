@@ -131,6 +131,106 @@ export async function autoExportMcp(repoPath: string): Promise<void> {
     console.log(`  ${c.green('✓')} Exported MCP config to ${c.dim(path.relative(process.env.HOME ?? '', target.configPath))}`);
 }
 
+// ── GEMINI.md BrainBank Section ──────────────────────────────
+
+const BRAINBANK_SECTION_MARKER = '<!-- brainbank:start -->';
+const BRAINBANK_SECTION_END = '<!-- brainbank:end -->';
+
+function buildGeminiSection(): string {
+    return `
+${BRAINBANK_SECTION_MARKER}
+
+---
+
+## Code Intelligence (BrainBank)
+
+> **Conditional:** BrainBank is available when the \`brainbank_context\` and \`brainbank_files\` MCP tools are present. If they are NOT available, fall back to standard \`view_file\`, \`grep_search\`, and \`list_dir\` tools.
+
+### When BrainBank IS Available
+
+**Always prefer BrainBank over manual file exploration.** Never \`grep_search\` or \`list_dir\` to understand code — use \`brainbank_context\` first.
+
+#### Tool 1: \`brainbank_context\` — Semantic Search
+
+Discovers relevant files/functions by meaning. Always start here.
+
+\`\`\`typescript
+brainbank_context({
+  task: '<descriptive query using project vocabulary>',
+  path: 'src/',         // scope to relevant directory
+  sources: { code: 25, docs: 0, git: 0 },
+  compact: false,
+  expander: true,
+});
+\`\`\`
+
+**Rules:**
+
+1. **Always scope** with \`path\` when possible
+2. **One query per concern** — don't mix unrelated topics
+3. **\`compact: false\` always** — full code bodies, not signatures
+4. **\`sources: { code: 25, docs: 0, git: 0 }\` by default**
+5. **Doc queries:** \`sources: { code: 0, docs: 20, git: 0 }\` — only when user asks about documentation
+
+**Handling outputs:**
+
+BrainBank returns results in two ways — handle each differently:
+
+- **Inline results** (output returned directly in the tool response): **Read the output and proceed.** No need to ask the user for anything.
+- **File results** (output saved to \`output.txt\`): Include the file path as a clickable link and **ask the user to paste**:
+
+  📋 Output: [output.txt](file:///path/to/output.txt)
+
+  _"Could you paste the context output here? That way I can see everything at once."_
+
+  Do **NOT** try to read the file yourself. **STOP and WAIT** for the user to paste. Do not proceed until you have the context.
+
+#### Tool 2: \`brainbank_files\` — Direct File Viewer
+
+Use **after** \`brainbank_context\` to read full files for editing.
+
+\`\`\`typescript
+brainbank_files({
+  files: ['src/path/to/file.ts'],
+  lines: true, // ALWAYS true — line numbers for precise edits
+});
+\`\`\`
+
+> **Note:** \`brainbank_files\` only works with **indexed code files**. For gitignored files (\`.env\`, \`docker-compose.yml\`, etc.), use \`view_file\`.
+
+#### Workflow
+
+\`\`\`
+1. brainbank_context({ task: "...", path: "..." })  → discover relevant files
+2. If inline: read and proceed. If saved to file: ask user to paste, STOP and WAIT.
+3. brainbank_files({ files: [...], lines: true })    → read full contents for editing
+\`\`\`
+
+### When BrainBank is NOT Available
+
+Fall back to standard tools: \`view_file\`, \`grep_search\`, \`list_dir\`.
+
+${BRAINBANK_SECTION_END}
+`;
+}
+
+/** Check if GEMINI.md already has the brainbank section. */
+function hasGeminiSection(geminiPath: string): boolean {
+    if (!fs.existsSync(geminiPath)) return false;
+    const content = fs.readFileSync(geminiPath, 'utf-8');
+    return content.includes(BRAINBANK_SECTION_MARKER);
+}
+
+/** Append BrainBank section to GEMINI.md (creates if doesn't exist). */
+function appendGeminiSection(geminiPath: string): void {
+    const section = buildGeminiSection();
+    if (fs.existsSync(geminiPath)) {
+        fs.appendFileSync(geminiPath, section);
+    } else {
+        fs.writeFileSync(geminiPath, `# GEMINI.md\n${section}`);
+    }
+}
+
 /** CLI command: brainbank mcp:export [target] */
 export async function cmdMcpExport(): Promise<void> {
     const targetName = args[1] || getFlag('target') || 'antigravity';
@@ -158,6 +258,23 @@ export async function cmdMcpExport(): Promise<void> {
         console.log(`  ${c.dim('Keys:')}    ${envKeys.join(', ')}`);
     } else {
         console.log(`  ${c.yellow('⚠')} No API keys found. Set env vars or add keys to .brainbank/config.json`);
+    }
+
+    // GEMINI.md — append BrainBank usage instructions
+    const absRepoPath = path.resolve(repoPath);
+    const geminiPath = path.join(absRepoPath, 'GEMINI.md');
+    if (!hasGeminiSection(geminiPath)) {
+        const { confirm } = await import('@inquirer/prompts');
+        const addGemini = await confirm({
+            message: 'Add BrainBank instructions to GEMINI.md? (helps AI tools use BrainBank correctly)',
+            default: true,
+        });
+        if (addGemini) {
+            appendGeminiSection(geminiPath);
+            console.log(`  ${c.green('✓')} Appended BrainBank section to ${c.dim('GEMINI.md')}`);
+        }
+    } else {
+        console.log(`  ${c.dim('GEMINI.md already has BrainBank section — skipped')}`);
     }
 
     console.log(`\n  ${c.dim('Restart your IDE to apply changes.')}\n`);

@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-04-16
+
+### Added
+- **`mcp:export` appends BrainBank section to GEMINI.md** — auto-generates AI-friendly instructions including the paste-output workflow that circumvents Antigravity's 800-line read limit. Detects existing section via HTML markers to avoid duplicates. Interactive prompt (default: yes)
+
+
 ## [0.9.2] — 2026-04-16
 
 ### Fixed
