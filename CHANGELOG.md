@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-04-16
+
+### Added
+- **`mcp:export` writes BrainBank section to `~/.gemini/GEMINI.md`** — concise AI instructions with paste-output workflow, docs-only rule, and override detection
+- **`brainbank_index` removed from MCP tools** — indexing is CLI-only (`brainbank index`), prevents AI tools from triggering re-index mid-conversation
+
 ## [0.9.2] — 2026-04-16
 
 ### Fixed

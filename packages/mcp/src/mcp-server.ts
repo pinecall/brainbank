@@ -16,15 +16,17 @@
  *   }
  * }
  * 
- * Tools (2):
+ * Tools:
  *   brainbank_context — Workflow Trace: search + call tree + called-by annotations
- *   brainbank_index  — Re-index (requires .brainbank/config.json)
+ *   brainbank_files   — Direct file viewer for indexed files
+ *
+ * Indexing is handled by the CLI (`brainbank index`) — not exposed as an MCP tool.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod/v3';
-import { existsSync } from 'node:fs';
+
 import { WorkspacePool } from './workspace-pool.js';
 import { createWorkspaceBrain, resolveRepoPath } from './workspace-factory.js';
 
@@ -111,86 +113,6 @@ server.registerTool(
         });
 
         return { content: [{ type: 'text' as const, text: context }] };
-    },
-);
-
-// ── Tool: brainbank_index ───────────────────────────
-
-server.registerTool(
-    'brainbank_index',
-    {
-        title: 'BrainBank Index',
-        description:
-            'Re-index code, git history, and docs. Requires .brainbank/config.json to exist. ' +
-            'Incremental — only changed files are processed.',
-        inputSchema: z.object({
-            forceReindex: z.boolean().optional().default(false).describe('Force re-index of all files'),
-            repo: z.string().optional().describe('Repository path (default: BRAINBANK_REPO)'),
-        }),
-    },
-    async ({ forceReindex, repo }) => {
-        const repoPath = resolveRepoPath(repo);
-
-        // Require config.json — force users to set up structure first
-        if (!existsSync(`${repoPath}/.brainbank/config.json`)) {
-            return {
-                content: [{
-                    type: 'text' as const,
-                    text:
-                        `BrainBank: No .brainbank/config.json found at ${repoPath}.\n\n` +
-                        `## How to set up\n\n` +
-                        `Create \`${repoPath}/.brainbank/config.json\` with:\n\n` +
-                        '```json\n' +
-                        '{\n' +
-                        '  "plugins": ["code"],\n' +
-                        '  "code": {\n' +
-                        '    "embedding": "perplexity-context",\n' +
-                        '    "ignore": [\n' +
-                        '      "node_modules/**", "dist/**", "build/**",\n' +
-                        '      ".next/**", "coverage/**", "__pycache__/**",\n' +
-                        '      "**/*.min.js", "**/*.min.css",\n' +
-                        '      "tests/**", "test/**",\n' +
-                        '      "**/test_*.py", "**/*_test.py",\n' +
-                        '      "**/*.test.ts", "**/*.spec.ts"\n' +
-                        '    ]\n' +
-                        '  },\n' +
-                        '  "embedding": "perplexity-context"\n' +
-                        '}\n' +
-                        '```\n\n' +
-                        `**Embedding options:** \`local\` (free, offline), \`openai\`, \`perplexity\`, \`perplexity-context\` (best quality)\n` +
-                        `**Plugins available:** \`code\`, \`git\`, \`docs\`\n\n` +
-                        `Then run:\n` +
-                        '```bash\nbrainbank index . --force --yes\n```',
-                }],
-            };
-        }
-
-        const brainbank = await getBrainBank(repo);
-        const result = await brainbank.index({ forceReindex });
-
-        const lines = ['## Indexing Complete', ''];
-
-        const codeResult = result.code as { indexed?: number; skipped?: number; chunks?: number } | undefined;
-        const gitResult = result.git as { indexed?: number; skipped?: number } | undefined;
-
-        lines.push(`**Code**: ${codeResult?.indexed ?? 0} files indexed, ${codeResult?.skipped ?? 0} skipped, ${codeResult?.chunks ?? 0} chunks`);
-        lines.push(`**Git**: ${gitResult?.indexed ?? 0} commits indexed, ${gitResult?.skipped ?? 0} skipped`);
-
-        const docsResult = result.docs as Record<string, { indexed: number; skipped: number; chunks: number }> | undefined;
-        if (docsResult) {
-            for (const [name, stat] of Object.entries(docsResult)) {
-                lines.push(`**Docs [${name}]**: ${stat.indexed} indexed, ${stat.skipped} skipped, ${stat.chunks} chunks`);
-            }
-        }
-
-        const stats = brainbank.stats();
-        const codeStats = stats.code as { chunks?: number } | undefined;
-        const gitStats = stats.git as { commits?: number } | undefined;
-        const docStats = stats.documents as { documents?: number } | undefined;
-        lines.push('');
-        lines.push(`**Totals**: ${codeStats?.chunks ?? 0} code chunks, ${gitStats?.commits ?? 0} commits, ${docStats?.documents ?? 0} docs`);
-
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     },
 );
 
