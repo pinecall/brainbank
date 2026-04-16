@@ -11,7 +11,7 @@ ROOT="$DIR/.."
 
 # Use compiled dist if available (npm install), fall back to tsx for development
 if [ -f "$ROOT/dist/cli.js" ]; then
-  exec node "$ROOT/dist/cli.js" "$@"
+  exec node --disable-warning=ExperimentalWarning "$ROOT/dist/cli.js" "$@"
 else
   export TSX_TSCONFIG_PATH="$ROOT/tsconfig.json"
   exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli/index.ts" "$@"

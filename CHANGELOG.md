@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-04-16
+
+### Fixed
+- Suppress `ExperimentalWarning: SQLite is an experimental feature` noise from CLI and MCP output via `--disable-warning=ExperimentalWarning`
+- Fix `mcp:export` display showing node flag instead of cli.js path
+
 ## [0.9.1] — 2026-04-16
 
 ### Added

@@ -64,7 +64,7 @@ function buildBrainbankMcpBlock(config: ProjectConfig | null): McpServerConfig {
 
     const block: McpServerConfig = {
         command: nodeBin,
-        args: [resolvedCliJs, 'mcp'],
+        args: ['--disable-warning=ExperimentalWarning', resolvedCliJs, 'mcp'],
     };
 
     if (Object.keys(env).length > 0) {
@@ -150,7 +150,8 @@ export async function cmdMcpExport(): Promise<void> {
     console.log(c.bold(`\n━━━ MCP Export: ${target.label} ━━━\n`));
     console.log(`  ${c.green('✓')} ${created ? 'Created' : 'Updated'} ${c.dim(target.configPath)}`);
     console.log(`  ${c.dim('Node:')}    ${block.command}`);
-    console.log(`  ${c.dim('CLI:')}     ${block.args[0]}`);
+    const cliPath = block.args.find(a => !a.startsWith('--')) ?? block.args[0];
+    console.log(`  ${c.dim('CLI:')}     ${cliPath}`);
 
     const envKeys = block.env ? Object.keys(block.env) : [];
     if (envKeys.length > 0) {
