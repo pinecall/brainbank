@@ -88,7 +88,7 @@ Extensions that connect BrainBank to external tools and workflows.
 
 | Package | Description | Install |
 |---------|-------------|----------|
-| [`@brainbank/mcp`](packages/mcp/) | MCP server for Antigravity, Claude, Cursor | `npm i @brainbank/mcp` |
+| [`@brainbank/mcp`](packages/mcp/) | MCP server for Antigravity, Claude, Cursor (read-only, 2 tools) | `npm i @brainbank/mcp` |
 
 ---
 
@@ -105,7 +105,7 @@ Extensions that connect BrainBank to external tools and workflows.
 | **[Configuration](docs/config.md)** | `.brainbank/config.json`, env vars |
 | **[Embeddings, Reranker & Pruner](docs/embeddings.md)** | Providers, benchmarks, per-plugin overrides, LLM noise filter |
 | **[Multi-Repo](docs/multi-repo.md)** | Index multiple repositories into one DB |
-| **[MCP Server](docs/mcp.md)** | AI tool integration (stdio) |
+| **[MCP Server](docs/mcp.md)** | AI tool integration (stdio), `mcp:export` setup |
 | **[Indexing](docs/indexing.md)** | Code graph, incremental indexing, re-embedding |
 | **[Migrations](docs/migrations.md)** | Plugin schema migrations, built-in schemas |
 | **[Architecture](docs/architecture.md)** | System internals, data flows, design patterns |

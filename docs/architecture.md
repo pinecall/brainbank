@@ -821,18 +821,19 @@ ON CONFLICT(name) DO UPDATE SET ...
 
 **Files:** `packages/mcp/src/` — 3 source files
 
-**3 MCP tools** via `@modelcontextprotocol/sdk`:
+**2 MCP tools** via `@modelcontextprotocol/sdk`:
 
 | Tool | Description |
 |------|------------|
 | `brainbank_context` | Workflow Trace: search + call tree + `called by` annotations |
-| `brainbank_index` | Trigger incremental code/git/docs indexing |
 | `brainbank_files` | Direct file viewer: exact paths, directories, globs, fuzzy |
 
+> **Indexing is CLI-only.** The `brainbank_index` tool was removed to prevent AI agents from triggering re-indexing mid-conversation.
+
 `brainbank_context` params:
-- `task` (string), `affectedFiles` (string[]), `codeResults` (number=20),
-  `gitResults` (number=5), `docsResults` (number?), `sources` (Record?),
-  `path` (string?), `ignore` (string[]?), `repo` (string?)
+- `task` (string, required), `repo` (string, required), `affectedFiles` (string[]),
+  `codeResults` (number=20), `gitResults` (number=5), `docsResults` (number?),
+  `sources` (Record?), `path` (string?), `ignore` (string[]?)
 - BrainBankQL fields: `lines`, `symbols`, `compact`, `callTree`, `imports`, `expander`
 
 **WorkspacePool** (`workspace-pool.ts`):

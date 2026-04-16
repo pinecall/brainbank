@@ -20,6 +20,7 @@ BrainBank can be used entirely from the command line — no config file needed.
 | [`reembed`](#utility) | Re-embed all vectors |
 | [`watch`](#watch-mode) | Auto re-index on changes (plugin-driven) |
 | [`mcp`](#utility) | Start MCP server (stdio) |
+| [`mcp:export`](#mcp-export) | Generate MCP config for AI IDEs |
 | [`daemon`](#http-daemon) | Start HTTP daemon |
 | [`status`](#http-daemon) | Show daemon status |
 
@@ -314,6 +315,28 @@ brainbank stats                             # Show index statistics
 brainbank reembed                           # Re-embed all vectors (after provider switch)
 brainbank mcp                               # Start MCP server (stdio, requires @brainbank/mcp)
 ```
+
+---
+
+## MCP Export
+
+Auto-generate MCP server config for AI IDEs:
+
+```bash
+brainbank mcp:export antigravity            # Google Antigravity
+brainbank mcp:export cursor                 # Cursor
+brainbank mcp:export claude                 # Claude Desktop
+```
+
+`mcp:export` resolves:
+- **Node binary** — absolute path to the current `node` executable
+- **`cli.js` path** — from global install or local `npm link`
+- **API keys** — from `.brainbank/config.json` `keys` section or env vars
+- **`BRAINBANK_REPO`** — injects the repo root into the MCP config env
+
+For Antigravity, it also appends a concise BrainBank section to `~/.gemini/GEMINI.md` with agent instructions (paste-output workflow, source filtering rules, repo requirement).
+
+Existing MCP entries are preserved — the command only adds/overwrites the `brainbank` server entry.
 
 ---
 

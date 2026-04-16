@@ -4,50 +4,40 @@ BrainBank ships with an MCP server (stdio) for AI tool integration — Google An
 
 ## Setup
 
-### Antigravity
+### Automated (recommended)
 
-Add to `~/.gemini/antigravity/mcp_config.json`:
+The fastest way to configure your AI IDE:
+
+```bash
+brainbank mcp:export antigravity   # Google Antigravity
+brainbank mcp:export cursor        # Cursor
+brainbank mcp:export claude        # Claude Desktop
+```
+
+`mcp:export` does three things:
+1. **MCP config** — resolves node binary, `cli.js` path, and API keys from `.brainbank/config.json` or env vars
+2. **`BRAINBANK_REPO` env** — injects the repo root so the MCP server always knows where the index lives
+3. **`~/.gemini/GEMINI.md`** (Antigravity only) — appends a concise BrainBank section with agent rules
+
+### Manual
+
+Add to your IDE's MCP config:
 
 ```json
 {
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"]
+      "args": ["-y", "@brainbank/mcp"],
+      "env": {
+        "BRAINBANK_REPO": "/absolute/path/to/your/project"
+      }
     }
   }
 }
 ```
 
-### Claude Desktop
-
-Add to Claude Desktop settings → Developer → MCP Servers:
-
-```json
-{
-  "mcpServers": {
-    "brainbank": {
-      "command": "npx",
-      "args": ["-y", "@brainbank/mcp"]
-    }
-  }
-}
-```
-
-### Cursor
-
-Add to `.cursor/mcp.json` in your project:
-
-```json
-{
-  "mcpServers": {
-    "brainbank": {
-      "command": "npx",
-      "args": ["-y", "@brainbank/mcp"]
-    }
-  }
-}
-```
+> **Config locations:** Antigravity → `~/.gemini/antigravity/mcp_config.json`, Claude → `~/Library/Application Support/Claude/claude_desktop_config.json`, Cursor → `.cursor/mcp.json`
 
 ### CLI (standalone)
 
@@ -63,12 +53,12 @@ brainbank serve
 
 The MCP server auto-detects everything:
 
-- **Repo path** — from `repo` tool param > `BRAINBANK_REPO` env > `findRepoRoot(cwd)` (walks up looking for `.git/`)
+- **Repo path** — from `repo` tool param (required) > `BRAINBANK_REPO` env > `findRepoRoot(cwd)` (walks up looking for `.git/`)
 - **Embedding provider** — from `.brainbank/config.json` > `BRAINBANK_EMBEDDING` env > `provider_key` stored in DB > falls back to local
 - **Plugins** — reads `plugins` array from `config.json` (default: `['code', 'git', 'docs']`). Loaded dynamically by the core factory — no hardcoded imports
 - **Ignore patterns** — reads `code.ignore` from `config.json`
 
-> Index your repo once with the CLI:
+> **Indexing is CLI-only.** The MCP server is a read-only interface — it cannot trigger re-indexing. Index your repo with the CLI first:
 > ```bash
 > brainbank index . --yes
 > ```
@@ -76,7 +66,7 @@ The MCP server auto-detects everything:
 
 ---
 
-## Tools (3)
+## Tools (2)
 
 ### `brainbank_context`
 
@@ -85,14 +75,14 @@ The MCP server auto-detects everything:
 ```typescript
 brainbank_context({
   task: string,              // what you're trying to understand or implement
+  repo: string,              // repository path (REQUIRED — project root where brainbank index was run)
   affectedFiles?: string[],  // files you plan to modify (improves co-edit suggestions)
   codeResults?: number,      // max code results (default: 20)
   gitResults?: number,       // max git commit results (default: 5)
   docsResults?: number,      // max document results (omit to skip docs)
   sources?: Record<string, number>, // per-source overrides (e.g. { code: 10, git: 0, docs: 5 })
-  path?: string,             // filter results to files under this path prefix
+  path?: string,             // scope results to files under this path prefix (within repo)
   ignore?: string[],         // exclude results whose filePath starts with any prefix
-  repo?: string,             // repository path (default: auto-detect)
   // BrainBankQL context fields:
   lines?: boolean,           // prefix each code line with source line number
   symbols?: boolean,         // append symbol index for matched files
@@ -113,19 +103,6 @@ Returns a **Workflow Trace** — a single flat `## Code Context` section with:
 
 If the project is **not indexed**, the tool returns an error with the exact CLI command to run, plus a template `config.json`.
 
-### `brainbank_index`
-
-Re-index code/git/docs. Requires `.brainbank/config.json` to exist. Incremental — only changed files are processed.
-
-```typescript
-brainbank_index({
-  forceReindex?: boolean,  // force full re-index (default: false)
-  repo?: string,           // repository path (default: auto-detect)
-})
-```
-
-Returns a summary: files indexed/skipped per plugin + total chunk/commit counts.
-
 ### `brainbank_files`
 
 Direct file viewer — use **after** `brainbank_context` to fetch the complete content of files identified by search. No semantic search runs — reads directly from the code index.
@@ -133,7 +110,7 @@ Direct file viewer — use **after** `brainbank_context` to fetch the complete c
 ```typescript
 brainbank_files({
   files: string[],     // file paths, directories, globs, or fuzzy basenames
-  repo?: string,       // repository path (default: auto-detect)
+  repo: string,        // repository path (REQUIRED — project root where brainbank index was run)
   lines?: boolean,     // prefix each line with source line number (default: false)
 })
 ```
@@ -240,7 +217,7 @@ AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→ 
 
 ```
 packages/mcp/src/
-├── mcp-server.ts          ← MCP stdio server (3 tools: context, index, files)
+├── mcp-server.ts          ← MCP stdio server (2 tools: context, files)
 ├── workspace-pool.ts      ← Memory-pressure + TTL eviction, active-op tracking
 └── workspace-factory.ts   ← Delegates to core createBrain() — no plugin hardcoding
 ```
