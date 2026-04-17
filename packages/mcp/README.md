@@ -61,7 +61,7 @@ The MCP server auto-detects everything:
 > ```
 > After that, the MCP server auto-resolves the correct provider — no env vars needed.
 
-## Tools (2)
+## Tool
 
 ### `brainbank_context`
 
@@ -86,17 +86,6 @@ Returns a **Workflow Trace** — a single flat `## Code Context` section with:
 
 If the project is **not indexed**, the tool returns an error with the CLI command to run.
 
-### `brainbank_files`
-
-Direct file viewer — use **after** `brainbank_context` to fetch the complete content of files identified by search.
-
-```typescript
-brainbank_files({
-  files: string[],     // file paths, directories, globs, or fuzzy basenames
-  repo: string,        // repository path (REQUIRED)
-  lines?: boolean,     // prefix each line with source line number (default: false)
-})
-```
 
 ## Multi-Workspace
 
@@ -126,7 +115,7 @@ All optional — the server works without any env vars.
 
 ```
 @brainbank/mcp
-├── mcp-server.ts          ← MCP stdio server (2 tools: context, files)
+├── mcp-server.ts          ← MCP stdio server (1 tool: context)
 ├── workspace-pool.ts      ← Memory-pressure + TTL eviction, active-op tracking
 └── workspace-factory.ts   ← Delegates to core createBrain() — no plugin hardcoding
 ```

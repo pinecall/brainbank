@@ -64,7 +64,7 @@ The MCP server auto-detects everything:
 
 ---
 
-## Tools (2)
+## Tool
 
 ### `brainbank_context`
 
@@ -100,38 +100,6 @@ Returns a **Workflow Trace** — a single flat `## Code Context` section with:
 - All source code included — **no trimming, no truncation**
 
 If the project is **not indexed**, the tool returns an error with the exact CLI command to run, plus a template `config.json`.
-
-### `brainbank_files`
-
-Direct file viewer — use **after** `brainbank_context` to fetch the complete content of files identified by search. No semantic search runs — reads directly from the code index.
-
-```typescript
-brainbank_files({
-  files: string[],     // file paths, directories, globs, or fuzzy basenames
-  repo: string,        // repository path (REQUIRED — project root where brainbank index was run)
-  lines?: boolean,     // prefix each line with source line number (default: false)
-})
-```
-
-Supports 4 resolution tiers (via `FileResolvablePlugin`):
-
-| Mode | Example | Behavior |
-|------|---------|----------|
-| **Exact** | `"src/auth/login.ts"` | Exact file path match |
-| **Directory** | `"src/graph/"` | All indexed files under path (trailing `/`) |
-| **Glob** | `"src/**/*.service.ts"` | Picomatch glob pattern |
-| **Fuzzy** | `"plugin.ts"` | Basename match when exact fails |
-
-```typescript
-// View all files in a directory with line numbers
-brainbank_files({ files: ["src/db/"], lines: true })
-
-// Glob match across the entire codebase
-brainbank_files({ files: ["src/**/*.test.ts"] })
-
-// Multiple patterns in one call
-brainbank_files({ files: ["src/auth/login.ts", "src/auth/middleware.ts"] })
-```
 
 ---
 
@@ -176,8 +144,6 @@ Recommended agent rules for using BrainBank tools effectively:
 Workflow:
 1. brainbank_context({ task: "<what you're working on>" })
    → Get semantic search results + call tree + git history
-2. brainbank_files({ files: ["<specific files from step 1>"] })
-   → Fetch complete file contents for files you'll modify
 
 Tips:
 - Pass affectedFiles to get co-edit suggestions
@@ -215,7 +181,7 @@ AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→ 
 
 ```
 packages/mcp/src/
-├── mcp-server.ts          ← MCP stdio server (2 tools: context, files)
+├── mcp-server.ts          ← MCP stdio server (1 tool: context)
 ├── workspace-pool.ts      ← Memory-pressure + TTL eviction, active-op tracking
 └── workspace-factory.ts   ← Delegates to core createBrain() — no plugin hardcoding
 ```

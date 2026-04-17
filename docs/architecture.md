@@ -821,12 +821,11 @@ ON CONFLICT(name) DO UPDATE SET ...
 
 **Files:** `packages/mcp/src/` — 3 source files
 
-**2 MCP tools** via `@modelcontextprotocol/sdk`:
+**1 MCP tool** via `@modelcontextprotocol/sdk`:
 
 | Tool | Description |
 |------|------------|
 | `brainbank_context` | Workflow Trace: search + call tree + `called by` annotations |
-| `brainbank_files` | Direct file viewer: exact paths, directories, globs, fuzzy |
 
 > **Indexing is CLI-only.** The `brainbank_index` tool was removed to prevent AI agents from triggering re-indexing mid-conversation.
 

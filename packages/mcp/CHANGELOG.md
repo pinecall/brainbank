@@ -4,6 +4,11 @@ All notable changes to `@brainbank/mcp` will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-04-17
+
+### Removed
+- **`brainbank_files` tool** — removed from MCP server. IDE's built-in `view_file` serves the same purpose
+
 ## [0.3.3] — 2026-04-16
 
 ### Removed

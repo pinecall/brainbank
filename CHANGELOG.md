@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.7] — 2026-04-17
+
+### Removed
+- **`brainbank_files` MCP tool** — removed from the MCP server. The IDE's built-in `view_file` tool serves the same purpose without requiring indexed files. CLI `brainbank files` command and `BrainBank.resolveFiles()` API remain available
+
+### Changed
+- **`mcp:export` GEMINI.md rules rewritten** — `brainbank_context` now documented as semantic context discovery only (multi-file understanding), not for string/text searches. Output handling upgraded to mandatory STOP with absolute language
+
 ## [0.9.6] — 2026-04-16
 
 ### Changed

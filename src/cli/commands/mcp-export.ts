@@ -144,24 +144,22 @@ function buildGeminiSection(): string {
 
 ## BrainBank — Code Intelligence
 
-When \`brainbank_context\` and \`brainbank_files\` MCP tools are available, **always use them instead of \`grep_search\` or \`list_dir\`**.
+**\`brainbank_context\`** — semantic code discovery. Use it **only** when you need to understand functionality that spans multiple files (e.g. "how does auth work", "notification pipeline"). \`repo\` is **required**.
 
-**\`brainbank_context\`** — semantic search. \`repo\` is **required** (the project root where \`brainbank index\` was run). Use \`path:\` to scope within it, \`compact: false\`, \`sources: { code: 25, docs: 0, git: 0 }\`.
+**Do NOT use it for:** finding a specific string, variable, function name, or exact match — use \`grep_search\` for that. BrainBank is for *understanding context*, not for *locating text*.
 
-**\`brainbank_files\`** — read full indexed files (\`lines: true\` always). Only works with files tracked by the index — for \`.env\`, \`docker-compose.yml\`, etc. use \`view_file\`.
+**Params:** \`compact: false\`, \`sources: { code: 25, docs: 0, git: 0 }\`. Only add \`docs\` when the user explicitly asks about documentation.
 
-**Sources rule:** Default to code-only (\`docs: 0\`). Only add \`docs\` when the user explicitly asks about documentation. Never mix code and docs in the same query — fire separate queries.
-
-### Output handling (critical)
+### Output handling — MANDATORY
 
 BrainBank may return results **inline** or save them to an **output file**:
 
 - **Inline:** read and proceed normally.
-- **File result** (saved to \`output.txt\`): show the path as a clickable link, ask user to paste, then **STOP and WAIT**:
+- **File result** (saved to \`output.txt\`): you **MUST STOP IMMEDIATELY**. Show the path as a clickable link, ask the user to paste, then **DO NOT PROCEED**:
 
   📋 Output: [output.txt](file:///path/to/output.txt) — _"Could you paste the context output here?"_
 
-  Do **NOT** read the file yourself. Wait for the paste before proceeding.
+  **NEVER** read the file yourself. **NEVER** continue working. Wait for the user to paste the content. This is not optional.
 
 ${BRAINBANK_SECTION_END}
 `;

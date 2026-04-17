@@ -18,7 +18,6 @@
  * 
  * Tools:
  *   brainbank_context — Workflow Trace: search + call tree + called-by annotations
- *   brainbank_files   — Direct file viewer for indexed files
  *
  * Indexing is handled by the CLI (`brainbank index`) — not exposed as an MCP tool.
  */
@@ -53,7 +52,7 @@ async function getBrainBank(targetRepo?: string) {
 
 const server = new McpServer({
     name: 'brainbank',
-    version: '0.4.0',
+    version: '0.3.5',
 });
 
 // ── Tool: brainbank_context ─────────────────────────
@@ -116,64 +115,7 @@ server.registerTool(
     },
 );
 
-// ── Tool: brainbank_files ───────────────────────────
 
-server.registerTool(
-    'brainbank_files',
-    {
-        title: 'BrainBank Files',
-        description:
-            'Fetch full file contents from the index. Use AFTER brainbank_context ' +
-            'to view complete files identified by search. No semantic search runs — ' +
-            'this is a direct file viewer.\n\n' +
-            'Supports:\n' +
-            '- Exact paths: "src/auth/login.ts"\n' +
-            '- Directories: "src/graph/" (trailing / = all files under path)\n' +
-            '- Glob patterns: "src/**/*.service.ts"\n' +
-            '- Fuzzy basename: "plugin.ts" (matches src/plugin.ts when exact fails)',
-        inputSchema: z.object({
-            files: z.array(z.string()).describe(
-                'File paths to fetch. Exact paths, directories (trailing /), ' +
-                'glob patterns (e.g. src/**/*.ts), or fuzzy basenames.',
-            ),
-            repo: z.string().describe('Repository path (default: BRAINBANK_REPO)'),
-            lines: z.boolean().optional().describe('Prefix each line with source line number'),
-        }),
-    },
-    async ({ files, repo, lines }) => {
-        const brainbank = await getBrainBank(repo);
-        const results = brainbank.resolveFiles(files);
-
-        if (results.length === 0) {
-            return { content: [{ type: 'text' as const, text: 'No matching files found in the index.' }] };
-        }
-
-        // Format: markdown with file headers + fenced code blocks
-        const parts: string[] = [];
-        for (const r of results) {
-            const meta = r.metadata as Record<string, unknown>;
-            const lang = (meta.language as string) ?? '';
-            const startLine = (meta.startLine as number) ?? 1;
-
-            parts.push(`## ${r.filePath}\n`);
-            parts.push('```' + lang);
-
-            if (lines) {
-                const codeLines = r.content.split('\n');
-                const pad = String(startLine + codeLines.length - 1).length;
-                parts.push(codeLines.map((l, i) =>
-                    `${String(startLine + i).padStart(pad)}| ${l}`,
-                ).join('\n'));
-            } else {
-                parts.push(r.content);
-            }
-
-            parts.push('```\n');
-        }
-
-        return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
-    },
-);
 
 // ── Start Server ────────────────────────────────────
 
