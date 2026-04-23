@@ -1,21 +1,18 @@
-#!/usr/bin/env node
-
 /**
  * BrainBank — MCP Server
- * 
+ *
  * Exposes BrainBank as an MCP server via stdio transport.
  * Works with Google Antigravity, Claude Desktop, and any MCP-compatible client.
- * 
+ *
  * Usage in mcp_config.json:
  * {
  *   "mcpServers": {
  *     "brainbank": {
- *       "command": "npx",
- *       "args": ["-y", "@brainbank/mcp"]
+ *       "command": "brainbank-mcp"
  *     }
  *   }
  * }
- * 
+ *
  * Tools:
  *   brainbank_context — Workflow Trace: search + call tree + called-by annotations
  *
@@ -26,8 +23,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod/v3';
 
-import { WorkspacePool } from './workspace-pool.js';
-import { createWorkspaceBrain, resolveRepoPath } from './workspace-factory.js';
+import { WorkspacePool } from './workspace-pool.ts';
+import { createWorkspaceBrain, resolveRepoPath } from './workspace-factory.ts';
 
 
 
@@ -52,7 +49,7 @@ async function getBrainBank(targetRepo?: string) {
 
 const server = new McpServer({
     name: 'brainbank',
-    version: '0.3.5',
+    version: '0.9.7',
 });
 
 // ── Tool: brainbank_context ─────────────────────────

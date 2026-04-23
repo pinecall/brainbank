@@ -1,12 +1,15 @@
 /**
  * WorkspaceFactory — creates BrainBank instances via the core factory.
  *
- * Delegates to `createBrain()` from the `brainbank` package, passing
+ * Delegates to `createBrain()` from the core factory, passing
  * a portable `BrainContext`. No plugin hardcoding — the factory handles
  * plugin discovery from config and installed packages.
  */
 
-import type { BrainBank, BrainContext } from 'brainbank';
+import type { BrainBank } from '@/brainbank.ts';
+import type { BrainContext } from '@/cli/factory/brain-context.ts';
+
+import { createBrain, resetFactoryCache } from '@/cli/factory/index.ts';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -39,15 +42,11 @@ export function resolveRepoPath(targetRepo?: string): string {
  * Uses the core factory which handles:
  * - Config loading from .brainbank/config.json
  * - Dynamic plugin discovery and registration
- * - Embedding/reranker provider setup
+ * - Embedding/pruner/expander provider setup
  * - Folder plugin auto-discovery
  */
 export async function createWorkspaceBrain(repoPath: string): Promise<BrainBank> {
-    const brainModule = await import('brainbank') as typeof import('brainbank');
-    const { createBrain } = brainModule;
-    if (typeof brainModule.resetFactoryCache === 'function') {
-        brainModule.resetFactoryCache();
-    }
+    resetFactoryCache();
 
     const context: BrainContext = {
         repoPath,

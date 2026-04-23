@@ -8,7 +8,7 @@
  * - Hot-reload of stale HNSW indices
  */
 
-import type { BrainBank } from 'brainbank';
+import type { BrainBank } from '@/brainbank.ts';
 
 /** Pool configuration. */
 export interface PoolOptions {

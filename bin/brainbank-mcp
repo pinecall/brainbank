@@ -1,0 +1,19 @@
+#!/bin/sh
+# BrainBank MCP Server — standalone entry for mcp_config.json
+# Resolve symlinks to get the real script location
+SCRIPT="$0"
+while [ -L "$SCRIPT" ]; do
+  DIR="$(cd "$(dirname "$SCRIPT")" && pwd)"
+  SCRIPT="$(readlink "$SCRIPT")"
+  [ "${SCRIPT#/}" = "$SCRIPT" ] && SCRIPT="$DIR/$SCRIPT"
+done
+DIR="$(cd "$(dirname "$SCRIPT")" && pwd)"
+ROOT="$DIR/.."
+
+# Use compiled dist if available (npm install), fall back to tsx for development
+if [ -f "$ROOT/dist/mcp.js" ]; then
+  exec node --disable-warning=ExperimentalWarning "$ROOT/dist/mcp.js" "$@"
+else
+  export TSX_TSCONFIG_PATH="$ROOT/tsconfig.json"
+  NODE_OPTIONS='--disable-warning=ExperimentalWarning' exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/mcp/mcp-server.ts" "$@"
+fi

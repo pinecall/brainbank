@@ -1,13 +1,6 @@
-/** brainbank mcp — Start MCP server (stdio). Requires @brainbank/mcp. */
-
-import { c } from '@/cli/utils.ts';
+/** brainbank mcp — Start MCP server (stdio). */
 
 export async function cmdMcp(): Promise<void> {
-    try {
-        await import('@brainbank/mcp');
-    } catch {
-        console.error(c.red('Error: @brainbank/mcp is not installed.'));
-        console.error(c.dim('  Install: npm i @brainbank/mcp'));
-        process.exit(1);
-    }
+    // Import and run the MCP server directly from core
+    await import('@/mcp/mcp-server.ts');
 }

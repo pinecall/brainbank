@@ -13,11 +13,10 @@ The user will specify what to publish. Options:
 - **code** — `@brainbank/code` (packages/code)
 - **git** — `@brainbank/git` (packages/git)
 - **docs** — `@brainbank/docs` (packages/docs)
-- **mcp** — `@brainbank/mcp` (packages/mcp)
 - **memory** — `@brainbank/memory` (packages/memory)
 - **all** — publish everything that has unreleased changes
 
-If the user doesn't specify, ask: "Which package(s) to publish? `core`, `code`, `grammars`, `git`, `docs`, `mcp`, `memory`, or `all`?"
+If the user doesn't specify, ask: "Which package(s) to publish? `core`, `code`, `git`, `docs`, `memory`, or `all`?"
 
 ---
 
@@ -163,6 +162,5 @@ When publishing `all` or multiple packages, publish in dependency order:
 3. `@brainbank/git` — depends on `brainbank`
 4. `@brainbank/docs` — depends on `brainbank`
 5. `@brainbank/memory` — depends on `brainbank`
-6. `@brainbank/mcp` — depends on `brainbank`
 
 Bump and publish each one fully (steps 4-9) before moving to the next.
