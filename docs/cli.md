@@ -123,7 +123,7 @@ brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only
 brainbank hsearch "bug" --notes 5 --git 3            # custom plugin + git
 ```
 
-Any `--<name> <number>` flag not in the known non-source list (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--pruner`, `--only`, `--docs`, `--mode`, `--limit`, `--ignore`, `--include`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter. Source names that don't match a registered plugin are routed to KV collections.
+Any `--<name> <number>` flag not in the known non-source list (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--pruner`, `--only`, `--docs`, `--mode`, `--limit`, `--ignore`, `--include`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter. Source names that don't match a registered plugin are routed to KV collections.
 
 Results are filtered to a minimum score of 70% and capped at 20 results in the CLI output.
 
@@ -306,7 +306,7 @@ Workspaces are cached in memory with a 30-minute TTL.
 | `POST` | `/context` | `{ task, repo?, sources?, pathPrefix? }` | Get formatted context |
 | `POST` | `/index` | `{ repo?, forceReindex? }` | Trigger re-indexing |
 
-> **Note:** The HTTP server is a core brainbank feature — no `@brainbank/mcp` dependency required.
+> **Note:** The HTTP server is a core brainbank feature, separate from the MCP server.
 
 ---
 
@@ -315,7 +315,7 @@ Workspaces are cached in memory with a 30-minute TTL.
 ```bash
 brainbank stats                             # Show index statistics
 brainbank reembed                           # Re-embed all vectors (after provider switch)
-brainbank mcp                               # Start MCP server (stdio, requires @brainbank/mcp)
+brainbank mcp                               # Start MCP server (stdio)
 ```
 
 ---
@@ -355,7 +355,6 @@ Existing MCP entries are preserved — the command only adds/overwrites the `bra
 | `--collection <name>` | Target collection |
 | `--pattern <glob>` | File pattern for docs (default: `**/*.md`) |
 | `--context <desc>` | Context description |
-| `--reranker <name>` | Reranker (`qwen3`) |
 | `--pruner <name>` | LLM noise filter (`haiku`) — drops irrelevant results before formatting |
 | `--embedding <key>` | Embedding provider (`local`, `openai`, `perplexity`, `perplexity-context`) |
 | `--port <n>` | HTTP server port (default: `8181`) |

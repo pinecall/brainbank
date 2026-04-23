@@ -42,7 +42,6 @@ Global symlinks:
   @brainbank/code  → /path/to/brainbank/packages/code
   @brainbank/git   → /path/to/brainbank/packages/git
   @brainbank/docs  → /path/to/brainbank/packages/docs
-  @brainbank/mcp   → /path/to/brainbank/packages/mcp
 ```
 
 That's it. No build step required — edit source and run immediately.
@@ -57,7 +56,6 @@ All `package.json` files (root + packages) point `main`/`exports` directly to `s
 node_modules/@brainbank/code → ../../packages/code → src/index.ts
 node_modules/@brainbank/git  → ../../packages/git  → src/index.ts
 node_modules/@brainbank/docs → ../../packages/docs → src/index.ts
-node_modules/@brainbank/mcp  → ../../packages/mcp  → src/mcp-server.ts
 node_modules/brainbank       → ..                  → src/index.ts
 ```
 
@@ -78,17 +76,17 @@ brainbank/
 │   ├── plugin.ts            ← Plugin interfaces + type guards
 │   ├── engine/              ← Index + Search API + Reembed
 │   ├── db/                  ← DatabaseAdapter, SQLiteAdapter, migrations, tracker
-│   ├── providers/           ← Embeddings, rerankers, pruners, HNSW
+│   ├── providers/           ← Embeddings, pruners, HNSW
 │   ├── search/              ← CompositeVector, CompositeBM25, ContextBuilder, RRF, MMR
 │   ├── services/            ← Collection, KVService, Watcher, HttpServer, daemon
-│   ├── lib/                 ← Pure utilities: fts, math, rrf, rerank, prune, logger
+│   ├── lib/                 ← Pure utilities: fts, math, rrf, prune, logger
 │   └── cli/                 ← CLI commands + factory (createBrain)
+│   └── mcp/                 ← MCP stdio server (built into core)
 │
 └── packages/
     ├── code/                ← @brainbank/code (tree-sitter, import graph, call tree)
     ├── git/                 ← @brainbank/git (commits, co-edits, diffs)
-    ├── docs/                ← @brainbank/docs (smart markdown chunking)
-    └── mcp/                 ← @brainbank/mcp (MCP stdio server, WorkspacePool)
+    └── docs/                ← @brainbank/docs (smart markdown chunking)
 ```
 
 ---
@@ -125,7 +123,7 @@ The project uses **npm workspaces** (`"workspaces": ["packages/*"]`).
 
 | What | How |
 |------|-----|
-| `@brainbank/code`, `git`, `docs`, `mcp` | Auto-symlinked by npm to `node_modules/@brainbank/*` |
+| `@brainbank/code`, `git`, `docs` | Auto-symlinked by npm to `node_modules/@brainbank/*` |
 | `brainbank` peer dep in plugins | `postinstall` script → symlink `node_modules/brainbank` to repo root |
 | Resolution | All packages point `main`/`exports` to `src/index.ts` — source-first |
 | Global CLI | `npm link` → global bin points to `bin/brainbank.ts` (tsx) |

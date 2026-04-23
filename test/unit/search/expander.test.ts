@@ -111,7 +111,7 @@ export const tests = {
         registry.register(plugin);
 
         const expander = mockExpander([100, 101]);
-        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, undefined, {}, expander);
+        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, {}, expander);
 
         // expander field defaults to false
         const ctx = await builder.build('test task');
@@ -125,7 +125,7 @@ export const tests = {
         registry.register(plugin);
 
         const expander = mockExpander([100, 101]);
-        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, undefined, {}, expander);
+        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, {}, expander);
 
         const ctx = await builder.build('test task', { fields: { expander: true } });
         // The formatter gets called with expanded results spliced in
@@ -139,7 +139,7 @@ export const tests = {
         registry.register(plugin);
 
         const expander = failingExpander();
-        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, undefined, {}, expander);
+        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, {}, expander);
 
         // Should not throw
         const ctx = await builder.build('test task', { fields: { expander: true } });
@@ -166,7 +166,7 @@ export const tests = {
         registry.register(plugin);
 
         const expander = mockExpander([]);
-        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, undefined, {}, expander);
+        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, {}, expander);
 
         const ctx = await builder.build('test task', { fields: { expander: true } });
         assert.ok(ctx.includes('formatted'), 'pipeline should complete with no expansion');
@@ -180,7 +180,7 @@ export const tests = {
         registry.register(plugin);
 
         const expander = mockExpander([100]);
-        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, undefined, {}, expander);
+        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, {}, expander);
 
         await builder.build('test task', { fields: { expander: true } });
 
@@ -209,7 +209,7 @@ export const tests = {
         registry.register(plugin);
 
         const expander = mockExpander([102]);
-        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, undefined, {}, expander);
+        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, {}, expander);
 
         await builder.build('test task', { fields: { expander: true } });
 
@@ -234,7 +234,7 @@ export const tests = {
             },
         };
 
-        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, undefined, {}, spyExpander);
+        const builder = new ContextBuilder(mockSearch(results), registry, undefined, undefined, {}, spyExpander);
         await builder.build('test task', { fields: { expander: true } });
 
         const searchPaths = new Set(results.map(r => r.filePath));

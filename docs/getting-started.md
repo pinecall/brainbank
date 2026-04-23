@@ -232,7 +232,7 @@ Add `.brainbank/data/` to `.gitignore` — generated files, not for version cont
 | Programmatic search modes | [Search](search.md) |
 | Store custom data | [Collections](collections.md) |
 | Build your own plugin | [Custom Plugins](custom-plugins.md) |
-| Configure embeddings | [Embeddings & Reranker](embeddings.md) |
+| Configure embeddings | [Embeddings, Pruner & Expander](embeddings.md) |
 | MCP integration | [MCP Server](mcp.md) |
 | Multi-repo indexing | [Multi-Repo](multi-repo.md) |
 | Local development setup | [Local Development](local-development.md) |

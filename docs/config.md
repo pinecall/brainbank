@@ -40,7 +40,6 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
 
   // Global defaults
   "embedding": "local",
-  "reranker": "qwen3",
   "pruner": "haiku",
 
   // Context field defaults (applied to all getContext() calls)
@@ -127,19 +126,18 @@ Each plugin creates its own HNSW index with the correct dimensions. A plugin wit
 
 ---
 
-## Reranker & Pruner
+## Pruner & Expander
 
 | Key | Options | Description |
 |-----|---------|-------------|
-| `reranker` | `"qwen3"` | Re-ranks search results using a cross-encoder model for better ordering |
 | `pruner` | `"haiku"` | LLM noise filter — drops irrelevant results before context formatting. Requires `ANTHROPIC_API_KEY` |
 | `expander` | `"haiku"` | LLM context expansion — discovers additional relevant chunks after pruning. **Explicit opt-in only** — never auto-enabled. Requires `ANTHROPIC_API_KEY` |
 
-All three are optional. Set in config or via CLI flags (`--reranker qwen3`, `--pruner haiku`).
+Both are optional. Set in config or via CLI flags (`--pruner haiku`, `--expander`).
 
 The pruner runs **after** search + path scoping, **before** formatting. Fails open — if the API call fails, all results pass through.
 
-> See [Embeddings, Reranker & Pruner](embeddings.md) for detailed pipeline diagrams and benchmarks.
+> See [Embeddings, Pruner & Expander](embeddings.md) for detailed pipeline diagrams and benchmarks.
 
 ---
 
@@ -265,6 +263,6 @@ API keys can be provided in **config.json** or via **environment variables**. Co
 
 ## See Also
 
-- [Embeddings, Reranker & Pruner](embeddings.md) — provider details, benchmarks, reranker & pruner config
+- [Embeddings, Pruner & Expander](embeddings.md) — provider details, benchmarks, pruner & expander config
 - [Plugins](plugins.md) — per-plugin embedding override
 - [Multi-Repo](multi-repo.md) — `repos` whitelist and per-repo databases

@@ -10,7 +10,7 @@
    - 7.1 [@brainbank/code](#71-brainbankcode)
    - 7.2 [@brainbank/git](#72-brainbankgit)
    - 7.3 [@brainbank/docs](#73-brainbankdocs)
-8. [@brainbank/mcp Package](#8-brainbankmcp-package)
+8. [MCP Server (Core)](#8-mcp-server-core)
 9. [Collection — KV Store](#9-collection--kv-store)
 10. [Search Layer](#10-search-layer)
     - 10.1 [SearchStrategy Interface](#101-searchstrategy-interface)
@@ -18,17 +18,15 @@
     - 10.3 [CompositeBM25Search](#103-compositebm25search)
     - 10.4 [Hybrid Search + RRF](#104-hybrid-search--rrf)
     - 10.5 [MMR — Diversity](#105-mmr--diversity)
-    - 10.6 [Reranking](#106-reranking)
-    - 10.7 [ContextBuilder](#107-contextbuilder)
-    - 10.8 [Pruning](#108-pruning)
-    - 10.9 [Expansion](#109-expansion)
-    - 10.10 [DocumentSearch](#1010-documentsearch)
+    - 10.6 [ContextBuilder](#106-contextbuilder)
+    - 10.7 [Pruning](#107-pruning)
+    - 10.8 [Expansion](#108-expansion)
+    - 10.9 [DocumentSearch](#109-documentsearch)
 11. [Infrastructure](#11-infrastructure)
     - 11.1 [Database](#111-database)
     - 11.2 [HNSWIndex](#112-hnswindex)
     - 11.3 [HNSW Loader](#113-hnsw-loader)
     - 11.4 [Embedding Providers](#114-embedding-providers)
-    - 11.5 [Rerankers](#115-rerankers)
 12. [Services](#12-services)
     - 12.1 [Watch Service](#121-watch-service)
     - 12.2 [Reembed Engine](#122-reembed-engine)
@@ -59,15 +57,14 @@ and optional post-processing on top:
 | Vector search | HNSW (hnswlib-node) | Semantic similarity, O(log n) |
 | Keyword search | FTS5 BM25 (SQLite) | Exact/stem match, O(log n) |
 | Hybrid | Vector + BM25 → RRF | Best of both |
-| Reranking | Cross-encoder (optional) | Position-aware score blending |
 | Pruning | LLM noise filter (optional) | Haiku 4.5 binary classification |
 | Expansion | LLM context expansion (optional) | Haiku 4.5 chunk selection |
 
 Everything is accessed through a **single facade** (`BrainBank`) that composes
 specialized subsystems via a **capability-based plugin architecture**. The core
 package owns all infrastructure (DB, KV schema, HNSW, embeddings, search
-orchestration, CLI). Plugin packages (`@brainbank/code`, `@brainbank/git`,
-`@brainbank/docs`, `@brainbank/mcp`) implement domain-specific indexing and
+orchestration, CLI, MCP server). Plugin packages (`@brainbank/code`, `@brainbank/git`,
+`@brainbank/docs`) implement domain-specific indexing and
 searching, and are loaded via `.use()`.
 
 **Key architectural principle: the core is plugin-agnostic.** Search, indexing,
@@ -143,9 +140,7 @@ brainbank/
 │   │   │   └── embedding-worker-thread.ts ← Worker script: zero-copy ArrayBuffer transfer (96 lines)
 │   │   ├── pruners/
 │   │   │   ├── haiku-pruner.ts         ← LLM noise filter via Anthropic Haiku 4.5 (113 lines)
-│   │   │   └── haiku-expander.ts       ← LLM context expansion via Haiku 4.5 (153 lines)
-│   │   ├── rerankers/
-│   │   │   └── qwen3-reranker.ts      ← Qwen3 cross-encoder via node-llama-cpp (181 lines)
+│   │   │   └── haiku-expander.ts       ← LLM context expansion via Haiku 4.5 (167 lines)
 │   │   └── vector/
 │   │       ├── hnsw-index.ts          ← HNSWIndex: hnswlib-node wrapper (175 lines)
 │   │       └── hnsw-loader.ts         ← hnswPath, loadVectors, saveAllHnsw, reloadHnsw (130 lines)
@@ -175,7 +170,6 @@ brainbank/
 │   │   ├── math.ts                    ← cosineSimilarity, normalize, vecToBuffer (88 lines)
 │   │   ├── provider-key.ts            ← providerKey(): EmbeddingProvider → canonical key (21 lines)
 │   │   ├── prune.ts                   ← pruneResults: bridges SearchResult[] → Pruner (72 lines)
-│   │   ├── rerank.ts                  ← Position-aware score blending (34 lines)
 │   │   ├── rrf.ts                     ← reciprocalRankFusion + fuseRankedLists<T> (134 lines)
 │   │   ├── write-lock.ts              ← Advisory file lock (O_EXCL, stale PID detection) (109 lines)
 │   │   └── logger.ts                  ← Query debug logger → /tmp/brainbank.log (126 lines)
@@ -191,6 +185,11 @@ brainbank/
 │       │   ├── plugin-loader.ts       ← Dynamic @brainbank/* loading + folder discovery (147 lines)
 │       │   └── builtin-registration.ts ← Multi-repo detection + plugin registration (124 lines)
 │       └── commands/                  ← 15 command files (index, scan, search, context, kv, etc.)
+│
+│   └── mcp/                           ← MCP stdio server (built into core)
+│       ├── mcp-server.ts              ← MCP stdio server (1 tool: context)
+│       ├── workspace-pool.ts          ← Memory-pressure + TTL eviction pool (225 lines)
+│       └── workspace-factory.ts       ← Delegates to core createBrain() (67 lines)
 │
 └── packages/
     ├── code/                          ← @brainbank/code (CODE_SCHEMA_VERSION = 5)
@@ -234,7 +233,7 @@ brainbank/
     │       ├── docs-context-formatter.ts ← Document formatting (26 lines)
     │       └── document-search.ts     ← Hybrid search (RRF + dedup by file) (225 lines)
     │
-    └── mcp/                           ← @brainbank/mcp
+    └── mcp/                           ← MCP stdio server (built into core)
         └── src/
             ├── mcp-server.ts          ← MCP stdio server (3 tools) (266 lines)
             ├── workspace-pool.ts      ← Memory-pressure + TTL eviction pool (225 lines)
@@ -247,8 +246,6 @@ brainbank/
 @brainbank/code    ── peerDep ──► brainbank (core)
 @brainbank/git     ── peerDep ──► brainbank (core)
 @brainbank/docs    ── peerDep ──► brainbank (core)
-@brainbank/mcp     ── dep ─────► brainbank (core)
-                   ── peerDep ──► @brainbank/code + @brainbank/git + @brainbank/docs (all optional)
 ```
 
 > **Schema ownership:** Core owns ONLY KV tables + metadata tables. Domain tables
@@ -296,7 +293,7 @@ guards, and delegates every operation to specialized subsystems.
 │  .deleteCollection(name)   remove from DB + evict from cache           │
 │  .index(opts)              delegates to runIndex()                     │
 │  .search(query, opts)      vector search → RRF if multiple sources     │
-│  .hybridSearch(query, opts)  vector + BM25 → RRF → optional rerank    │
+│  .hybridSearch(query, opts)  vector + BM25 → RRF                      │
 │  .searchBM25(query, opts)  keyword-only search                         │
 │  .getContext(task, opts)    formatted markdown for LLM system prompt    │
 │  .resolveFiles(patterns)   direct file lookup (no search)              │
@@ -347,8 +344,8 @@ collection() — special: throws "Collections not ready" if _kvService undefined
 _watcher?.close()
 _webhookServer?.close()
 for (plugin of registry.all): plugin.close?.()
-reranker?.close?.()
 pruner?.close?.()
+expander?.close?.()
 _embedding?.close().catch(() => {})
 for (db of _repoDBs.values()): db.close()   ← per-repo DBs
 _repoDBs.clear()
@@ -394,7 +391,7 @@ BrainBank._runInitialize({ force? })
 ├── 4. Create KV HNSW + KVService
 │     dims = embedding.dims ?? config.embeddingDims
 │     kvHnsw = new HNSWIndex(dims, ...).init()
-│     _kvService = new KVService(db, embedding, kvHnsw, new Map(), reranker)
+│     _kvService = new KVService(db, embedding, kvHnsw, new Map())
 │     ← collection() NOW WORKS for plugins
 │
 ├── 5. Load KV Vectors (unless skipVectorLoad)
@@ -794,7 +791,7 @@ DocsPlugin.initialize(ctx):
   shared = await ctx.getOrCreateSharedHnsw('docs', undefined, embedding.dims)
   ← literal 'docs' key → all docs:* share ONE HNSW
   indexer = new DocsIndexer(db, embedding, hnsw, vecCache, ctx.createTracker())
-  _search = new DocumentSearch({ db, embedding, hnsw, vecCache, reranker })
+  _search = new DocumentSearch({ db, embedding, hnsw, vecCache })
 ```
 
 **Smart chunking (qmd-inspired):**
@@ -817,9 +814,9 @@ ON CONFLICT(name) DO UPDATE SET ...
 
 ---
 
-## 8. @brainbank/mcp Package
+## 8. MCP Server (Core)
 
-**Files:** `packages/mcp/src/` — 3 source files
+**Files:** `src/mcp/` — 3 source files (migrated into core, no longer a separate package)
 
 **1 MCP tool** via `@modelcontextprotocol/sdk`:
 
@@ -859,6 +856,8 @@ WorkspacePool(options: PoolOptions)
 No hardcoded plugin imports. Silences console.log → stderr during init to
 prevent ANSI output from corrupting MCP JSON-RPC stdio transport.
 
+> The MCP server binary is `brainbank-mcp` (registered in `bin/` of the root package). Run via `npx brainbank-mcp` or configure as an MCP server in your IDE.
+
 ---
 
 ## 9. Collection — KV Store
@@ -869,7 +868,7 @@ All collections share **one kvHnsw** owned by `KVService`. Collection isolation
 via `WHERE collection = ?` after adaptive over-fetch.
 
 ```
-KVService(db, embedding, hnsw, vecs, reranker?)
+KVService(db, embedding, hnsw, vecs)
   collection(name) → cached or new Collection(...)
   listNames()      → SELECT DISTINCT collection FROM kv_data
   delete(name)     → hnsw.remove + vecs.delete per id; DELETE FROM kv_data
@@ -886,7 +885,7 @@ search(query, { k=5, mode='hybrid', minScore=0.15, tags? })
   mode='hybrid':
     parallel: _searchVector + _searchBM25
     fuseRankedLists<T>([vec, bm25])  ← generic RRF (not SearchResult-typed)
-    optional reranker → _filterByTags
+    _filterByTags
 
 _searchVector: adaptive over-fetch
   ratio = ceil(totalHnswSize / collectionCount), clamped [3, 50]
@@ -961,10 +960,7 @@ SearchAPI.hybridSearch(query, options?)
          │     for [name, k] in sources where name ∉ plugin names:
          │       kvService.collection(name).searchAsResults(query, k)
          │
-         ├── reciprocalRankFusion(lists, k=60, maxResults=15)
-         │
-         └── if reranker && fused.length > 1:
-               rerank(query, fused, reranker)
+         └── reciprocalRankFusion(lists, k=60, maxResults=15)
 
 
 reciprocalRankFusion(resultSets, k=60, maxResults=15):
@@ -991,26 +987,13 @@ searchMMR(index, query, vectorCache, k, lambda=0.7)
     mmrScore = lambda * relevance - (1 - lambda) * max_sim_to_selected
 ```
 
-### 10.6 Reranking
-
-**File:** `src/lib/rerank.ts` (34 lines)
-
-```
-rerank(query, results, reranker):
-  scores = await reranker.rank(query, documents)
-  Position-aware blending:
-    pos 1-3:   weight = 0.75 retrieval / 0.25 reranker
-    pos 4-10:  weight = 0.60 / 0.40
-    pos 11+:   weight = 0.40 / 0.60
-```
-
-### 10.7 ContextBuilder
+### 10.6 ContextBuilder
 
 **File:** `src/search/context-builder.ts` (301 lines)
 **Pattern:** Pipeline orchestrator
 
 ```
-ContextBuilder(search?, registry, pruner?, embedding?, rerankerName?, configFields, expander?)
+ContextBuilder(search?, registry, pruner?, embedding?, configFields, expander?)
 
 build(task, options?):
   1. Primary: vector search (includes per-repo BM25 fusion internally)
@@ -1037,7 +1020,7 @@ _resolveFields(options):
   2. Merge: defaults ← config.contextFields ← options.fields
 ```
 
-### 10.8 Pruning
+### 10.7 Pruning
 
 **Files:** `src/lib/prune.ts` (72 lines), `src/providers/pruners/haiku-pruner.ts` (113 lines)
 
@@ -1056,9 +1039,9 @@ _buildPreview(content):
 
 **Fail-open:** If the API call fails, all results pass through unchanged.
 
-### 10.9 Expansion
+### 10.8 Expansion
 
-**Files:** `src/providers/pruners/haiku-expander.ts` (153 lines)
+**Files:** `src/providers/pruners/haiku-expander.ts` (167 lines)
 
 Runs **after** pruning, only when `expander` field is `true`.
 
@@ -1080,7 +1063,7 @@ HaikuExpander.expand(query, currentIds, manifest):
   Fail-open: errors return empty array
 ```
 
-### 10.10 DocumentSearch
+### 10.9 DocumentSearch
 
 **File:** `packages/docs/src/document-search.ts` (225 lines)
 
@@ -1093,7 +1076,7 @@ search(query, { collection?, k=8, minScore=0, mode='hybrid' })
   mode='hybrid':
     parallel: _searchVector(k*2) + _searchBM25(k*2)
     reciprocalRankFusion([vecHits, bm25Hits])
-    _dedup(results, k) → _rerankResults
+    _dedup(results, k)
 
 _searchBM25: OR-mode FTS5, custom stop-word filter
   bm25(fts_docs, 10.0, 2.0, 5.0, 1.0)  ← title×10, content×2, path×5, collection×1
@@ -1181,18 +1164,6 @@ resolveEmbedding(key): lazy-loads provider class by key string
 providerKey(p): constructor.name → canonical key ('local'|'openai'|'perplexity'|'perplexity-context')
 
 EmbeddingWorkerProxy: offloads to worker_threads, zero-copy ArrayBuffer transfer
-```
-
-### 11.5 Rerankers
-
-**File:** `src/providers/rerankers/qwen3-reranker.ts` (181 lines)
-
-```
-Qwen3Reranker({ modelUri?, cacheDir?, contextSize=2048 })
-  Qwen3-Reranker-0.6B-Q8_0 (~640MB GGUF, auto-downloaded)
-  node-llama-cpp (optional peer dep)
-  Lazy load, flash attention with fallback
-  Deduplicates identical texts, tokenizer-based truncation
 ```
 
 ---
@@ -1321,7 +1292,7 @@ CLI delegation (src/cli/server-client.ts):
 logQuery(entry: QueryLogEntry): void
   Appends to /tmp/brainbank.log
   Covers: getContext, search, hybridSearch, searchBM25
-  Includes: source, method, query, embedding, pruner, reranker,
+  Includes: source, method, query, embedding, pruner,
             options, results, pruned items, durationMs
   Auto-truncates at 10MB (keeps newest half)
 ```
@@ -1372,7 +1343,7 @@ createSearchAPI(db, embedding, config, registry, kvService, sharedHnsw):
 
   bm25 = new CompositeBM25Search(registry)
   contextBuilder = new ContextBuilder(search, registry, config.pruner,
-    embedding, rerankerName, config.contextFields, config.expander)
+    embedding, config.contextFields, config.expander)
 
   return new SearchAPI({ search, bm25, registry, config, kvService, contextBuilder, embedding })
 ```
@@ -1391,7 +1362,7 @@ createBrain(contextOrRepo?)  [src/cli/factory/index.ts]
   config = loadConfig(rp)
   folderPlugins = discoverFolderPlugins(rp)
   brainOpts = { repoPath, ...config?.brainbank }
-  setupProviders(brainOpts, config, flags, env)  ← embedding + reranker + pruner + expander
+  setupProviders(brainOpts, config, flags, env)  ← embedding + pruner + expander
   builtins = config?.plugins ?? ['code', 'git', 'docs']
   ignorePatterns from ctxFlag('ignore')
   includePatterns from ctxFlag('include')
@@ -1442,7 +1413,7 @@ interface BrainContext {
 | `stats` | `cmdStats` | Index statistics |
 | `reembed` | `cmdReembed` | Re-generate all vectors |
 | `watch` | `cmdWatch` | Plugin-driven auto-reindex |
-| `mcp` | `cmdMcp` | MCP server (imports @brainbank/mcp) |
+| `mcp` | `cmdMcp` | MCP server (built into core) |
 | `daemon [start\|stop\|restart]` | `cmdDaemon` | HTTP daemon (foreground or background) |
 | `status` | `cmdStatus` | Daemon status |
 
@@ -1626,8 +1597,6 @@ git, docs              [kwResults]                  [pluginResults]
                         │
           reciprocalRankFusion(all lists, k=60, maxResults=15)
                         │
-          if reranker: rerank(query, fused, reranker)
-                        │
           [sorted SearchResult[]]
 ```
 
@@ -1696,7 +1665,7 @@ brain.reembed()
 | 10 | **Flyweight** | `_sharedHnsw` pool | git:frontend + git:backend share ONE HNSW |
 | 11 | **Builder** | `ContextBuilder` | Incrementally assembles markdown from plugin formatters |
 | 12 | **Composite** | `CompositeVectorSearch`, `CompositeBM25Search` | Embed once, delegate to domain strategies |
-| 13 | **Lazy Singleton + Promise Dedup** | `LocalEmbedding`, `Qwen3Reranker` | Expensive resources loaded on first use |
+| 13 | **Lazy Singleton + Promise Dedup** | `LocalEmbedding` | Expensive resources loaded on first use |
 | 14 | **Memento / Persistence** | `HNSWIndex.save()` / `tryLoad()` | Graph persisted with staleness check |
 | 15 | **Adapter** | Embedding providers | OpenAI `number[]`, Perplexity base64 int8 → `Float32Array` |
 | 16 | **Guard / Precondition** | `_requireInit()` | Descriptive errors before null-pointer crashes |
@@ -1755,9 +1724,8 @@ brain.reembed()
           │  CompositeBM25Search (per-plugin keyword search)             │
           │  ContextBuilder (orchestrator + field resolution + expander) │
           │  reciprocalRankFusion + fuseRankedLists<T>                   │
-          │  rerank (position-aware blending)                            │
-          │  searchMMR (diversity)                                       │
           │  pruneResults (LLM noise filter)                             │
+          │  searchMMR (diversity)                                       │
           └──────────────────────────────────────────────────────────────┘
 
      ┌──────────────────────────────────────────────────────────────────┐
@@ -1775,7 +1743,6 @@ brain.reembed()
      │    └── _sharedHnsw['docs'] (all docs:* share one)                │
      │                                                                  │
      │  EmbeddingProviders: Local, OpenAI, Perplexity, PerplexityContext│
-     │  Qwen3Reranker ── node-llama-cpp (optional)                      │
      │  HaikuPruner ── Anthropic Haiku 4.5 (optional)                   │
      │  HaikuExpander ── Anthropic Haiku 4.5 (optional)                 │
      └──────────────────────────────────────────────────────────────────┘
@@ -1802,9 +1769,9 @@ brain.reembed()
      └──────────────────────────────────────────────────────────────────┘
 
      ┌──────────────────────────────────────────────────────────────────┐
-     │                     @brainbank/mcp                               │
+     │                     MCP Server (core)                          │
      │  WorkspacePool: memory-pressure + TTL eviction, active-op guard │
-     │  3 tools: context (Workflow Trace), index, files                 │
+     │  1 tool: context (Workflow Trace)                              │
      │  WorkspaceFactory → createBrain() (no hardcoded plugins)        │
      └──────────────────────────────────────────────────────────────────┘
 ```

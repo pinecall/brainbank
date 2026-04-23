@@ -30,9 +30,6 @@ All tests run with **Perplexity Context Embeddings** (`pplx-embed-v1`, 2560d) st
 # SciFact (~13 min indexing, ~45s search)
 PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact
 
-# With Qwen3 reranker (downloads ~640MB model on first run)
-PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact --reranker
-
 # Other supported datasets
 PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset nfcorpus
 PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset fiqa
@@ -54,9 +51,8 @@ Shows the incremental impact of each technique BrainBank adds:
 |---|:---:|:---:|:---:|:---:|---|
 | Vector-only (HNSW) | 45% | 57% | 0.54 | 6/20 | baseline |
 | **+ BM25 (RRF fusion)** | 55% | 78% | 0.55 | 2/20 | **+21pp R@5** |
-| **+ Qwen3 Reranker** | 63% | 83% | 0.57 | 1/20 | **+5pp R@5** |
 
-> The hybrid search pipeline improved R@5 by **+26 percentage points** over vector-only retrieval, reducing misses from 6 to 1.
+> The hybrid search pipeline improved R@5 by **+21 percentage points** over vector-only retrieval, reducing misses from 6 to 2.
 
 ### Per-Category Breakdown (Full Pipeline)
 
@@ -76,13 +72,15 @@ Shows the incremental impact of each technique BrainBank adds:
 | **RRF fusion** | Merges vector + BM25 ranked lists | Docs appearing in both lists get boosted — R@5: 57% → 78% |
 | **File-level dedup** | Keeps best-scoring chunk per file | Prevents one doc from eating multiple result slots |
 | **BM25 title weight 10×** | Boosts title column in FTS5 | Doc titles are the strongest relevance signal |
-| **Qwen3 Reranker** | Cross-encoder rescoring on top-k | Promotes semantically relevant docs — R@5: 78% → 83% |
 
 ---
 
 ## Head-to-Head: BrainBank vs QMD
 
 [QMD](https://github.com/tobi/qmd) is a local-first markdown search engine that runs entirely on-device — embedding, query expansion, and reranking all via GGUF models. We benchmarked both engines on the same corpus and queries to compare cloud vs local retrieval quality.
+
+> [!NOTE]
+> These benchmarks were run when BrainBank still included an optional Qwen3 reranker (since removed). The reranker columns are preserved for historical reference. BrainBank's current pipeline terminates at RRF fusion.
 
 ### Setup
 
@@ -126,7 +124,6 @@ Shows the incremental impact of each technique BrainBank adds:
 ## Test Environment
 
 - **Embeddings**: Perplexity Context (`pplx-embed-v1`, 2560 dimensions)
-- **Reranker**: Qwen3-Reranker-0.6B (Q8_0 GGUF, ~640MB, local via node-llama-cpp)
 - **Vector Index**: HNSW (hnswlib-node, in-memory)
 - **Keyword Search**: FTS5 (SQLite built-in)
 - **Fusion**: Reciprocal Rank Fusion (k=60)

@@ -29,7 +29,7 @@ Add to your IDE's MCP config:
   "mcpServers": {
     "brainbank": {
       "command": "npx",
-      "args": ["-y", "@brainbank/mcp"]
+      "args": ["-y", "brainbank-mcp"]
     }
   }
 }
@@ -165,7 +165,7 @@ Tips:
 ## How It Works
 
 ```
-AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→  SQLite + HNSW
+AI Agent  ←→  stdio  ←→  brainbank-mcp  ←→  BrainBank core  ←→  SQLite + HNSW
 ```
 
 1. Agent sends `brainbank_context({ task: "..." })`
@@ -180,11 +180,13 @@ AI Agent  ←→  stdio  ←→  @brainbank/mcp  ←→  BrainBank core  ←→ 
 ### Architecture
 
 ```
-packages/mcp/src/
+src/mcp/
 ├── mcp-server.ts          ← MCP stdio server (1 tool: context)
 ├── workspace-pool.ts      ← Memory-pressure + TTL eviction, active-op tracking
 └── workspace-factory.ts   ← Delegates to core createBrain() — no plugin hardcoding
 ```
+
+> The MCP server is built into the core package (no separate `@brainbank/mcp` package). The `brainbank-mcp` binary is registered in the root `package.json` `bin` field.
 
 `WorkspaceFactory.createWorkspaceBrain()` imports `createBrain()` from core, passes a `BrainContext` with `repoPath` and `env`. Console output is redirected to stderr during initialization to prevent ANSI escape codes from corrupting the MCP JSON-RPC stdio transport.
 
@@ -195,4 +197,4 @@ packages/mcp/src/
 - [Multi-Repo](multi-repo.md) — multi-workspace indexing
 - [Configuration](config.md) — embedding config, plugin config
 - [Search](search.md) — BrainBankQL context fields
-- [packages/mcp/README.md](../packages/mcp/README.md) — package-level docs
+- [Architecture](architecture.md) — MCP server internals

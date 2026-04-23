@@ -1,4 +1,4 @@
-# Embeddings, Reranker & Pruner
+# Embeddings, Pruner & Expander
 
 ## Embedding Providers
 
@@ -166,82 +166,11 @@ Tested with BrainBank's hybrid pipeline (Vector + BM25 → RRF):
 |----------------|:---:|-------|
 | Vector-only (HNSW) | 57% | baseline |
 | + BM25 (RRF fusion) | 78% | **+21pp** |
-| + Qwen3 Reranker | 83% | **+5pp** |
 
-> The hybrid pipeline improved R@5 by **+26pp over vector-only**, reducing misses from 6/20 to 1/20.
+> The hybrid pipeline improved R@5 by **+21pp over vector-only**, reducing misses from 6/20 to 2/20.
 
 > [!WARNING]
 > Switching embedding provider (e.g. local → OpenAI) changes vector dimensions. BrainBank will **refuse to initialize** if stored dimensions don't match. Use `initialize({ force: true })` and then `reembed()` to migrate.
-
----
-
-## Reranker
-
-BrainBank ships with an optional cross-encoder reranker using **Qwen3-Reranker-0.6B** via `node-llama-cpp`. Runs 100% locally — no API keys. **Disabled by default.**
-
-```bash
-npm install node-llama-cpp
-```
-
-### When to Use It
-
-| Metric | Without Reranker | With Reranker |
-|--------|-----------------|---------------|
-| **Warm query** | ~480ms | ~5500ms |
-| **Cold start** | ~7s | ~12s |
-| **Memory** | — | +640MB (model) |
-| **Quality** | Good (RRF) | Slightly better |
-
-**Recommended:** Leave it disabled for interactive use (MCP, IDE). Enable for:
-
-- Batch processing where latency doesn't matter
-- Very large codebases (50k+ files) where false positives are costly
-- Server environments with RAM to spare
-
-### Enabling
-
-```typescript
-import { BrainBank, Qwen3Reranker } from 'brainbank';
-
-const brain = new BrainBank({
-  reranker: new Qwen3Reranker(),  // ~640MB model, auto-downloaded
-});
-```
-
-```bash
-# CLI
-brainbank hsearch "auth middleware" --reranker qwen3
-```
-
-```jsonc
-// .brainbank/config.json
-{ "reranker": "qwen3" }
-```
-
-Model cached at `~/.cache/brainbank/models/`. Context size: 2048 tokens. Flash attention enabled with fallback.
-
-### Position-Aware Score Blending
-
-| Position | Retrieval (RRF) | Reranker | Rationale |
-|----------|----------------|----------|----------|
-| 1–3 | **75%** | 25% | Preserves exact keyword matches |
-| 4–10 | **60%** | 40% | Balanced blend |
-| 11+ | 40% | **60%** | Trust reranker for uncertain results |
-
-### Custom Reranker
-
-Implement the `Reranker` interface:
-
-```typescript
-import type { Reranker } from 'brainbank';
-
-const myReranker: Reranker = {
-  async rank(query: string, documents: string[]): Promise<number[]> {
-    // Return relevance scores 0.0-1.0 for each document
-  },
-  async close() { /* optional cleanup */ },
-};
-```
 
 ---
 

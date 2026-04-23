@@ -19,6 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ### Removed
 - **Reranker — completely deleted** — removed `Reranker` interface, `Qwen3Reranker` class, `rerank()` function, `src/providers/rerankers/` directory, `src/lib/rerank.ts`, and all related exports, config fields, CLI flags, and tests. Zero reranker references remain in `src/`
 - **`@brainbank/mcp` package** — deleted `packages/mcp/`. MCP server is now part of core
+- **Documentation fully updated** — removed all stale reranker, `@brainbank/mcp`, and `packages/mcp` references across 10 doc files: architecture.md, config.md, search.md, embeddings.md, benchmarks.md, cli.md, mcp.md, local-development.md, getting-started.md, and config.md. Reranker benchmark data preserved as historical with `[!NOTE]` annotation
 
 ## [0.9.7] — 2026-04-17
 

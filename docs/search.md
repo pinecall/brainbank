@@ -93,7 +93,6 @@ brain.hybridSearch('auth')
   │     └── collection.searchAsResults() → shared kvHnsw + fts_kv
   │
   └── Reciprocal Rank Fusion (k=60, maxResults=15)
-        └── Optional: Qwen3 Reranker (position-aware score blend)
 ```
 
 ### Method Reference
@@ -102,7 +101,7 @@ brain.hybridSearch('auth')
 |--------|--------|-----------------|
 | `search(q, opts?)` | CompositeVectorSearch + SearchablePlugins | Vector strategies → RRF |
 | `searchBM25(q, opts?)` | CompositeBM25Search | Plugin-driven FTS5 BM25 keyword |
-| `hybridSearch(q, opts?)` | All engines | Vector + BM25 + plugins + KV → RRF → optional rerank |
+| `hybridSearch(q, opts?)` | All engines | Vector + BM25 + plugins + KV → RRF |
 | `getContext(task, opts?)` | ContextBuilder | All sources → prune → expand → formatted markdown |
 
 ---
@@ -221,16 +220,10 @@ Query
 Reciprocal Rank Fusion (RRF, k=60, maxResults=15)
   │
   ▼
-Optional: Qwen3-Reranker (position-aware blend)
-  │    pos 1-3  → 75% retrieval / 25% reranker
-  │    pos 4-10 → 60% / 40%
-  │    pos 11+  → 40% / 60%
-  │
-  ▼
 Optional: Pruner (LLM noise filter — Haiku keep/drop)
   │
   ▼
-Final results (sorted by blended score)
+Final results (sorted by fused score)
 ```
 
 ### RRF Key Generation
@@ -370,7 +363,7 @@ All search calls are logged to `/tmp/brainbank.log`:
 ═══════════════════════════════════════════════════════════════════
 [2025-01-15T10:32:11.456Z] CLI · hybridSearch
 Query: "authentication middleware"
-Embedding: perplexity-context | Pruner: none | Reranker: none
+Embedding: perplexity-context | Pruner: none
 Duration: 142ms
 
 Results (8):
@@ -386,7 +379,7 @@ Log auto-truncates at 10MB (keeps newest half).
 ## See Also
 
 - [Collections](collections.md) — per-collection search modes
-- [Embeddings, Reranker & Pruner](embeddings.md) — reranker, pruner, expander config
+- [Embeddings, Pruner & Expander](embeddings.md) — pruner, expander config
 - [Indexing](indexing.md) — code graph enrichment for better search
 - [Plugins](plugins.md) — how plugins contribute to search
 - [Custom Plugins](custom-plugins.md) — build plugins with search capabilities
