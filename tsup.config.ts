@@ -4,6 +4,7 @@ export default defineConfig({
     entry: {
         'index': 'src/index.ts',
         'cli': 'src/cli/index.ts',
+        'mcp': 'src/mcp/mcp-server.ts',
     },
     tsconfig: 'tsconfig.build.json',
     format: ['esm'],
@@ -22,7 +23,9 @@ export default defineConfig({
         '@brainbank/code',
         '@brainbank/git',
         '@brainbank/docs',
-        '@brainbank/mcp',
+        // MCP deps (resolved at runtime)
+        '@modelcontextprotocol/sdk',
+        'zod',
     ],
     banner: {
         js: '',

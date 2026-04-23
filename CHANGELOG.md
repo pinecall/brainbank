@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Dependency-aware expander** — the HaikuExpander now queries `code_imports` to find 1-hop import neighbors of search results before building the manifest. These dependency chunks are labeled `PRIORITY` in the prompt, biasing the LLM toward structurally connected code (e.g., models imported by services) instead of semantically similar but unrelated files. Zero new indexing cost — uses existing `code_imports` data
+- **Expander in TUI ConfigPanel** — first-time setup now shows three sections: Embedding, Pruner, Expander. Tab cycles between them. Expander value saved to `config.json` as `"expander": "haiku"`
+- **Expander in query log** — `/tmp/brainbank.log` now shows `Expander: HaikuExpander (+N)` for each query, replacing the removed Reranker field
+- **`--include` CLI flag + `code.include` config** — whitelist glob patterns for code indexing (e.g. `--include "src/**,lib/**"`). When set, only matching files are indexed. `ignore` still applies on top. Config: `{ "code": { "include": ["src/**"] } }`. Displayed in scan tree, help, and watch output
+- **`npm run link:all` / `unlink:all`** — links/unlinks `brainbank` + all workspace packages globally in one command
+
+### Changed
+- **MCP server moved into core** — `@brainbank/mcp` package deleted. MCP server now lives at `src/mcp/` and is built as `dist/mcp.js`. New binary `brainbank-mcp` replaces `npx @brainbank/mcp`. Config: `{ "command": "brainbank-mcp" }`. `@modelcontextprotocol/sdk` and `zod` added as core dependencies
+
+### Removed
+- **Reranker — completely deleted** — removed `Reranker` interface, `Qwen3Reranker` class, `rerank()` function, `src/providers/rerankers/` directory, `src/lib/rerank.ts`, and all related exports, config fields, CLI flags, and tests. Zero reranker references remain in `src/`
+- **`@brainbank/mcp` package** — deleted `packages/mcp/`. MCP server is now part of core
+
 ## [0.9.7] — 2026-04-17
 
 ### Removed

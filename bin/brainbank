@@ -14,5 +14,5 @@ if [ -f "$ROOT/dist/cli.js" ]; then
   exec node --disable-warning=ExperimentalWarning "$ROOT/dist/cli.js" "$@"
 else
   export TSX_TSCONFIG_PATH="$ROOT/tsconfig.json"
-  exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli/index.ts" "$@"
+  NODE_OPTIONS='--disable-warning=ExperimentalWarning' exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli/index.ts" "$@"
 fi

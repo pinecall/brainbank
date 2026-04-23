@@ -1,8 +1,8 @@
 /**
  * brainbank index [path] — Interactive scan → select → index
  *
- * Scans the repo first, shows a summary tree, and prompts the user
- * with checkboxes to select which modules to index. Use --yes to skip.
+ * Scans the repo first, shows an interactive TUI with directory tree
+ * for folder selection, then indexes. Use --yes to skip the TUI.
  */
 
 import type { ScanResult, ScanModule } from './scan.ts';
@@ -10,10 +10,11 @@ import type { ScanResult, ScanModule } from './scan.ts';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { c, args, getFlag, hasFlag, stripFlags } from '@/cli/utils.ts';
-import { createBrain, getConfig, registerConfigCollections } from '@/cli/factory/index.ts';
+import { createBrain, getConfig, registerConfigCollections, contextFromCLI } from '@/cli/factory/index.ts';
 import { findDocsPlugin } from '@/cli/utils.ts';
 import { autoExportMcp } from './mcp-export.ts';
 import { scanRepo } from './scan.ts';
+import { runIndexTui } from '@/cli/tui/index-tui.tsx';
 
 export async function cmdIndex(): Promise<void> {
     const positional = stripFlags(args);
@@ -23,36 +24,69 @@ export async function cmdIndex(): Promise<void> {
     const onlyRaw = getFlag('only');
     const docsPath = getFlag('docs');
     const skipPrompt = hasFlag('yes') || hasFlag('y');
+    const forceSetup = hasFlag('setup');
 
 
     const scan = scanRepo(repoPath);
-    printScanTree(scan, depth);
 
 
     let modules: string[];
+    let tuiInclude: string[] = [];
+    let tuiIgnore: string[] = [];
+    let tuiConfig: { embedding: string; pruner: string; expander: string } | undefined;
 
     if (onlyRaw) {
         // --only flag: explicit module selection
+        printScanTree(scan, depth);
         modules = onlyRaw.split(',').map(s => s.trim());
-    } else if (scan.config.plugins && scan.config.plugins.length > 0) {
-        // Config exists with plugins field — use it as source of truth
+    } else if (scan.config.plugins && scan.config.plugins.length > 0 && !forceSetup) {
+        // Config exists with plugins field — skip TUI, index directly
+        printScanTree(scan, depth);
         modules = scan.config.plugins;
         console.log(c.dim(`\n  Using config: plugins = [${modules.join(', ')}]\n`));
     } else if (skipPrompt) {
+        printScanTree(scan, depth);
         modules = buildDefaultModules(scan);
     } else {
-        modules = await promptModules(scan);
+        // ── Interactive TUI ──
+        const selection = await runIndexTui(scan);
+        if (!selection) {
+            console.log(c.dim('\n  Cancelled. Exiting.\n'));
+            return;
+        }
+        modules = selection.modules;
+        tuiInclude = selection.include;
+        tuiIgnore = selection.ignore;
+        tuiConfig = selection.config;
+
         if (modules.length === 0) {
             console.log(c.dim('\n  Nothing selected. Exiting.\n'));
             return;
         }
 
-        // Clean screen and show selection summary
-        console.clear();
+        // ── Deindex removed modules ──
+        const oldPlugins = scan.config.plugins ?? [];
+        const removed = oldPlugins.filter(p => !modules.includes(p));
+        if (removed.length > 0) {
+            console.log(c.bold('\n━━━ Deindexing ━━━\n'));
+            for (const mod of removed) {
+                console.log(`  ${c.yellow('✗')} Removing ${mod} data...`);
+                deindexModule(scan.repoPath, mod);
+                console.log(`  ${c.green('✓')} ${mod} data cleared`);
+            }
+        }
+
+        // Show selection summary
         console.log(c.bold('\n━━━ BrainBank ━━━\n'));
         console.log('  Selected modules:');
         for (const m of modules) {
             console.log(`    ${c.green('✓')} ${m}`);
+        }
+        if (tuiInclude.length > 0) {
+            console.log(`  Include: ${c.cyan(tuiInclude.join(', '))}`);
+        }
+        if (tuiIgnore.length > 0) {
+            console.log(`  Ignore: ${c.yellow(tuiIgnore.join(', '))}`);
         }
         console.log('');
     }
@@ -62,15 +96,27 @@ export async function cmdIndex(): Promise<void> {
         modules.push('docs');
     }
 
-    // Auto-generate config.json if it doesn't exist yet
-    if (!scan.config.exists && !skipPrompt) {
-        await saveConfig(scan.repoPath, modules);
+    // Save config from TUI selection — only when TUI actually ran
+    if (tuiConfig) {
+        // New config (first run) — save everything
+        saveConfigFromTui(scan.repoPath, modules, tuiConfig.embedding, tuiConfig.pruner, tuiConfig.expander, tuiInclude, tuiIgnore);
+    } else if (tuiInclude.length > 0 || tuiIgnore.length > 0) {
+        // TUI ran with existing config — update plugins + patterns
+        updateConfigPlugins(scan.repoPath, modules, tuiInclude, tuiIgnore);
     }
 
 
     console.log(c.bold(`\n━━━ Indexing: ${modules.join(', ')} ━━━`));
 
-    const brain = await createBrain(repoPath);
+    // Build brain context, injecting TUI-selected include/ignore patterns
+    const ctx = contextFromCLI(repoPath);
+    if (tuiInclude.length > 0 && !ctx.flags?.include) {
+        ctx.flags = { ...ctx.flags, include: tuiInclude.join(',') };
+    }
+    if (tuiIgnore.length > 0 && !ctx.flags?.ignore) {
+        ctx.flags = { ...ctx.flags, ignore: tuiIgnore.join(',') };
+    }
+    const brain = await createBrain(ctx);
     await brain.initialize();
 
     const config = await getConfig(repoPath);
@@ -103,17 +149,31 @@ export async function cmdIndex(): Promise<void> {
     });
 
     console.log('\n');
+
+    // ── Changes summary ──
+    console.log(c.bold('\n━━━ Changes ━━━\n'));
+    let hasChanges = false;
     for (const [name, value] of Object.entries(result)) {
         if (!value) continue;
         const v = value as Record<string, unknown>;
-        if (typeof v.indexed === 'number') {
-            const parts = [`${v.indexed} indexed`, `${v.skipped ?? 0} skipped`];
-            if (typeof v.chunks === 'number') parts.push(`${v.chunks} chunks`);
-            if (typeof v.removed === 'number' && v.removed > 0) parts.push(`${v.removed} removed`);
-            console.log(`  ${c.green(name)}: ${parts.join(', ')}`);
-        } else {
-            console.log(`  ${c.green(name)}: done`);
-        }
+        if (typeof v.indexed !== 'number') { console.log(`  ${c.green('✓')} ${name}: done`); continue; }
+
+        const indexed = v.indexed as number;
+        const skipped = (v.skipped ?? 0) as number;
+        const removed = (v.removed ?? 0) as number;
+        const chunks = (v.chunks ?? 0) as number;
+
+        if (indexed > 0 || removed > 0) hasChanges = true;
+
+        const parts: string[] = [];
+        if (indexed > 0) parts.push(c.green(`+${indexed} files (${chunks} chunks)`));
+        if (removed > 0) parts.push(c.red(`−${removed} files`));
+        if (skipped > 0) parts.push(c.dim(`${skipped} unchanged`));
+
+        console.log(`  ${c.bold(name)}: ${parts.join('  ')}`);
+    }
+    if (!hasChanges) {
+        console.log(c.dim('  No changes — everything up to date'));
     }
 
     const stats = brain.stats();
@@ -166,6 +226,10 @@ function printScanTree(scan: ScanResult, depth: number): void {
     if (scan.config.ignore?.length) {
         console.log(c.dim(`     Ignore: ${scan.config.ignore.join(', ')}`));
     }
+    // Config include
+    if (scan.config.include?.length) {
+        console.log(c.dim(`     Include: ${scan.config.include.join(', ')}`));
+    }
 
     // Config & DB
     console.log('');
@@ -187,24 +251,6 @@ function buildDefaultModules(scan: ScanResult): string[] {
     return scan.modules.filter(m => m.available && m.checked).map(m => m.name);
 }
 
-/** Interactive checkbox prompt via @inquirer/prompts. */
-async function promptModules(scan: ScanResult): Promise<string[]> {
-    const { checkbox } = await import('@inquirer/prompts');
-    console.log(c.dim('  ─────────────────────────────────────────\n'));
-
-    const choices = scan.modules.map((m: ScanModule) => ({
-        name: `${capitalizeFirst(m.name).padEnd(6)} — ${m.summary}`,
-        value: m.name,
-        checked: m.checked && m.available,
-        disabled: m.available ? undefined : m.disabled,
-    }));
-
-    return checkbox<string>({
-        message: 'Select modules to index:\n',
-        choices,
-    });
-}
-
 
 function timeSince(date: Date): string {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -222,51 +268,11 @@ function capitalizeFirst(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Generate .brainbank/config.json from the selected modules. */
-async function saveConfig(repoPath: string, modules: string[]): Promise<void> {
-    const { select, confirm } = await import('@inquirer/prompts');
-
-    // Embedding provider selection
-    const envEmbedding = process.env.BRAINBANK_EMBEDDING;
-    const embedding = await select<string>({
-        message: 'Embedding provider:',
-        choices: [
-            {
-                name: 'perplexity-context  — best accuracy (recommended)',
-                value: 'perplexity-context',
-            },
-            {
-                name: 'perplexity          — fast, high quality',
-                value: 'perplexity',
-            },
-            {
-                name: 'openai              — text-embedding-3-small',
-                value: 'openai',
-            },
-            {
-                name: 'local               — offline, no API key needed',
-                value: 'local',
-            },
-        ],
-        default: envEmbedding ?? 'perplexity-context',
-    });
-
-    // Pruner selection
-    const pruner = await select<string>({
-        message: 'Noise pruner:',
-        choices: [
-            {
-                name: 'haiku  — AI-powered noise filter (recommended)',
-                value: 'haiku',
-            },
-            {
-                name: 'none   — no pruning',
-                value: 'none',
-            },
-        ],
-        default: 'haiku',
-    });
-
+/** Save config.json from TUI selections (no interactive prompts). */
+function saveConfigFromTui(
+    repoPath: string, modules: string[], embedding: string, pruner: string, expander: string,
+    include: string[], ignore: string[],
+): void {
     const configDir = path.join(repoPath, '.brainbank');
     const configPath = path.join(configDir, 'config.json');
 
@@ -279,10 +285,22 @@ async function saveConfig(repoPath: string, modules: string[]): Promise<void> {
         config.pruner = pruner;
     }
 
-    // Key management: detect available keys and offer to save
+    if (expander !== 'none') {
+        config.expander = expander;
+    }
+
+    // Save include/ignore from tree selection
+    if (include.length > 0) {
+        config.include = include;
+    }
+    if (ignore.length > 0) {
+        config.ignore = ignore;
+    }
+
+    // Auto-detect API keys from environment
     const detectedKeys: Record<string, string> = {};
     const needsPerplexity = embedding.startsWith('perplexity');
-    const needsAnthropic = pruner === 'haiku';
+    const needsAnthropic = pruner === 'haiku' || expander === 'haiku';
     const needsOpenai = embedding === 'openai';
 
     if (needsPerplexity && process.env.PERPLEXITY_API_KEY) {
@@ -296,18 +314,104 @@ async function saveConfig(repoPath: string, modules: string[]): Promise<void> {
     }
 
     if (Object.keys(detectedKeys).length > 0) {
-        const keyNames = Object.keys(detectedKeys).join(', ');
-        const saveKeys = await confirm({
-            message: `Save API keys (${keyNames}) to config.json? (portable, no env vars needed)`,
-            default: true,
-        });
-        if (saveKeys) {
-            config.keys = detectedKeys;
-        }
+        config.keys = detectedKeys;
     }
 
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
     console.log(c.green(`  ✓ Saved ${path.relative(process.cwd(), configPath)}`));
 }
+
+
+/** Update plugins, include, and ignore in an existing config.json. */
+function updateConfigPlugins(repoPath: string, modules: string[], include: string[], ignore: string[]): void {
+    const configPath = path.join(repoPath, '.brainbank', 'config.json');
+    try {
+        const raw = fs.readFileSync(configPath, 'utf-8');
+        const config = JSON.parse(raw) as Record<string, unknown>;
+        config.plugins = modules;
+
+        // Update include/ignore — set if present, remove if empty
+        if (include.length > 0) {
+            config.include = include;
+        } else {
+            delete config.include;
+        }
+        if (ignore.length > 0) {
+            config.ignore = ignore;
+        } else {
+            delete config.ignore;
+        }
+
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+        console.log(c.green(`  ✓ Updated config.json`));
+    } catch {
+        // Config doesn't exist or is corrupt — skip
+    }
+}
+
+
+/**
+ * Clear all indexed data for a specific module from the DB.
+ * Opens the SQLite database directly and drops module-specific rows.
+ */
+function deindexModule(repoPath: string, moduleName: string): void {
+    const dbPath = path.join(repoPath, '.brainbank', 'brainbank.db');
+    if (!fs.existsSync(dbPath)) return;
+
+    // Simple interface — we only need exec() and close()
+    interface SimpleDB { exec(sql: string): void; close(): void }
+
+    let db: SimpleDB | undefined;
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const sqlite = require('node:sqlite') as { DatabaseSync: new (path: string) => SimpleDB };
+        db = new sqlite.DatabaseSync(dbPath);
+    } catch {
+        console.log(c.yellow(`    Could not open DB — skip deindex for ${moduleName}`));
+        return;
+    }
+
+    if (!db) return;
+
+    const tables: Record<string, string[]> = {
+        code: [
+            'DELETE FROM code_call_edges',
+            'DELETE FROM code_refs',
+            'DELETE FROM code_symbols',
+            'DELETE FROM code_imports',
+            'DELETE FROM code_vectors',
+            'DELETE FROM code_chunks',
+            'DELETE FROM indexed_files',
+            "DELETE FROM plugin_tracking WHERE plugin = 'code'",
+        ],
+        docs: [
+            'DELETE FROM doc_vectors',
+            'DELETE FROM doc_chunks',
+            'DELETE FROM path_contexts',
+            'DELETE FROM collections',
+            "DELETE FROM plugin_tracking WHERE plugin = 'docs'",
+        ],
+        git: [
+            'DELETE FROM git_vectors',
+            'DELETE FROM git_commits',
+            "DELETE FROM plugin_tracking WHERE plugin = 'git'",
+        ],
+    };
+
+    const statements = tables[moduleName];
+    if (!statements) {
+        console.log(c.dim(`    No known tables for ${moduleName}`));
+        try { db.close(); } catch { /* ignore */ }
+        return;
+    }
+
+    for (const sql of statements) {
+        try { db.exec(sql); }
+        catch { /* Table might not exist — that's fine */ }
+    }
+
+    try { db.close(); } catch { /* ignore */ }
+}
+
 
