@@ -25,7 +25,7 @@ export function contextFromCLI(repoPath?: string): BrainContext {
         env: process.env as Record<string, string | undefined>,
         flags: {
             ignore: getFlag('ignore'),
-            reranker: getFlag('reranker'),
+            include: getFlag('include'),
             pruner: getFlag('pruner'),
             embedding: getFlag('embedding'),
         },

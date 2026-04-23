@@ -14,6 +14,10 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
   "code": {
     "embedding": "openai",
     "maxFileSize": 512000,
+    "include": [
+      "src/**",
+      "lib/**"
+    ],
     "ignore": [
       "sdk/**",
       "vendor/**",
@@ -156,6 +160,42 @@ The `context` section sets defaults for all `getContext()` and `brainbank contex
 ```
 
 Field resolution order: **plugin defaults ← config.json `context` ← per-query `fields`**.
+
+---
+
+## Include Whitelist (Code Plugin)
+
+The `code` plugin supports an `include` option — the inverse of `ignore`. When set, **only** files matching the include patterns are indexed. `ignore` still applies on top (exclude always wins).
+
+```jsonc
+{
+  "code": {
+    "include": ["src/**", "lib/**"],     // only index these folders
+    "ignore": ["src/generated/**"]        // still excluded from indexing
+  }
+}
+```
+
+### How Include + Ignore Work Together
+
+| Scenario | What gets indexed |
+|----------|------------------|
+| No `include`, no `ignore` | Everything (respecting built-in exclusions like `node_modules`) |
+| `include` only | Only files matching include patterns |
+| `ignore` only | Everything except files matching ignore patterns |
+| Both `include` and `ignore` | Files matching include, minus those matching ignore |
+
+### Directory Pruning
+
+BrainBank extracts static base prefixes from include patterns (e.g. `src` from `src/**`) and skips entire directory trees that cannot match — so whitelisting `src/**` on a large monorepo won't waste time walking `node_modules/`, `vendor/`, etc.
+
+### CLI Override
+
+```bash
+brainbank index . --include "src/**,lib/**"
+```
+
+CLI `--include` patterns are merged with `config.json` patterns. See [CLI Reference](cli.md#index) for details.
 
 ---
 

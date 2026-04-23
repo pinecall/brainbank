@@ -53,7 +53,11 @@ export async function createBrain(contextOrRepo?: BrainContext | string): Promis
     const ignoreFlag = ctxFlag(ctx, 'ignore');
     const ignorePatterns = ignoreFlag ? ignoreFlag.split(',').map(s => s.trim()) : [];
 
-    await registerBuiltins(brain, rp, builtins, config, ignorePatterns);
+    // Merge include patterns from context flags
+    const includeFlag = ctxFlag(ctx, 'include');
+    const includePatterns = includeFlag ? includeFlag.split(',').map(s => s.trim()) : [];
+
+    await registerBuiltins(brain, rp, builtins, config, ignorePatterns, includePatterns);
 
     for (const plugin of folderPlugins) brain.use(plugin);
 

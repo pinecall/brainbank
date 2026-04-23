@@ -148,6 +148,46 @@ Code and git plugins apply HNSW mutations **after** the DB transaction commits. 
 
 ---
 
+## Include Whitelist
+
+`@brainbank/code` supports an `include` option to restrict indexing to specific folders or glob patterns — the inverse of `ignore`.
+
+### Usage
+
+```typescript
+brain.use(code({ include: ['src/**', 'lib/**'] }));
+```
+
+```bash
+brainbank index . --include "src/**,lib/**"
+```
+
+```jsonc
+// .brainbank/config.json
+{ "code": { "include": ["src/**", "lib/**"] } }
+```
+
+### How It Works
+
+1. **File filtering** — files are matched against include patterns using `picomatch`. Only matching files proceed to chunking and embedding.
+2. **Directory pruning** — BrainBank extracts static base prefixes from include patterns (e.g. `src` from `src/**`) using `picomatch.scan()`. Entire directory subtrees that don't match any prefix are skipped during the walk — so whitelisting `src/**` won't waste time traversing `node_modules/`, `vendor/`, etc.
+3. **Precedence** — `ignore` always wins over `include`. A file matching both `include: ['src/**']` and `ignore: ['src/generated/**']` is excluded.
+
+### Combined Example
+
+```jsonc
+{
+  "code": {
+    "include": ["src/**", "lib/**"],
+    "ignore": ["src/generated/**", "**/*.test.ts"]
+  }
+}
+```
+
+This indexes only `src/` and `lib/`, but skips generated code and test files within those folders.
+
+---
+
 ## Concurrent File Indexing
 
 `@brainbank/code` processes files in **parallel batches of 5** (CONCURRENCY = 5). Within each file, chunk embeddings and the file synopsis are merged into a **single `embedBatch` call**, halving API round-trips. Net effect: ~10× faster indexing on API-based embedding providers.

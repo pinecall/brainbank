@@ -5,6 +5,7 @@ All notable changes to `@brainbank/code` will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`include` whitelist patterns** — `code({ include: ['src/**', 'lib/**'] })` restricts indexing to only matching paths. Works alongside `ignore` (exclude wins over include). Supports config.json (`code.include`), CLI (`--include "src/**,lib/**"`), and programmatic API. Uses picomatch `scan()` for smart directory pruning — non-matching subtrees are skipped entirely
 - **`resolveFiles()` — FileResolvablePlugin** — direct file viewer that bypasses search. Supports 4-tier resolution: exact path, directory prefix (trailing `/`), glob patterns (picomatch), and fuzzy basename matching. Used by `brainbank_files` MCP tool and `brainbank files` CLI command.
 
 ### Changed

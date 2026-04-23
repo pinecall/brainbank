@@ -23,7 +23,8 @@ export interface QueryLogEntry {
     query: string;
     embedding: string;
     pruner: string | null;
-    reranker: string | null;
+    expander?: string | null;
+    expandedCount?: number;
     options: Record<string, unknown>;
     results: QueryLogResult[];
     pruned?: QueryLogResult[];
@@ -58,7 +59,7 @@ function _formatEntry(e: QueryLogEntry): string {
         divider,
         `[${new Date().toISOString()}] ${e.source.toUpperCase()} · ${e.method}`,
         `Query: "${e.query}"`,
-        `Embedding: ${e.embedding} | Pruner: ${e.pruner ?? 'none'} | Reranker: ${e.reranker ?? 'none'}`,
+        `Embedding: ${e.embedding} | Pruner: ${e.pruner ?? 'none'} | Expander: ${e.expander ?? 'off'}${e.expandedCount ? ` (+${e.expandedCount})` : ''}`,
     ];
 
     // Options (sources, path, etc.)

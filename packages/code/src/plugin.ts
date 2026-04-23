@@ -21,7 +21,7 @@ import picomatch from 'picomatch';
 
 import { CodeWalker } from './indexing/walker.js';
 import { CodeVectorSearch } from './search/vector-search.js';
-import { SqlCodeGraphProvider } from './graph/provider.js';
+import { SqlCodeGraphProvider, type ChunkManifestItem } from './graph/provider.js';
 import { formatCodeContext } from './formatting/context-formatter.js';
 import { CODE_SCHEMA_VERSION, CODE_MIGRATIONS } from './schema.js';
 import type { CodeChunkRow } from './search/vector-search.js';
@@ -36,6 +36,8 @@ export interface CodePluginOptions {
     maxFileSize?: number;
     /** Glob patterns to ignore (e.g. sdk/**, *.generated.ts). Applied on top of built-in ignores. */
     ignore?: string[];
+    /** Glob patterns to include (e.g. src/**, lib/**). When set, only matching files are indexed. Ignore still applies on top. */
+    include?: string[];
     /** Custom indexer name for multi-repo (e.g. 'code:frontend'). Default: 'code' */
     name?: string;
     /** Per-plugin embedding provider. Default: global embedding from BrainBank config. */
@@ -80,7 +82,7 @@ class CodePlugin implements Plugin {
             hnsw: this.hnsw,
             vectorCache: this.vecCache,
             embedding,
-        }, this.opts.maxFileSize ?? ctx.config.maxFileSize, this.opts.ignore);
+        }, this.opts.maxFileSize ?? ctx.config.maxFileSize, this.opts.ignore, this.opts.include);
     }
 
     async index(options: {
@@ -144,15 +146,23 @@ class CodePlugin implements Plugin {
     }
 
     /** ExpandablePlugin — build lightweight manifest for expander (excludes already-matched content). */
-    buildManifest(excludeFilePaths: string[], excludeIds: number[]): ExpanderManifestItem[] {
+    buildManifest(excludeFilePaths: string[], excludeIds: number[], resultFilePaths: string[] = []): ExpanderManifestItem[] {
         const graph = new SqlCodeGraphProvider(this.db);
-        const chunks = graph.fetchChunkManifest(excludeFilePaths, excludeIds);
+
+        // Query import graph for 1-hop neighbors of search result files
+        const priorityFilePaths = resultFilePaths.length > 0
+            ? graph.fetchImportNeighbors(resultFilePaths)
+                .filter(fp => !excludeFilePaths.includes(fp))  // Don't prioritize already-excluded
+            : [];
+
+        const chunks = graph.fetchChunkManifest(excludeFilePaths, excludeIds, priorityFilePaths);
         return chunks.map(c => ({
             id: c.id,
             filePath: c.filePath,
             name: c.name,
             chunkType: c.chunkType,
             lines: `L${c.startLine}-L${c.endLine}`,
+            priority: (c as ChunkManifestItem & { priority?: boolean }).priority,
         }));
     }
 

@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execSync } from 'node:child_process';
+import picomatch from 'picomatch';
 import { SUPPORTED_EXTENSIONS, isIgnoredDir, isIgnoredFile } from '@/lib/languages.ts';
 
 
@@ -32,7 +33,7 @@ export interface ScanModule {
 export interface ScanResult {
     repoPath: string;
     modules: ScanModule[];
-    config: { exists: boolean; ignore?: string[]; plugins?: string[] };
+    config: { exists: boolean; ignore?: string[]; include?: string[]; plugins?: string[] };
     db: { exists: boolean; sizeMB: number; lastModified?: Date } | null;
     gitSubdirs: { name: string }[];
 }
@@ -42,30 +43,41 @@ export interface ScanResult {
 export function scanRepo(repoPath: string): ScanResult {
     const resolved = path.resolve(repoPath);
     const gitSubdirs = scanGitSubdirs(resolved);
+    const config = scanConfig(resolved);
 
     return {
         repoPath: resolved,
-        modules: scanModules(resolved, gitSubdirs),
-        config: scanConfig(resolved),
+        modules: scanModules(resolved, gitSubdirs, config),
+        config,
         db: scanDb(resolved),
         gitSubdirs,
     };
 }
 
 /** Produce ScanModule descriptors for known plugin types. */
-function scanModules(repoPath: string, gitSubdirs: { name: string }[]): ScanModule[] {
+function scanModules(repoPath: string, gitSubdirs: { name: string }[], config: ScanResult['config']): ScanModule[] {
     return [
-        scanCodeModule(repoPath),
+        scanCodeModule(repoPath, config.include, config.ignore),
         scanGitModule(repoPath, gitSubdirs),
         scanDocsModule(repoPath),
     ];
 }
 
 
-/** Scan for indexable code files. */
-function scanCodeModule(repoPath: string): ScanModule {
+/** Scan for indexable code files. Respects include/ignore from config. */
+function scanCodeModule(repoPath: string, include?: string[], ignore?: string[]): ScanModule {
     const byLanguage = new Map<string, number>();
     let total = 0;
+
+    // Build matchers from config patterns
+    let isIncluded: ((p: string) => boolean) | null = null;
+    let isIgnoredPat: ((p: string) => boolean) | null = null;
+    let includeBases: string[] | null = null;
+    if (include?.length) {
+        isIncluded = picomatch(include, { dot: true });
+        includeBases = include.map(p => picomatch.scan(p).base).filter(b => b && b !== '.');
+    }
+    if (ignore?.length) isIgnoredPat = picomatch(ignore, { dot: true });
 
     function walk(dir: string): void {
         let entries: fs.Dirent[];
@@ -77,12 +89,26 @@ function scanCodeModule(repoPath: string): ScanModule {
             const isDir = entry.isDirectory() || (entry.isSymbolicLink() && (() => { try { return fs.statSync(fullPath).isDirectory(); } catch { return false; } })());
             if (isDir) {
                 if (isIgnoredDir(entry.name)) continue;
+                // Early prune: if include bases are set, skip dirs that can't match
+                if (includeBases && includeBases.length > 0) {
+                    const relDir = path.relative(repoPath, fullPath);
+                    const canMatch = includeBases.some(base =>
+                        relDir.startsWith(base) || base.startsWith(relDir),
+                    );
+                    if (!canMatch) continue;
+                }
                 walk(fullPath);
             } else if (entry.isFile()) {
                 if (isIgnoredFile(entry.name)) continue;
                 const ext = path.extname(entry.name).toLowerCase();
                 const lang = SUPPORTED_EXTENSIONS[ext];
                 if (!lang) continue;
+
+                // Apply include/ignore filters using relative path
+                const rel = path.relative(repoPath, fullPath);
+                if (isIncluded && !isIncluded(rel)) continue;
+                if (isIgnoredPat && isIgnoredPat(rel)) continue;
+
                 byLanguage.set(lang, (byLanguage.get(lang) ?? 0) + 1);
                 total++;
             }
@@ -295,9 +321,20 @@ function scanConfig(repoPath: string): ScanResult['config'] {
     try {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
         const codeCfg = config?.code as Record<string, unknown> | undefined;
+
+        // Merge root-level and per-plugin include/ignore
+        const rootInclude = config?.include as string[] | undefined;
+        const rootIgnore = config?.ignore as string[] | undefined;
+        const pluginInclude = codeCfg?.include as string[] | undefined;
+        const pluginIgnore = codeCfg?.ignore as string[] | undefined;
+
+        const include = [...(rootInclude ?? []), ...(pluginInclude ?? [])];
+        const ignore = [...(rootIgnore ?? []), ...(pluginIgnore ?? [])];
+
         return {
             exists: true,
-            ignore: codeCfg?.ignore as string[] | undefined,
+            ignore: ignore.length > 0 ? ignore : undefined,
+            include: include.length > 0 ? include : undefined,
             plugins: config?.plugins as string[] | undefined,
         };
     } catch {

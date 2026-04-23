@@ -48,7 +48,7 @@ function detectGitSubdirs(parentPath: string, repos?: string[]): { name: string;
 /** Register plugins with multi-repo detection and per-plugin config. */
 export async function registerBuiltins(
     brain: BrainBank, rp: string, pluginNames: string[],
-    config: ProjectConfig | null, ignorePatterns: string[] = [],
+    config: ProjectConfig | null, ignorePatterns: string[] = [], includePatterns: string[] = [],
 ): Promise<void> {
     const resolvedRp = path.resolve(rp);
     const hasRootGit = fs.existsSync(path.join(resolvedRp, '.git'));
@@ -73,25 +73,34 @@ export async function registerBuiltins(
         if (gitSubdirs.length > 0 && isMultiRepoCapable(name)) {
             console.error(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
             for (const sub of gitSubdirs) {
-                const mergedIgnore = [...(cfg.ignore as string[] ?? []), ...ignorePatterns];
+                const mergedIgnore = [...(cfg.ignore as string[] ?? []), ...(config?.ignore as string[] ?? []), ...ignorePatterns];
+                const mergedInclude = [...(cfg.include as string[] ?? []), ...(config?.include as string[] ?? []), ...includePatterns];
                 brain.use(factory({
                     ...cfg,
                     repoPath: sub.path,
                     name: `${name}:${sub.name}`,
                     embeddingProvider,
                     ignore: mergedIgnore.length > 0 ? mergedIgnore : undefined,
+                    include: mergedInclude.length > 0 ? mergedInclude : undefined,
                 }));
             }
         } else {
-            // Single repo: merge ignore patterns for plugins that support them
+            // Single repo: merge ignore/include patterns for plugins that support them
+            // Sources: per-plugin config (e.g. config.code.ignore), root config (config.ignore), CLI flags
             const configIgnore = cfg.ignore as string[] | undefined ?? [];
-            const mergedIgnore = [...configIgnore, ...ignorePatterns];
+            const rootIgnore = (config?.ignore ?? []) as string[];
+            const mergedIgnore = [...configIgnore, ...rootIgnore, ...ignorePatterns];
+
+            const configInclude = cfg.include as string[] | undefined ?? [];
+            const rootInclude = (config?.include ?? []) as string[];
+            const mergedInclude = [...configInclude, ...rootInclude, ...includePatterns];
 
             brain.use(factory({
                 ...cfg,
                 repoPath: rp,
                 embeddingProvider,
                 ignore: mergedIgnore.length > 0 ? mergedIgnore : undefined,
+                include: mergedInclude.length > 0 ? mergedInclude : undefined,
             }));
         }
     }

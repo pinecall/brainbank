@@ -52,12 +52,20 @@ export class CodeWalker {
     private _repoPath: string;
     private _maxFileSize: number;
     private _isIgnored: ((path: string) => boolean) | null;
+    private _isIncluded: ((path: string) => boolean) | null;
+    /** Static base prefixes from include globs for early directory pruning. */
+    private _includeBases: string[] | null;
 
-    constructor(repoPath: string, deps: CodeWalkerDeps, maxFileSize: number = 512_000, ignore?: string[]) {
+    constructor(repoPath: string, deps: CodeWalkerDeps, maxFileSize: number = 512_000, ignore?: string[], include?: string[]) {
         this._deps = deps;
         this._repoPath = repoPath;
         this._maxFileSize = maxFileSize;
         this._isIgnored = ignore?.length ? picomatch(ignore, { dot: true }) : null;
+        this._isIncluded = include?.length ? picomatch(include, { dot: true }) : null;
+        // Extract static base prefixes for directory pruning (e.g. 'src' from 'src/**')
+        this._includeBases = include?.length
+            ? include.map(p => picomatch.scan(p).base).filter(b => b && b !== '.')
+            : null;
     }
 
     /** Index all supported files. Skips unchanged files (same content hash). */
@@ -396,10 +404,18 @@ export class CodeWalker {
             const isDir = entry.isDirectory() || (entry.isSymbolicLink() && (() => { try { return fs.statSync(entryPath).isDirectory(); } catch { return false; } })());
             if (isDir) {
                 if (isIgnoredDir(entry.name)) continue;
+                const relDir = path.relative(this._repoPath, entryPath);
                 // Check custom ignores against relative dir path
                 if (this._isIgnored) {
-                    const relDir = path.relative(this._repoPath, entryPath);
                     if (this._isIgnored(relDir) || this._isIgnored(relDir + '/')) continue;
+                }
+                // Include-based directory pruning: skip dirs that can't possibly match
+                // any include pattern based on static base prefixes
+                if (this._includeBases && this._includeBases.length > 0) {
+                    const canMatch = this._includeBases.some(base =>
+                        relDir.startsWith(base) || base.startsWith(relDir),
+                    );
+                    if (!canMatch) continue;
                 }
                 this._walkRepo(entryPath, files);
             } else if (entry.isFile()) {
@@ -408,11 +424,13 @@ export class CodeWalker {
                 if (!(ext in SUPPORTED_EXTENSIONS)) continue;
 
                 const full = path.join(dir, entry.name);
+                const rel = path.relative(this._repoPath, full);
+
+                // Check include whitelist (must match if set)
+                if (this._isIncluded && !this._isIncluded(rel)) continue;
+
                 // Check custom ignores against relative file path
-                if (this._isIgnored) {
-                    const rel = path.relative(this._repoPath, full);
-                    if (this._isIgnored(rel)) continue;
-                }
+                if (this._isIgnored && this._isIgnored(rel)) continue;
 
                 try {
                     if (fs.statSync(full).size <= this._maxFileSize) {

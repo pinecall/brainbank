@@ -8,12 +8,16 @@ export async function cmdWatch(): Promise<void> {
     const brain = await createBrain();
     await brain.initialize();
 
-    // Read ignore patterns from config (code.ignore + top-level ignore)
+    // Read ignore/include patterns from config (code.ignore + code.include)
     const config = await loadConfig(brain.config.repoPath);
     const codeIgnore = (config?.code as Record<string, unknown> | undefined)?.ignore as string[] ?? [];
+    const codeInclude = (config?.code as Record<string, unknown> | undefined)?.include as string[] ?? [];
 
     console.log(c.bold('\n━━━ BrainBank Watch ━━━\n'));
     console.log(c.dim(`  Watching ${brain.config.repoPath} for changes...`));
+    if (codeInclude.length > 0) {
+        console.log(c.dim(`  Include: ${codeInclude.join(', ')}`));
+    }
     if (codeIgnore.length > 0) {
         console.log(c.dim(`  Ignoring: ${codeIgnore.join(', ')}`));
     }

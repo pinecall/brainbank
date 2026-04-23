@@ -54,7 +54,7 @@ The MCP server auto-detects everything:
 - **Repo path** — from `repo` tool param (required) > `BRAINBANK_REPO` env > `findRepoRoot(cwd)` (walks up looking for `.git/`)
 - **Embedding provider** — from `.brainbank/config.json` > `BRAINBANK_EMBEDDING` env > `provider_key` stored in DB > falls back to local
 - **Plugins** — reads `plugins` array from `config.json` (default: `['code', 'git', 'docs']`). Loaded dynamically by the core factory — no hardcoded imports
-- **Ignore patterns** — reads `code.ignore` from `config.json`
+- **Include/Ignore patterns** — reads `code.include` and `code.ignore` from `config.json`
 
 > **Indexing is CLI-only.** The MCP server is a read-only interface — it cannot trigger re-indexing. Index your repo with the CLI first:
 > ```bash

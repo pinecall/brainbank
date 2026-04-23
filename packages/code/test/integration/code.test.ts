@@ -271,3 +271,87 @@ tests['ignore: cleanup'] = async () => {
     ignoreBrain.close();
     try { fs.rmSync(ignoreTmp, { recursive: true, force: true }); } catch {}
 };
+
+// ── Include Patterns ─────────────────────────────────
+
+let includeBrain: BrainBank;
+let includeTmp: string;
+
+tests['include: indexes only files matching include patterns'] = async () => {
+    includeTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-include-'));
+    fs.mkdirSync(path.join(includeTmp, 'src'), { recursive: true });
+    fs.mkdirSync(path.join(includeTmp, 'lib'), { recursive: true });
+    fs.mkdirSync(path.join(includeTmp, 'vendor'), { recursive: true });
+    fs.mkdirSync(path.join(includeTmp, 'scripts'), { recursive: true });
+
+    // Files that SHOULD be indexed (match include patterns)
+    fs.writeFileSync(path.join(includeTmp, 'src', 'app.ts'), 'export function main() { return "hello"; }');
+    fs.writeFileSync(path.join(includeTmp, 'src', 'utils.ts'), 'export function add(a: number, b: number) { return a + b; }');
+    fs.writeFileSync(path.join(includeTmp, 'lib', 'helpers.ts'), 'export function help() { return "help"; }');
+
+    // Files that should NOT be indexed (don't match include patterns)
+    fs.writeFileSync(path.join(includeTmp, 'vendor', 'lib.ts'), 'export function vendorFn() {}');
+    fs.writeFileSync(path.join(includeTmp, 'scripts', 'build.ts'), 'export function build() {}');
+
+    includeBrain = new BrainBank({
+        repoPath: includeTmp,
+        dbPath: path.join(includeTmp, 'test.db'),
+        embeddingProvider: emb,
+    }).use(code({
+        repoPath: includeTmp,
+        include: ['src/**', 'lib/**'],
+    }));
+    await includeBrain.initialize();
+
+    const result = await (includeBrain.code as any).index();
+
+    // Only src/app.ts, src/utils.ts, lib/helpers.ts should be indexed (3 files)
+    assert.equal(result.indexed, 3, `expected 3 indexed files, got ${result.indexed}`);
+};
+
+tests['include: cleanup'] = async () => {
+    includeBrain.close();
+    try { fs.rmSync(includeTmp, { recursive: true, force: true }); } catch {}
+};
+
+// ── Include + Ignore Combined ─────────────────────────
+
+let combinedBrain: BrainBank;
+let combinedTmp: string;
+
+tests['include+ignore: include whitelists, ignore blacklists on top'] = async () => {
+    combinedTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-combined-'));
+    fs.mkdirSync(path.join(combinedTmp, 'src', 'generated'), { recursive: true });
+    fs.mkdirSync(path.join(combinedTmp, 'vendor'), { recursive: true });
+
+    // Matches include AND not ignored → INDEXED
+    fs.writeFileSync(path.join(combinedTmp, 'src', 'app.ts'), 'export function main() { return "hello"; }');
+    fs.writeFileSync(path.join(combinedTmp, 'src', 'utils.ts'), 'export function add(a: number, b: number) { return a + b; }');
+
+    // Matches include BUT also matches ignore → NOT indexed
+    fs.writeFileSync(path.join(combinedTmp, 'src', 'generated', 'api.ts'), 'export class Api {}');
+
+    // Does NOT match include → NOT indexed
+    fs.writeFileSync(path.join(combinedTmp, 'vendor', 'lib.ts'), 'export function vendorFn() {}');
+
+    combinedBrain = new BrainBank({
+        repoPath: combinedTmp,
+        dbPath: path.join(combinedTmp, 'test.db'),
+        embeddingProvider: emb,
+    }).use(code({
+        repoPath: combinedTmp,
+        include: ['src/**'],
+        ignore: ['src/generated/**'],
+    }));
+    await combinedBrain.initialize();
+
+    const result = await (combinedBrain.code as any).index();
+
+    // Only src/app.ts and src/utils.ts should be indexed (2 files)
+    assert.equal(result.indexed, 2, `expected 2 indexed files, got ${result.indexed}`);
+};
+
+tests['include+ignore: cleanup'] = async () => {
+    combinedBrain.close();
+    try { fs.rmSync(combinedTmp, { recursive: true, force: true }); } catch {}
+};

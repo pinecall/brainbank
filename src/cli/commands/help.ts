@@ -54,13 +54,15 @@ export function showHelp(): void {
     console.log(`  ${c.dim('--<source> <n>')}          Source filter: max results from <source> (0 = skip)`);
     console.log(`  ${c.dim('--path <dir>')}            Filter context results to files under this path prefix`);
     console.log(`  ${c.dim('--ignore <globs>')}        Ignore glob patterns for code indexing (comma-separated)`);
+    console.log(`  ${c.dim('--include <globs>')}       Include only these paths for code indexing (comma-separated)`);
     console.log(`  ${c.dim('--yes / -y')}              Skip interactive prompt (auto-select all available)`);
-    console.log(`  ${c.dim('--reranker <name>')}       Reranker to use (qwen3)`);
+    console.log(`  ${c.dim('--setup')}                 Re-run interactive setup (modules, folders, config)`);
     console.log(`  ${c.dim('--port <n>')}              HTTP daemon port (default: 8181)`);
     console.log('');
     console.log(c.bold('Examples:'));
     console.log(c.dim('  brainbank index .'));
     console.log(c.dim('  brainbank index . --ignore "sdk/**,vendor/**"'));
+    console.log(c.dim('  brainbank index . --include "src/**,lib/**"'));
     console.log(c.dim('  brainbank kv add errors "Fixed null pointer in api.ts"'));
     console.log(c.dim('  brainbank kv search errors "null pointer"'));
     console.log(c.dim('  brainbank kv list'));

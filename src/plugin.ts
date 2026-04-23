@@ -287,11 +287,13 @@ export interface ExpandablePlugin extends Plugin {
     /**
      * Build a manifest of candidate chunks for LLM expansion.
      * Returns chunks from files NOT already in search results.
+     * Priority chunks (from import graph neighbors) are marked with `priority: true`.
      *
      * @param excludeFilePaths File paths already present in search results — excluded from manifest.
      * @param excludeIds       Chunk IDs already in search results — excluded from manifest.
+     * @param resultFilePaths  File paths in search results — used to query import graph for priority chunks.
      */
-    buildManifest(excludeFilePaths: string[], excludeIds: number[]): ExpanderManifestItem[];
+    buildManifest(excludeFilePaths: string[], excludeIds: number[], resultFilePaths?: string[]): ExpanderManifestItem[];
     /**
      * Resolve chunk IDs back into SearchResults.
      * Called after the expander selects additional IDs.

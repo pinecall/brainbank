@@ -92,6 +92,8 @@ brainbank index [path] --force              # Force re-index everything
 brainbank index [path] --depth 200          # Limit git commit depth
 brainbank index [path] --docs ~/docs        # Include a docs folder
 brainbank index [path] --ignore "sdk/**,vendor/**"  # Custom ignore patterns
+brainbank index [path] --include "src/**,lib/**"    # Only index matching paths (whitelist)
+brainbank index [path] --include "src/**" --ignore "src/generated/**"  # Whitelist + blacklist
 ```
 
 > **Multi-repo:** If `[path]` contains multiple Git subdirectories (no root `.git/`), BrainBank auto-detects them and indexes all into one shared DB. See [Multi-Repo](multi-repo.md).
@@ -121,7 +123,7 @@ brainbank hsearch "api" --docs 10 --code 0 --git 0   # docs only
 brainbank hsearch "bug" --notes 5 --git 3            # custom plugin + git
 ```
 
-Any `--<name> <number>` flag not in the known non-source list (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--pruner`, `--only`, `--docs`, `--mode`, `--limit`, `--ignore`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter. Source names that don't match a registered plugin are routed to KV collections.
+Any `--<name> <number>` flag not in the known non-source list (`--repo`, `--depth`, `--collection`, `--pattern`, `--context`, `--name`, `--keep`, `--reranker`, `--pruner`, `--only`, `--docs`, `--mode`, `--limit`, `--ignore`, `--include`, `--meta`, `--k`, `--yes`, `--force`, `--verbose`) is treated as a source filter. Source names that don't match a registered plugin are routed to KV collections.
 
 Results are filtered to a minimum score of 70% and capped at 20 results in the CLI output.
 
@@ -348,7 +350,8 @@ Existing MCP entries are preserved — the command only adds/overwrites the `bra
 | `--force` | Force re-index everything |
 | `--depth <n>` | Git commit depth (default: 500) |
 | `--<source> <n>` | Source filter (e.g. `--code 10 --git 0`) |
-| `--ignore <globs>` | Glob patterns to exclude (comma-separated) |
+| `--include <globs>` | Glob patterns to whitelist for code indexing (comma-separated). Only matching files are indexed. Merged with `config.json` patterns |
+| `--ignore <globs>` | Glob patterns to exclude (comma-separated). Applied on top of include — exclude always wins |
 | `--collection <name>` | Target collection |
 | `--pattern <glob>` | File pattern for docs (default: `**/*.md`) |
 | `--context <desc>` | Context description |

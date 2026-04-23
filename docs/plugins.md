@@ -39,6 +39,7 @@ import { docs } from '@brainbank/docs';
 const brain = new BrainBank({ repoPath: '.' })       // default: local WASM (384d, free)
   .use(code({
     embeddingProvider: new OpenAIEmbedding(),                // code: OpenAI (1536d)
+    include: ['src/**', 'lib/**'],                           // only index these folders
     ignore: ['sdk/**', 'vendor/**', '**/*.generated.ts'],   // skip auto-generated code
   }))
   .use(git())                                               // git: local (384d)
@@ -157,11 +158,14 @@ import { code } from '@brainbank/code';
 brain.use(code({
   repoPath: '.',               // repository root
   maxFileSize: 512_000,        // skip files larger than 500KB
-  ignore: ['sdk/**', '*.generated.ts'],
+  include: ['src/**', 'lib/**'],            // whitelist — only index matching paths
+  ignore: ['sdk/**', '*.generated.ts'],     // blacklist — exclude wins over include
   name: 'code',                // or 'code:frontend' for multi-repo
   embeddingProvider: ...,      // optional override
 }));
 ```
+
+> **Include + Ignore:** When both are set, `include` restricts which files are considered, then `ignore` removes files from that set. Exclude always wins. See [Configuration — Include Whitelist](config.md#include-whitelist-code-plugin) for details.
 
 **What gets indexed per file:**
 1. AST-aware chunks (functions, classes, methods) via tree-sitter

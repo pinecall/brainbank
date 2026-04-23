@@ -642,7 +642,7 @@ KV store      │ KVService._hnsw (kvHnsw)        │ All collections   │ hnsw
 `code_symbols`, `code_refs`, `code_call_edges` (v3), `fts_code`
 
 ```
-code({ repoPath?, name?, embeddingProvider?, maxFileSize?, ignore? })
+code({ repoPath?, name?, embeddingProvider?, maxFileSize?, include?, ignore? })
          │
          ▼
 CodePlugin.initialize(ctx)
@@ -1394,8 +1394,9 @@ createBrain(contextOrRepo?)  [src/cli/factory/index.ts]
   setupProviders(brainOpts, config, flags, env)  ← embedding + reranker + pruner + expander
   builtins = config?.plugins ?? ['code', 'git', 'docs']
   ignorePatterns from ctxFlag('ignore')
+  includePatterns from ctxFlag('include')
 
-  registerBuiltins(brain, rp, builtins, config, ignorePatterns):
+  registerBuiltins(brain, rp, builtins, config, ignorePatterns, includePatterns):
     hasRootGit = fs.existsSync(path.join(rp, '.git'))
     gitSubdirs = !hasRootGit ? detectGitSubdirs(rp, configRepos) : []
 
@@ -1823,7 +1824,7 @@ brain.reembed()
 
 | Package | Test | Coverage |
 |---------|------|----------|
-| `@brainbank/code` | `code.test.ts` | Index TS+Python → HNSW → incremental skip → ignore patterns |
+| `@brainbank/code` | `code.test.ts` | Index TS+Python → HNSW → incremental skip → ignore patterns → include whitelist |
 | `@brainbank/code` | `chunker.test.ts` (unit + integration) | AST: TS/JS/Python, content integrity, fallback, benchmarks |
 | `@brainbank/code` | `code-graph.test.ts` | code_imports, code_symbols, code_refs + cascade delete |
 | `@brainbank/code` | `import-extractor.test.ts` | Regex per 19 languages |

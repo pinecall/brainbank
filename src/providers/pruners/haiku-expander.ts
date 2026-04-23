@@ -57,25 +57,39 @@ export class HaikuExpander implements Expander {
         const available = manifest.filter(m => !currentSet.has(m.id));
         if (available.length === 0) return { ids: [] };
 
-        // Build compact manifest string
-        const manifestLines = available.map(m =>
-            `#${m.id} ${m.filePath} | ${m.chunkType} ${m.name} ${m.lines}`
-        ).join('\n');
+        // Split manifest into priority (import-graph neighbors) and general
+        const priorityChunks = available.filter(m => m.priority);
+        const otherChunks = available.filter(m => !m.priority);
 
         const currentSummary = manifest
             .filter(m => currentSet.has(m.id))
             .map(m => `#${m.id} ${m.filePath} | ${m.chunkType} ${m.name}`)
             .join('\n');
 
+        // Build manifest sections
+        let manifestSection = '';
+        if (priorityChunks.length > 0) {
+            const prioLines = priorityChunks.map(m =>
+                `#${m.id} ${m.filePath} | ${m.chunkType} ${m.name} ${m.lines}`
+            ).join('\n');
+            manifestSection += `DEPENDENCY chunks (imported by or importing the search result files):\n${prioLines}\n\n`;
+        }
+        if (otherChunks.length > 0) {
+            const otherLines = otherChunks.map(m =>
+                `#${m.id} ${m.filePath} | ${m.chunkType} ${m.name} ${m.lines}`
+            ).join('\n');
+            manifestSection += `Other available chunks:\n${otherLines}`;
+        }
+
         const prompt =
             `Task: "${query}"\n\n` +
             `Already included chunks:\n${currentSummary}\n\n` +
-            `Available chunks NOT yet included:\n${manifestLines}\n\n` +
+            `${manifestSection}\n\n` +
             `You are a code context expander. The search already found the "included" chunks above.\n` +
-            `Review the "available" chunks and select any that would help an AI agent complete the task.\n\n` +
+            `Review the available chunks and select any that would help an AI agent complete the task.\n\n` +
             `Rules:\n` +
-            `- Select chunks that are structurally related (called by, imported by, or extend included code)\n` +
-            `- Select type definitions, interfaces, or configs needed to understand included code\n` +
+            `- STRONGLY PREFER dependency chunks — they are structurally connected to the search results via imports\n` +
+            `- Select type definitions, interfaces, models, or configs needed to understand included code\n` +
             `- Select initialization or setup code if the task involves debugging or modifying a feature\n` +
             `- Do NOT select test files, documentation, or unrelated utilities\n` +
             `- Be selective: only include chunks that fill clear gaps. Quality over quantity.\n` +

@@ -30,7 +30,6 @@ export class ContextBuilder {
         private _registry: PluginRegistry,
         private _pruner?: Pruner,
         private _embedding?: EmbeddingProvider,
-        private _rerankerName?: string,
         private _configFields: Record<string, unknown> = {},
         private _expander?: Expander,
     ) {}
@@ -100,13 +99,18 @@ export class ContextBuilder {
         const prunedResults = pruner
             ? beforePrune.filter(r => !results.includes(r))
             : [];
+        const expanderEnabled = resolvedFields.expander === true;
+        const expandedResults = expanderNote !== undefined
+            ? results.filter(r => !beforePrune.includes(r) && !prunedResults.includes(r))
+            : [];
         logQuery({
             source: options.source ?? 'api',
             method: 'getContext',
             query: task,
             embedding: this._embedding ? providerKey(this._embedding) : 'unknown',
             pruner: pruner ? _prunerName(pruner) : null,
-            reranker: this._rerankerName ?? null,
+            expander: expanderEnabled ? (this._expander ? _expanderName(this._expander) : 'configured-no-instance') : null,
+            expandedCount: expandedResults.length > 0 ? expandedResults.length : undefined,
             options: {
                 sources: src,
                 pathPrefix: options.pathPrefix,
@@ -217,7 +221,7 @@ export class ContextBuilder {
             const pluginRepo = colonIdx > 0 ? mod.name.slice(colonIdx + 1) : undefined;
             if (repoPrefix && pluginRepo && pluginRepo !== repoPrefix) continue;
 
-            manifest.push(...mod.buildManifest(excludeFilePaths, excludeIds));
+            manifest.push(...mod.buildManifest(excludeFilePaths, excludeIds, excludeFilePaths));
             if (!resolver) {
                 const prefix = pluginRepo;
                 resolver = (ids: number[]) => {
@@ -297,4 +301,8 @@ function _toLogResult(r: SearchResult): QueryLogResult {
 
 function _prunerName(pruner: Pruner): string {
     return pruner.constructor?.name ?? 'custom';
+}
+
+function _expanderName(expander: Expander): string {
+    return expander.constructor?.name ?? 'custom';
 }
