@@ -60,7 +60,6 @@ export const tests = {
                 ],
             },
             embedding: 'openai',
-            reranker: 'qwen3',
             maxFileSize: 512000,
         };
 

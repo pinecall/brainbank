@@ -4,8 +4,7 @@
  * Tests the REAL pipeline with actual model inference:
  * - LocalEmbedding (all-MiniLM-L6-v2, downloads ~23MB on first run)
  * - Real semantic similarity (not hash-based)
- * - Cross-encoder reranker (using transformers.js)
- * - Full search pipeline: vector, keyword, hybrid + rerank
+ * - Full search pipeline: vector, keyword, hybrid
  *
  * Run with: npm test -- --integration --filter real-model
  * First run downloads the model (~23MB) — subsequent runs use cache.
@@ -14,7 +13,7 @@
 import * as fs from 'node:fs';
 import { BrainBank } from '../../../src/brainbank.ts';
 import { LocalEmbedding } from '../../../src/providers/embeddings/local-embedding.ts';
-import type { Reranker } from '../../../src/types.ts';
+
 
 export const name = 'Integration — Real Model';
 
@@ -22,47 +21,7 @@ function tmpDb(label: string): string {
     return `/tmp/brainbank-realmodel-${label}-${Date.now()}.db`;
 }
 
-// ── Cross-encoder Reranker using Transformers.js ────
 
-function createCrossEncoderReranker(): Reranker {
-    let pipeline: any = null;
-
-    return {
-        async rank(query: string, documents: string[]) {
-            if (documents.length === 0) return [];
-
-            // Lazy-load cross-encoder pipeline
-            if (!pipeline) {
-                const { pipeline: createPipeline, env } = await import('@xenova/transformers' as any);
-                env.cacheDir = '.model-cache';
-                env.allowLocalModels = true;
-                // Use a lightweight cross-encoder for reranking
-                pipeline = await createPipeline(
-                    'text-classification',
-                    'Xenova/ms-marco-MiniLM-L-6-v2',
-                    { quantized: true },
-                );
-            }
-
-            // Score each doc against query
-            const scores: number[] = [];
-            for (const doc of documents) {
-                try {
-                    const result = await pipeline(`${query} [SEP] ${doc}`, { topk: 1 });
-                    // Normalize score to 0-1 range using sigmoid
-                    const rawScore = Array.isArray(result) ? result[0]?.score ?? 0.5 : 0.5;
-                    scores.push(rawScore);
-                } catch {
-                    scores.push(0.5);
-                }
-            }
-            return scores;
-        },
-        async close() {
-            pipeline = null;
-        },
-    };
-}
 
 // ── Shared State ────────────────────────────────────
 
@@ -212,56 +171,6 @@ export const tests = {
         const items = col.list();
         assert.equal(items.length, 1);
         assert.equal(items[0].content, 'permanent knowledge item');
-    },
-
-    // ── Reranker with Real Model ────────────────────
-
-    async 'cross-encoder reranker: initializes and scores documents'(assert: any) {
-        const reranker = createCrossEncoderReranker();
-
-        const scores = await reranker.rank('database performance', [
-            'PostgreSQL query optimization and indexing strategies',
-            'How to make a paper airplane',
-            'Redis caching for reduced database latency',
-        ]);
-
-        assert.equal(scores.length, 3, 'should return 3 scores');
-        for (const s of scores) {
-            assert(typeof s === 'number', 'score should be a number');
-            assert(s >= 0 && s <= 1, `score should be 0-1 (got ${s})`);
-        }
-
-        await reranker.close!();
-    },
-
-    async 'hybrid search with reranker improves relevance'(assert: any) {
-        const reranker = createCrossEncoderReranker();
-
-        const rerankedBrain = new BrainBank({
-            dbPath: tmpDb('reranked'),
-            embeddingProvider: embedding,
-            reranker,
-        });
-        await rerankedBrain.initialize();
-
-        const col = rerankedBrain.collection('docs');
-        await col.add('Node.js event loop handles I/O asynchronously');
-        await col.add('Java uses threads for concurrent programming');
-        await col.add('Go goroutines are lightweight concurrent functions');
-        await col.add('The recipe for chocolate cake requires cocoa powder');
-
-        const results = await col.search('concurrency model', { k: 4, mode: 'hybrid' });
-        assert.gt(results.length, 0, 'should have results');
-
-        // Top results should NOT be the chocolate cake recipe
-        if (results.length > 1) {
-            const topContent = results[0].content;
-            assert(!topContent.includes('chocolate'),
-                'reranked top result should not be the irrelevant item');
-        }
-
-        await reranker.close!();
-        rerankedBrain.close();
     },
 
     // ── Multi-Collection with Real Embeddings ───────

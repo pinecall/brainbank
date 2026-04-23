@@ -9,7 +9,7 @@
  *
  * Usage:
  *   PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset scifact
- *   PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset nfcorpus --reranker
+ *   PERPLEXITY_API_KEY=pplx-... npx tsx test/benchmarks/rag/beir-eval.ts --dataset nfcorpus
  *
  * Supported datasets: scifact, nfcorpus, fiqa
  */
@@ -235,7 +235,7 @@ async function main() {
     const datasetKey = datasetIdx !== -1 ? process.argv[datasetIdx + 1] : null;
 
     if (!datasetKey || !DATASETS[datasetKey]) {
-        console.error(`${c.red}Usage: npx tsx examples/rag/beir-eval.ts --dataset <${Object.keys(DATASETS).join('|')}> [--reranker]${c.reset}`);
+        console.error(`${c.red}Usage: npx tsx examples/rag/beir-eval.ts --dataset <${Object.keys(DATASETS).join('|')}>${c.reset}`);
         process.exit(1);
     }
 
@@ -245,7 +245,6 @@ async function main() {
     }
 
     const dataset = DATASETS[datasetKey];
-    const useReranker = process.argv.includes('--reranker');
 
     console.log(`\n${c.bold}${c.cyan}━━━ BEIR Evaluation: ${dataset.name} ━━━${c.reset}`);
 
@@ -273,15 +272,7 @@ async function main() {
         writeCorpusAsFiles(corpus, tempDocsDir);
     }
 
-    // 4. Load reranker if requested
-    let reranker: any;
-    if (useReranker) {
-        console.log(`${c.dim}  Loading Qwen3 reranker...${c.reset}`);
-        const { Qwen3Reranker } = await import('../../../src/index.ts');
-        reranker = new Qwen3Reranker();
-    }
-
-    // 5. Initialize BrainBank
+    // 4. Initialize BrainBank
     const dbPath = `/tmp/brainbank-beir-${datasetKey}.db`;
     try { rmSync(dbPath); } catch { /* ok */ }
 
@@ -290,7 +281,6 @@ async function main() {
         dbPath,
         embeddingProvider: pplxEmbed,
         embeddingDims: pplxEmbed.dims,
-        reranker,
     });
     brain.use(docs());
     await brain.initialize();
@@ -317,7 +307,7 @@ async function main() {
 
     const st = docsPlugin.stats();
     console.log(`${c.green}  ✓ Indexed ${st.chunks} chunks in ${indexTime}s${c.reset}`);
-    console.log(`${c.dim}  Pipeline: Hybrid (Vector + BM25 → RRF)${useReranker ? ' + Qwen3 Reranker' : ''}${c.reset}`);
+    console.log(`${c.dim}  Pipeline: Hybrid (Vector + BM25 → RRF)${c.reset}`);
     console.log(`${c.dim}  Embeddings: Perplexity Context (${pplxEmbed.dims}d)${c.reset}\n`);
 
     // Build docId lookup from filePath
@@ -380,7 +370,6 @@ async function main() {
     console.log();
 
     // Cleanup
-    if (reranker?.close) await reranker.close();
     brain.close();
     try { rmSync(dbPath); } catch { /* ok */ }
 }

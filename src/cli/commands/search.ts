@@ -25,7 +25,7 @@ import { createBrain } from '@/cli/factory/index.ts';
 function parseSourceFlags(): { sources: Record<string, number>; query: string } {
     const NON_SOURCE_FLAGS = new Set([
         'repo', 'depth', 'collection', 'pattern', 'context', 'name',
-        'keep', 'reranker', 'pruner', 'only', 'docs-path', 'mode', 'limit',
+        'keep', 'pruner', 'only', 'docs-path', 'mode', 'limit',
         'ignore', 'meta', 'k', 'yes', 'y', 'force', 'verbose',
     ]);
 

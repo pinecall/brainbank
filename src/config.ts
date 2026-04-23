@@ -40,7 +40,6 @@ export function resolveConfig(partial: BrainBankConfig = {}): ResolvedConfig {
         embeddingDims:     partial.embeddingDims     ?? DEFAULTS.embeddingDims,
         maxElements:       partial.maxElements       ?? DEFAULTS.maxElements,
         embeddingProvider: partial.embeddingProvider,
-        reranker: partial.reranker,
         pruner: partial.pruner,
         expander: partial.expander,
         webhookPort: partial.webhookPort,

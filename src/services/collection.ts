@@ -11,11 +11,10 @@
 
 import type { DatabaseAdapter, KvDataRow, CountRow } from '@/db/adapter.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { EmbeddingProvider, Reranker, SearchResult } from '@/types.ts';
+import type { EmbeddingProvider, SearchResult } from '@/types.ts';
 
 import { sanitizeFTS, normalizeBM25 } from '@/lib/fts.ts';
 import { vecToBuffer } from '@/lib/math.ts';
-import { rerank } from '@/lib/rerank.ts';
 import { fuseRankedLists } from '@/lib/rrf.ts';
 
 export interface CollectionItem {
@@ -56,7 +55,6 @@ export class Collection {
         private _embedding: EmbeddingProvider,
         private _hnsw: HNSWIndex,
         private _vecs: Map<number, Float32Array>,
-        private _reranker?: Reranker,
     ) {}
 
     /** Collection name. */
@@ -180,25 +178,6 @@ export class Collection {
             .map(({ item, score }) => ({ ...item, score }))
             .filter(r => r.score >= minScore)
             .slice(0, k);
-
-        // Apply re-ranking if available
-        if (this._reranker && results.length > 1) {
-            const asSearchResults: SearchResult[] = results.map(r => ({
-                type: 'collection' as const,
-                score: r.score ?? 0,
-                content: r.content,
-                metadata: { id: r.id },
-            }));
-            const reranked = await rerank(query, asSearchResults, this._reranker);
-            const rerankedById = new Map(
-                reranked.map(r => [r.type === 'collection' ? r.metadata.id : undefined, r.score]),
-            );
-            const blended = results.map(r => ({ ...r, score: rerankedById.get(r.id) ?? r.score ?? 0 }));
-            return this._filterByTags(
-                blended.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
-                tags,
-            );
-        }
 
         return this._filterByTags(results, tags);
     }

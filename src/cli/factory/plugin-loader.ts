@@ -99,7 +99,7 @@ export async function resolveEmbeddingKey(key: string): Promise<EmbeddingProvide
     return resolveEmbedding(key);
 }
 
-/** Configure reranker and global embedding provider on brainOpts. */
+/** Configure pruner, expander, and global embedding provider on brainOpts. */
 export async function setupProviders(
     brainOpts: Record<string, unknown>,
     config: ProjectConfig | null,
@@ -117,11 +117,7 @@ export async function setupProviders(
     if (perplexityKey) process.env.PERPLEXITY_API_KEY = perplexityKey;
     if (openaiKey) process.env.OPENAI_API_KEY = openaiKey;
 
-    const rerankerFlag = flags?.reranker ?? (config?.reranker as string | undefined);
-    if (rerankerFlag === 'qwen3') {
-        const { Qwen3Reranker } = await import('@/providers/rerankers/qwen3-reranker.ts');
-        brainOpts.reranker = new Qwen3Reranker();
-    }
+
 
     const prunerFlag = flags?.pruner ?? (config?.pruner as string | undefined);
     if (prunerFlag === 'haiku') {

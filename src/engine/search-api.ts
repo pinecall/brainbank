@@ -2,7 +2,7 @@
  * BrainBank — Search API
  *
  * Thin orchestrator for all search operations.
- * Pipeline: collect → fuse (RRF) → rerank.
+ * Pipeline: collect → fuse (RRF).
  *
  * Plugin-agnostic — discovers vector strategies and searchable plugins
  * via capability interfaces. No hardcoded plugin names.
@@ -16,7 +16,6 @@ import type { PluginRegistry } from '@/services/plugin-registry.ts';
 import type { ResolvedConfig, EmbeddingProvider, SearchResult, ContextOptions } from '@/types.ts';
 
 import { isVectorSearchPlugin, isSearchable, isCoEditPlugin, isContextFormatterPlugin } from '@/plugin.ts';
-import { rerank } from '@/lib/rerank.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
 import { CompositeBM25Search } from '@/search/keyword/composite-bm25-search.ts';
@@ -71,8 +70,7 @@ export function createSearchAPI(
 
     const bm25 = new CompositeBM25Search(registry);
 
-    const rerankerName = config.reranker ? (config.reranker.constructor?.name ?? 'custom') : undefined;
-    const contextBuilder = new ContextBuilder(search, registry, config.pruner, embedding, rerankerName, config.contextFields ?? {}, config.expander);
+    const contextBuilder = new ContextBuilder(search, registry, config.pruner, embedding, config.contextFields ?? {}, config.expander);
 
     return new SearchAPI({
         search, bm25, registry, config,
@@ -130,12 +128,7 @@ export class SearchAPI {
         let results: SearchResult[];
         if (lists.length === 0) results = [];
         else {
-            const fused = reciprocalRankFusion(lists);
-            if (this._d.config.reranker && fused.length > 1) {
-                results = await rerank(query, fused, this._d.config.reranker);
-            } else {
-                results = fused;
-            }
+            results = reciprocalRankFusion(lists);
         }
 
         this._logSearch('hybridSearch', query, options, results, Date.now() - t0);
@@ -198,7 +191,6 @@ export class SearchAPI {
             query,
             embedding: providerKey(this._d.embedding),
             pruner: null,
-            reranker: this._d.config.reranker ? (this._d.config.reranker.constructor?.name ?? 'custom') : null,
             options: {
                 sources: options?.sources,
                 minScore: options?.minScore,

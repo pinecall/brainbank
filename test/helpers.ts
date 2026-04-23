@@ -34,7 +34,7 @@ import { git } from '@brainbank/git';
 import { docs } from '@brainbank/docs';
 
 
-import type { EmbeddingProvider, Reranker } from '../src/types.ts';
+import type { EmbeddingProvider } from '../src/types.ts';
 
 // ── Mock Embedding Provider ─────────────────────────
 
@@ -185,5 +185,5 @@ export {
 
 };
 
-export type { EmbeddingProvider, Reranker };
+export type { EmbeddingProvider };
 

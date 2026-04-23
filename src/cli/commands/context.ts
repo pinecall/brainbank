@@ -20,7 +20,7 @@ import { tryServerContext } from '@/cli/server-client.ts';
 function parseContextFlags(): Record<string, number> {
     const NON_SOURCE = new Set([
         'repo', 'depth', 'collection', 'pattern', 'context', 'name',
-        'keep', 'reranker', 'pruner', 'only', 'docs-path', 'mode', 'limit',
+        'keep', 'pruner', 'only', 'docs-path', 'mode', 'limit',
         'ignore', 'meta', 'k', 'yes', 'y', 'force', 'verbose', 'path',
     ]);
     const sources: Record<string, number> = {};

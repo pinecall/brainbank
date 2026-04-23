@@ -16,7 +16,6 @@ import { c } from '../utils.ts';
 export interface ProjectConfig {
     plugins?: string[];
     embedding?: string;
-    reranker?: string;
     pruner?: string;
     maxFileSize?: number;
     indexers?: Plugin[];

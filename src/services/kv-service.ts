@@ -8,7 +8,7 @@
 
 import type { DatabaseAdapter } from '@/db/adapter.ts';
 import type { HNSWIndex } from '@/providers/vector/hnsw-index.ts';
-import type { EmbeddingProvider, Reranker } from '@/types.ts';
+import type { EmbeddingProvider } from '@/types.ts';
 import { Collection } from './collection.ts';
 
 export class KVService {
@@ -19,13 +19,12 @@ export class KVService {
         private _embedding: EmbeddingProvider,
         private _hnsw: HNSWIndex,
         private _vecs: Map<number, Float32Array>,
-        private _reranker?: Reranker,
     ) {}
 
     /** Get or create a named collection. */
     collection(name: string): Collection {
         if (this._collections.has(name)) return this._collections.get(name)!;
-        const coll = new Collection(name, this._db, this._embedding, this._hnsw, this._vecs, this._reranker);
+        const coll = new Collection(name, this._db, this._embedding, this._hnsw, this._vecs);
         this._collections.set(name, coll);
         return coll;
     }

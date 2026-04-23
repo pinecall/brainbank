@@ -51,7 +51,6 @@ export type { CollectionItem, CollectionSearchOptions, CollectionAddOptions } fr
 export type {
     BrainBankConfig, ResolvedConfig,
     EmbeddingProvider,
-    Reranker,
     Pruner, PrunerItem,
     Expander, ExpanderManifestItem, ExpanderResult,
     VectorIndex, SearchHit,
@@ -90,10 +89,6 @@ export type { WebhookHandler } from './services/webhook-server.ts';
 export { HttpServer } from './services/http-server.ts';
 export type { HttpServerOptions } from './services/http-server.ts';
 export { isServerRunning, getServerUrl, readPid, writePid, removePid, DEFAULT_PORT } from './services/daemon.ts';
-
-// Reranker
-export { Qwen3Reranker } from './providers/rerankers/qwen3-reranker.ts';
-export type { Qwen3RerankerOptions } from './providers/rerankers/qwen3-reranker.ts';
 
 // Pruner
 export { HaikuPruner } from './providers/pruners/haiku-pruner.ts';
@@ -138,7 +133,6 @@ export { CompositeVectorSearch } from './search/vector/composite-vector-search.t
 export { CompositeBM25Search } from './search/keyword/composite-bm25-search.ts';
 export { reciprocalRankFusion } from './lib/rrf.ts';
 export { sanitizeFTS, normalizeBM25, escapeLike } from './lib/fts.ts';
-export { rerank } from './lib/rerank.ts';
 
 // Search types
 export type { SearchStrategy, SearchOptions, DomainVectorSearch } from './search/types.ts';

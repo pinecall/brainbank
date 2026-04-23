@@ -62,8 +62,6 @@ export interface BrainBankConfig {
     maxElements?: number;
     /** Custom embedding provider (default: local WASM model) */
     embeddingProvider?: EmbeddingProvider;
-    /** Optional reranker for improved search quality */
-    reranker?: Reranker;
     /** Optional LLM noise filter — drops irrelevant results before formatting */
     pruner?: Pruner;
     /** Optional LLM context expander — discovers additional relevant chunks after pruning */
@@ -86,7 +84,6 @@ export interface ResolvedConfig {
     embeddingDims: number;
     maxElements: number;
     embeddingProvider?: EmbeddingProvider;
-    reranker?: Reranker;
     pruner?: Pruner;
     expander?: Expander;
     webhookPort?: number;
@@ -106,18 +103,6 @@ export interface EmbeddingProvider {
     close(): Promise<void>;
 }
 
-
-export interface Reranker {
-    /**
-     * Score each document's relevance to the query.
-     * @param query - The search query
-     * @param documents - Document contents to rank
-     * @returns Relevance scores (0.0 - 1.0) in same order as documents
-     */
-    rank(query: string, documents: string[]): Promise<number[]>;
-    /** Release resources (e.g. unload model). */
-    close?(): Promise<void>;
-}
 
 
 /** Item passed to the pruner for noise classification. */
@@ -157,6 +142,8 @@ export interface ExpanderManifestItem {
     chunkType: string;
     /** Line range (e.g. "L45-L89") */
     lines: string;
+    /** True if this chunk is from an import-graph neighbor of the search results. */
+    priority?: boolean;
 }
 
 /** Result from the expander: chunk IDs to add + optional free-text note. */

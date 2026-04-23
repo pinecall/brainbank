@@ -163,9 +163,6 @@ export class BrainBank extends EventEmitter {
         this._webhookServer?.close();
         for (const plugin of this._registry.all) plugin.close?.();
 
-        const reranker = this._config.reranker as { close?: () => void } | undefined;
-        reranker?.close?.();
-
         const pruner = this._config.pruner as { close?: () => void } | undefined;
         pruner?.close?.();
 
@@ -395,7 +392,7 @@ export class BrainBank extends EventEmitter {
         );
         await kvHnsw.init();
 
-        this._kvService = new KVService(this._db, this._embedding, kvHnsw, new Map(), this._config.reranker);
+        this._kvService = new KVService(this._db, this._embedding, kvHnsw, new Map());
 
         if (!skipVectorLoad) {
             const kvIndexPath = hnswPath(this._config.dbPath, 'kv');

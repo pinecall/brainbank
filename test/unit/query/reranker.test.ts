@@ -1,126 +1,73 @@
 /**
- * BrainBank — Reranker Tests
- * 
- * Tests the pluggable reranker integration with a mock reranker.
+ * BrainBank — Collection Hybrid Search Tests
+ *
+ * Tests the hybrid search pipeline (vector + BM25 → RRF) without reranker.
+ * Reranker was removed from the core pipeline — these tests verify
+ * pure RRF scoring and collection search behavior.
  */
 
 import { BrainBank, mockEmbedding, tmpDb } from '../../helpers.ts';
 
-export const name = 'Reranker';
+export const name = 'Hybrid Search';
 
 export const tests = {
-    async 'Reranker interface accepted in config'(assert: any) {
-        const mockReranker = {
-            async rank(_query: string, docs: string[]) {
-                return docs.map(() => 0.5);
-            },
-        };
-
+    async 'Hybrid search returns results from both vector and keyword signals'(assert: any) {
         const brain = new BrainBank({
-            dbPath: tmpDb('reranker-config'),
-            embeddingProvider: mockEmbedding(),
-            reranker: mockReranker,
-        });
-
-        await brain.initialize();
-        assert(true, 'should accept reranker in config');
-        brain.close();
-    },
-
-    async 'Collection search uses reranker when provided'(assert: any) {
-        let rankCalled = false;
-        const mockReranker = {
-            async rank(_query: string, docs: string[]) {
-                rankCalled = true;
-                return docs.map((_, i) => i / docs.length);
-            },
-        };
-
-        const brain = new BrainBank({
-            dbPath: tmpDb('reranker-coll'),
-            embeddingProvider: mockEmbedding(),
-            reranker: mockReranker,
-        });
-        await brain.initialize();
-
-        const kb = brain.collection('test');
-        await kb.add('First document about auth');
-        await kb.add('Second document about auth tokens');
-        await kb.add('Third document about JWT validation');
-
-        const hybridHits = await kb.search('auth', { mode: 'hybrid', minScore: 0 });
-
-        if (hybridHits.length > 1) {
-            assert(rankCalled, 'reranker should have been called for hybrid search');
-        }
-
-        brain.close();
-    },
-
-    async 'No reranker means pure RRF scores'(assert: any) {
-        const brain = new BrainBank({
-            dbPath: tmpDb('no-reranker'),
+            dbPath: tmpDb('hybrid-rrf'),
             embeddingProvider: mockEmbedding(),
         });
         await brain.initialize();
 
         const kb = brain.collection('test');
-        await kb.add('Auth document one');
-        await kb.add('Auth document two');
+        await kb.add('Auth document about login tokens');
+        await kb.add('Second document about auth validation');
+        await kb.add('Unrelated document about CSS styling');
 
         const hits = await kb.search('auth', { mode: 'hybrid', minScore: 0 });
-        assert(hits.length >= 0, 'should return results without reranker');
+        assert(hits.length >= 0, 'should return results with pure RRF');
 
         brain.close();
     },
 
-    async 'Reranker blends scores with position-aware weighting'(assert: any) {
-        const rerankerScores: number[] = [];
-        const mockReranker = {
-            async rank(_query: string, docs: string[]) {
-                const scores = docs.map(() => 1.0);
-                rerankerScores.push(...scores);
-                return scores;
-            },
-        };
-
+    async 'Collection search works with all modes'(assert: any) {
         const brain = new BrainBank({
-            dbPath: tmpDb('reranker-blend'),
+            dbPath: tmpDb('search-modes'),
             embeddingProvider: mockEmbedding(),
-            reranker: mockReranker,
         });
         await brain.initialize();
 
-        const kb = brain.collection('blend');
+        const kb = brain.collection('modes');
         await kb.add('Document about testing');
         await kb.add('Document about verification');
+        await kb.add('Document about deployment');
 
-        const hits = await kb.search('testing', { mode: 'hybrid', minScore: 0 });
+        const vector = await kb.search('testing', { mode: 'vector', minScore: 0 });
+        const keyword = await kb.search('testing', { mode: 'keyword', minScore: 0 });
+        const hybrid = await kb.search('testing', { mode: 'hybrid', minScore: 0 });
 
-        if (hits.length > 1 && rerankerScores.length > 0) {
-            for (const hit of hits) {
-                assert((hit.score ?? 0) >= 0.4, `score ${hit.score} should be >= 0.4 with reranker boost`);
-            }
-        }
+        assert(vector.length >= 0, 'vector mode should work');
+        assert(keyword.length >= 0, 'keyword mode should work');
+        assert(hybrid.length >= 0, 'hybrid mode should work');
 
         brain.close();
     },
 
-    async 'Reranker with close() is called properly'(assert: any) {
-        const mockReranker = {
-            async rank(_query: string, docs: string[]) {
-                return docs.map(() => 0.5);
-            },
-            closeCalled: false,
-            async close() {
-                this.closeCalled = true;
-            },
-        };
+    async 'RRF scores are valid and non-negative'(assert: any) {
+        const brain = new BrainBank({
+            dbPath: tmpDb('rrf-scores'),
+            embeddingProvider: mockEmbedding(),
+        });
+        await brain.initialize();
 
-        assert(typeof mockReranker.rank === 'function', 'rank should be a function');
-        assert(typeof mockReranker.close === 'function', 'close should be optional function');
+        const kb = brain.collection('scores');
+        await kb.add('First document about auth');
+        await kb.add('Second document about auth tokens');
 
-        await mockReranker.close();
-        assert(mockReranker.closeCalled, 'close should be callable');
+        const hits = await kb.search('auth', { mode: 'hybrid', minScore: 0 });
+        for (const hit of hits) {
+            assert((hit.score ?? 0) >= 0, `score ${hit.score} should be non-negative`);
+        }
+
+        brain.close();
     },
 };

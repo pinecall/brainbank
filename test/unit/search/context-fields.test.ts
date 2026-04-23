@@ -41,7 +41,7 @@ export const tests = {
 
         const registry = new PluginRegistry();
         registry.register(plugin);
-        const builder = new ContextBuilder(undefined, registry, undefined, undefined, undefined, {});
+        const builder = new ContextBuilder(undefined, registry, undefined, undefined, {});
 
         // Access private method for testing
         const resolveFields = (builder as unknown as { _resolveFields(o: ContextOptions): Record<string, unknown> })._resolveFields.bind(builder);
@@ -61,7 +61,7 @@ export const tests = {
         const registry = new PluginRegistry();
         registry.register(plugin);
         const configFields = { lines: true, symbols: true };
-        const builder = new ContextBuilder(undefined, registry, undefined, undefined, undefined, configFields);
+        const builder = new ContextBuilder(undefined, registry, undefined, undefined, configFields);
 
         const resolveFields = (builder as unknown as { _resolveFields(o: ContextOptions): Record<string, unknown> })._resolveFields.bind(builder);
         const resolved = resolveFields({});
@@ -79,7 +79,7 @@ export const tests = {
         const registry = new PluginRegistry();
         registry.register(plugin);
         const configFields = { lines: true, callTree: true };
-        const builder = new ContextBuilder(undefined, registry, undefined, undefined, undefined, configFields);
+        const builder = new ContextBuilder(undefined, registry, undefined, undefined, configFields);
 
         const resolveFields = (builder as unknown as { _resolveFields(o: ContextOptions): Record<string, unknown> })._resolveFields.bind(builder);
         const resolved = resolveFields({ fields: { callTree: false, lines: false } });
@@ -97,7 +97,7 @@ export const tests = {
 
         const registry = new PluginRegistry();
         registry.register(plugin);
-        const builder = new ContextBuilder(undefined, registry, undefined, undefined, undefined, {});
+        const builder = new ContextBuilder(undefined, registry, undefined, undefined, {});
 
         const resolveFields = (builder as unknown as { _resolveFields(o: ContextOptions): Record<string, unknown> })._resolveFields.bind(builder);
         // Only override lines — callTree and imports should keep their defaults
@@ -115,7 +115,7 @@ export const tests = {
 
         const registry = new PluginRegistry();
         registry.register(plugin);
-        const builder = new ContextBuilder(undefined, registry, undefined, undefined, undefined, {});
+        const builder = new ContextBuilder(undefined, registry, undefined, undefined, {});
 
         const resolveFields = (builder as unknown as { _resolveFields(o: ContextOptions): Record<string, unknown> })._resolveFields.bind(builder);
         const resolved = resolveFields({ fields: { callTree: { depth: 4 } } });
@@ -131,7 +131,7 @@ export const tests = {
 
         const registry = new PluginRegistry();
         registry.register(plugin);
-        const builder = new ContextBuilder(undefined, registry, undefined, undefined, undefined, {});
+        const builder = new ContextBuilder(undefined, registry, undefined, undefined, {});
 
         const resolveFields = (builder as unknown as { _resolveFields(o: ContextOptions): Record<string, unknown> })._resolveFields.bind(builder);
 
@@ -158,7 +158,7 @@ export const tests = {
         const registry = new PluginRegistry();
         registry.register(codePlugin);
         registry.register(gitPlugin);
-        const builder = new ContextBuilder(undefined, registry, undefined, undefined, undefined, {});
+        const builder = new ContextBuilder(undefined, registry, undefined, undefined, {});
 
         const resolveFields = (builder as unknown as { _resolveFields(o: ContextOptions): Record<string, unknown> })._resolveFields.bind(builder);
         const resolved = resolveFields({});
