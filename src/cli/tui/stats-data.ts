@@ -410,3 +410,114 @@ export function searchSymbols(dbPath: string, query: string, limit: number = 10)
         db.close();
     }
 }
+
+/** Search result for full-text search. */
+export interface SearchResultItem {
+    id: number;
+    filePath: string;
+    name: string | null;
+    chunkType: string;
+    startLine: number;
+    endLine: number;
+    language: string;
+    matchContext: string;
+}
+
+/** Full-text search across chunk content, names, file paths. Returns matching chunks with context. */
+export function searchChunks(dbPath: string, query: string, limit: number = 30): SearchResultItem[] {
+    const db = openDb(dbPath);
+    try {
+        if (!tableExists(db, 'code_chunks')) return [];
+
+        // Try FTS first (if fts_code exists)
+        if (tableExists(db, 'fts_code')) {
+            try {
+                const rows = db.prepare(`
+                    SELECT cc.id, cc.file_path, cc.name, cc.chunk_type, cc.start_line, cc.end_line, cc.language,
+                           snippet(fts_code, 0, '>>>', '<<<', '...', 40) as match_ctx
+                    FROM fts_code ft
+                    JOIN code_chunks cc ON cc.id = ft.rowid
+                    WHERE fts_code MATCH ?
+                    ORDER BY rank
+                    LIMIT ?
+                `).all(query, limit) as unknown as { id: number; file_path: string; name: string | null; chunk_type: string; start_line: number; end_line: number; language: string; match_ctx: string }[];
+
+                return rows.map(r => ({
+                    id: r.id,
+                    filePath: r.file_path,
+                    name: r.name,
+                    chunkType: r.chunk_type,
+                    startLine: r.start_line,
+                    endLine: r.end_line,
+                    language: r.language,
+                    matchContext: r.match_ctx,
+                }));
+            } catch {
+                // FTS query parse error — fall through to LIKE
+            }
+        }
+
+        // Fallback: LIKE search across name, file_path, content
+        const rows = db.prepare(`
+            SELECT id, file_path, name, chunk_type, start_line, end_line, language,
+                   SUBSTR(content, MAX(1, INSTR(LOWER(content), LOWER(?)) - 40), 100) as match_ctx
+            FROM code_chunks
+            WHERE chunk_type != 'synopsis'
+              AND (LOWER(name) LIKE LOWER(?) OR LOWER(file_path) LIKE LOWER(?) OR LOWER(content) LIKE LOWER(?))
+            ORDER BY
+                CASE WHEN LOWER(name) LIKE LOWER(?) THEN 0
+                     WHEN LOWER(file_path) LIKE LOWER(?) THEN 1
+                     ELSE 2 END,
+                file_path, start_line
+            LIMIT ?
+        `).all(query, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, limit) as unknown as { id: number; file_path: string; name: string | null; chunk_type: string; start_line: number; end_line: number; language: string; match_ctx: string }[];
+
+        return rows.map(r => ({
+            id: r.id,
+            filePath: r.file_path,
+            name: r.name,
+            chunkType: r.chunk_type,
+            startLine: r.start_line,
+            endLine: r.end_line,
+            language: r.language,
+            matchContext: r.match_ctx || '',
+        }));
+    } finally {
+        db.close();
+    }
+}
+
+/** Fetch a single chunk by ID. */
+export function fetchChunkById(dbPath: string, chunkId: number): ChunkInfo | null {
+    const db = openDb(dbPath);
+    try {
+        const r = db.prepare(`
+            SELECT id, chunk_type, name, start_line, end_line, content, language
+            FROM code_chunks WHERE id = ?
+        `).get(chunkId) as { id: number; chunk_type: string; name: string | null; start_line: number; end_line: number; content: string; language: string } | undefined;
+
+        if (!r) return null;
+
+        let callsOut: string[] = [];
+        let calledBy: string[] = [];
+        if (tableExists(db, 'code_call_edges')) {
+            callsOut = (db.prepare(`SELECT DISTINCT symbol_name FROM code_call_edges WHERE caller_chunk_id = ?`).all(r.id) as { symbol_name: string }[]).map(row => row.symbol_name);
+            calledBy = (db.prepare(`SELECT DISTINCT symbol_name FROM code_call_edges WHERE callee_chunk_id = ?`).all(r.id) as { symbol_name: string }[]).map(row => row.symbol_name);
+        }
+
+        return {
+            id: r.id,
+            chunkType: r.chunk_type,
+            name: r.name,
+            startLine: r.start_line,
+            endLine: r.end_line,
+            content: r.content,
+            language: r.language,
+            callsOut,
+            calledBy,
+        };
+    } finally {
+        db.close();
+    }
+}
+

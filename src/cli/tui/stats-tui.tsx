@@ -15,11 +15,11 @@ import { render, Box, Text, useApp, useInput, useStdout } from 'ink';
 import {
     fetchOverview, fetchLanguageBreakdown, fetchDirectories,
     fetchFilesInDir, fetchFileDetail, fetchChunksForFile, fetchCallTree,
-    searchSymbols,
+    searchSymbols, searchChunks, fetchChunkById,
 } from './stats-data.ts';
 import type {
     StatsOverview, LanguageStat, DirectoryStat,
-    FileStat, FileDetailInfo, ChunkInfo, CallTreeNode,
+    FileStat, FileDetailInfo, ChunkInfo, CallTreeNode, SearchResultItem,
 } from './stats-data.ts';
 
 
@@ -83,12 +83,12 @@ function truncate(str: string, max: number): string {
     return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
-type View = 'dashboard' | 'files' | 'chunks' | 'callgraph';
+type View = 'dashboard' | 'files' | 'chunks' | 'callgraph' | 'search';
 
 
 // ── Dashboard View ────────────────────────────────
 
-function DashboardView({ overview, languages, dirs, width, height, onDrillDir, onCallGraph }: {
+function DashboardView({ overview, languages, dirs, width, height, onDrillDir, onCallGraph, onSearch }: {
     overview: StatsOverview;
     languages: LanguageStat[];
     dirs: DirectoryStat[];
@@ -96,6 +96,7 @@ function DashboardView({ overview, languages, dirs, width, height, onDrillDir, o
     height: number;
     onDrillDir: (dir: string) => void;
     onCallGraph: () => void;
+    onSearch: () => void;
 }): React.ReactNode {
     const [cursor, setCursor] = useState(0);
 
@@ -104,6 +105,7 @@ function DashboardView({ overview, languages, dirs, width, height, onDrillDir, o
         if (key.upArrow) setCursor(c => Math.max(c - 1, 0));
         if (key.return && dirs[cursor]) onDrillDir(dirs[cursor].dir);
         if (input === 'g') onCallGraph();
+        if (input === '/') onSearch();
     });
 
     const leftW = 30;
@@ -307,28 +309,55 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
 }): React.ReactNode {
     const chunks = useMemo(() => fetchChunksForFile(dbPath, filePath), [dbPath, filePath]);
     const [cursor, setCursor] = useState(0);
+    const [contentScroll, setContentScroll] = useState(0);
+    const [focusPanel, setFocusPanel] = useState<'list' | 'content'>('list');
 
     const listH = Math.max(5, height - 6);
     const scrollOff = centerScroll(cursor, chunks.length, listH);
-
-    useInput((_input, key) => {
-        if (key.escape) onBack();
-        if (key.downArrow) setCursor(c => Math.min(c + 1, chunks.length - 1));
-        if (key.upArrow) setCursor(c => Math.max(c - 1, 0));
-    });
 
     const leftW = Math.min(26, Math.floor(width * 0.28));
     const rightW = width - leftW - 3;
     const activeChunk = chunks[cursor] ?? null;
     const visible = chunks.slice(scrollOff, scrollOff + listH);
-    const previewH = Math.max(3, height - 14);
+    const metaH = 5; // header + symbol + calls
+    const previewH = Math.max(3, height - 10 - metaH);
+    const contentLines = useMemo(() => activeChunk?.content.split('\n') ?? [], [activeChunk]);
+    const maxContentScroll = Math.max(0, contentLines.length - previewH);
+
+    // Reset content scroll when switching chunks
+    useEffect(() => { setContentScroll(0); }, [cursor]);
+
+    useInput((input, key) => {
+        if (key.escape) {
+            if (focusPanel === 'content') { setFocusPanel('list'); return; }
+            onBack();
+        }
+        if (key.tab || (input === 'l' && focusPanel === 'list') || (input === 'h' && focusPanel === 'content')) {
+            setFocusPanel(p => p === 'list' ? 'content' : 'list');
+            return;
+        }
+        if (focusPanel === 'list') {
+            if (key.downArrow) setCursor(c => Math.min(c + 1, chunks.length - 1));
+            if (key.upArrow) setCursor(c => Math.max(c - 1, 0));
+            if (key.return) setFocusPanel('content');
+        } else {
+            // Content panel scrolling
+            if (key.downArrow) setContentScroll(s => Math.min(s + 1, maxContentScroll));
+            if (key.upArrow) setContentScroll(s => Math.max(s - 1, 0));
+            if (input === 'd') setContentScroll(s => Math.min(s + 15, maxContentScroll));
+            if (input === 'u') setContentScroll(s => Math.max(s - 15, 0));
+        }
+    });
+
+    const visibleLines = contentLines.slice(contentScroll, contentScroll + previewH);
+    const scrollPct = maxContentScroll > 0 ? Math.round(contentScroll / maxContentScroll * 100) : 100;
 
     return (
         <Box flexDirection="row" width={width} height={height - 4}>
             {/* Left: Chunk list */}
             <Box flexDirection="column" width={leftW} paddingX={1}>
                 <Box marginBottom={1}>
-                    <Text color={C.aurora} bold>Chunks</Text>
+                    <Text color={focusPanel === 'list' ? C.aurora : C.dim} bold>Chunks</Text>
                     <Text color={C.dim}> ({chunks.length})</Text>
                 </Box>
                 {visible.map((ch, vi) => {
@@ -336,11 +365,12 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
                     const isCursor = idx === cursor;
                     const ptr = isCursor ? '▸ ' : '  ';
                     const hasSym = ch.name !== null && ch.name !== '';
+                    const active = focusPanel === 'list' && isCursor;
                     return (
                         <Box key={ch.id} height={1}>
                             <Text wrap="truncate">
-                                <Text color={isCursor ? C.aurora : C.dim}>{ptr}</Text>
-                                <Text color={isCursor ? C.text : C.dim}>
+                                <Text color={active ? C.aurora : isCursor ? C.cyan : C.dim}>{ptr}</Text>
+                                <Text color={active ? C.text : isCursor ? C.cyan : C.dim}>
                                     #{String(idx + 1).padStart(2)} L{ch.startLine}-{ch.endLine}
                                 </Text>
                                 {hasSym && <Text color={C.warning}> ★</Text>}
@@ -349,48 +379,188 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
                     );
                 })}
                 <Box marginTop={1}>
-                    <Text color={C.dim}>★ = has symbol</Text>
+                    <Text color={C.dim}>★ = named symbol</Text>
                 </Box>
             </Box>
 
-            {/* Right: Chunk preview */}
+            {/* Right: Chunk preview (scrollable) */}
             <Box flexDirection="column" width={rightW} paddingX={1}>
                 {activeChunk && (
                     <>
-                        <Box marginBottom={1}>
-                            <Text color={C.aurora} bold>Chunk Preview</Text>
+                        <Box marginBottom={1} justifyContent="space-between">
+                            <Text>
+                                <Text color={focusPanel === 'content' ? C.aurora : C.dim} bold>Preview</Text>
+                                <Text color={C.dim}> #{cursor + 1} L{activeChunk.startLine}-{activeChunk.endLine}</Text>
+                                {activeChunk.name ? <Text color={C.purple}> {activeChunk.name}</Text> : null}
+                            </Text>
+                            {contentLines.length > previewH && (
+                                <Text color={focusPanel === 'content' ? C.cyan : C.dim}>{scrollPct}%</Text>
+                            )}
                         </Box>
-                        <Text color={C.dim}>
-                            chunk #{cursor + 1} — L{activeChunk.startLine}-{activeChunk.endLine}
-                            {activeChunk.name ? ` — "${activeChunk.name}"` : ''}
-                        </Text>
-                        <Box marginTop={1} flexDirection="column">
-                            {activeChunk.content.split('\n').slice(0, previewH).map((line, i) => (
-                                <Box key={i} height={1}>
+                        <Box flexDirection="column">
+                            {visibleLines.map((line, i) => (
+                                <Box key={contentScroll + i} height={1}>
                                     <Text wrap="truncate">
-                                        <Text color={C.dim}>{String(activeChunk.startLine + i).padStart(4)}│</Text>
+                                        <Text color={C.dim}>{String(activeChunk.startLine + contentScroll + i).padStart(4)}│</Text>
                                         <Text color={C.text}>{truncate(line, rightW - 6)}</Text>
                                     </Text>
                                 </Box>
                             ))}
-                            {activeChunk.content.split('\n').length > previewH && (
-                                <Text color={C.dim}>  … {activeChunk.content.split('\n').length - previewH} more lines</Text>
-                            )}
                         </Box>
 
                         <Box marginTop={1} flexDirection="column">
-                            {activeChunk.name && (
-                                <Text color={C.dim}>Symbol: <Text color={C.purple}>{activeChunk.name}</Text></Text>
-                            )}
                             {activeChunk.callsOut.length > 0 && (
-                                <Text color={C.dim}>Calls: <Text color={C.orange}>{activeChunk.callsOut.slice(0, 6).join(', ')}</Text></Text>
+                                <Text color={C.dim}>→ <Text color={C.orange}>{activeChunk.callsOut.slice(0, 8).join(', ')}</Text></Text>
                             )}
                             {activeChunk.calledBy.length > 0 && (
-                                <Text color={C.dim}>Called by: <Text color={C.success}>{activeChunk.calledBy.slice(0, 6).join(', ')}</Text></Text>
+                                <Text color={C.dim}>← <Text color={C.success}>{activeChunk.calledBy.slice(0, 8).join(', ')}</Text></Text>
                             )}
                         </Box>
                     </>
                 )}
+            </Box>
+        </Box>
+    );
+}
+
+
+// ── Search View ───────────────────────────────────
+
+function SearchView({ dbPath, width, height, onBack, onViewChunk }: {
+    dbPath: string;
+    width: number;
+    height: number;
+    onBack: () => void;
+    onViewChunk: (filePath: string) => void;
+}): React.ReactNode {
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<SearchResultItem[]>([]);
+    const [cursor, setCursor] = useState(0);
+    const [preview, setPreview] = useState<ChunkInfo | null>(null);
+
+    // Search when query changes
+    useEffect(() => {
+        if (query.length < 2) { setResults([]); setPreview(null); return; }
+        try {
+            const r = searchChunks(dbPath, query, 30);
+            setResults(r);
+            setCursor(0);
+        } catch { setResults([]); }
+    }, [query, dbPath]);
+
+    // Preview selected result
+    useEffect(() => {
+        if (results[cursor]) {
+            setPreview(fetchChunkById(dbPath, results[cursor].id));
+        } else {
+            setPreview(null);
+        }
+    }, [cursor, results, dbPath]);
+
+    const [previewScroll, setPreviewScroll] = useState(0);
+    useEffect(() => { setPreviewScroll(0); }, [cursor]);
+
+    const listH = Math.max(5, height - 8);
+    const scrollOff = centerScroll(cursor, results.length, listH);
+    const visible = results.slice(scrollOff, scrollOff + listH);
+
+    const leftW = Math.min(45, Math.floor(width * 0.45));
+    const rightW = width - leftW - 3;
+    const previewH = Math.max(3, height - 10);
+    const previewLines = useMemo(() => preview?.content.split('\n') ?? [], [preview]);
+    const maxPreviewScroll = Math.max(0, previewLines.length - previewH);
+
+    useInput((input, key) => {
+        if (key.escape) {
+            if (query.length > 0) { setQuery(''); setResults([]); return; }
+            onBack();
+        }
+        if (key.downArrow) setCursor(c => Math.min(c + 1, results.length - 1));
+        if (key.upArrow) setCursor(c => Math.max(c - 1, 0));
+        if (key.return && results[cursor]) {
+            onViewChunk(results[cursor].filePath);
+            return;
+        }
+        // Page scroll on preview (Ctrl not available, use tab+scroll combo not ideal)
+        // Use { } for preview scroll
+        if (input === '}') { setPreviewScroll(s => Math.min(s + 10, maxPreviewScroll)); return; }
+        if (input === '{') { setPreviewScroll(s => Math.max(s - 10, 0)); return; }
+        if (key.backspace || key.delete) {
+            setQuery(q => q.slice(0, -1));
+            return;
+        }
+        if (input && input.length === 1 && !key.ctrl && !key.meta && !key.downArrow && !key.upArrow) {
+            setQuery(q => q + input);
+        }
+    });
+
+    const visiblePreview = previewLines.slice(previewScroll, previewScroll + previewH);
+
+    return (
+        <Box flexDirection="column" width={width} height={height - 4}>
+            {/* Search bar */}
+            <Box paddingX={1} marginBottom={1}>
+                <Text color={C.aurora} bold>🔍 Search: </Text>
+                <Text color={C.text}>{query}<Text color={C.aurora}>▎</Text></Text>
+                <Text color={C.dim}>  {results.length > 0 ? `${results.length} results` : query.length >= 2 ? 'no matches' : ''}</Text>
+            </Box>
+
+            <Box flexDirection="row" width={width} height={height - 8}>
+                {/* Left: Results list */}
+                <Box flexDirection="column" width={leftW} paddingX={1}>
+                    {visible.map((r, vi) => {
+                        const idx = scrollOff + vi;
+                        const isCursor = idx === cursor;
+                        const ptr = isCursor ? '▸ ' : '  ';
+                        const shortPath = r.filePath.length > leftW - 15
+                            ? '…' + r.filePath.slice(-(leftW - 16))
+                            : r.filePath;
+                        return (
+                            <Box key={`${r.id}-${vi}`} height={2} flexDirection="column">
+                                <Text wrap="truncate">
+                                    <Text color={isCursor ? C.aurora : C.dim}>{ptr}</Text>
+                                    <Text color={langColor(r.language)} bold>{langBadge(r.language)}</Text>
+                                    <Text> </Text>
+                                    <Text color={isCursor ? C.text : C.dim} bold={isCursor}>
+                                        {r.name ?? r.chunkType}
+                                    </Text>
+                                    <Text color={C.dim}> L{r.startLine}</Text>
+                                </Text>
+                                <Text wrap="truncate" color={C.dim}>
+                                    {'    '}{shortPath}
+                                </Text>
+                            </Box>
+                        );
+                    })}
+                </Box>
+
+                {/* Right: Preview */}
+                <Box flexDirection="column" width={rightW} paddingX={1}>
+                    {preview && (
+                        <>
+                            <Box marginBottom={1} justifyContent="space-between">
+                                <Text>
+                                    <Text color={C.aurora} bold>Preview</Text>
+                                    <Text color={C.dim}> L{preview.startLine}-{preview.endLine}</Text>
+                                    {preview.name && <Text color={C.purple}> {preview.name}</Text>}
+                                </Text>
+                                {previewLines.length > previewH && (
+                                    <Text color={C.dim}>{Math.round(previewScroll / maxPreviewScroll * 100)}%</Text>
+                                )}
+                            </Box>
+                            <Box flexDirection="column">
+                                {visiblePreview.map((line, i) => (
+                                    <Box key={previewScroll + i} height={1}>
+                                        <Text wrap="truncate">
+                                            <Text color={C.dim}>{String(preview.startLine + previewScroll + i).padStart(4)}│</Text>
+                                            <Text color={C.text}>{truncate(line, rightW - 6)}</Text>
+                                        </Text>
+                                    </Box>
+                                ))}
+                            </Box>
+                        </>
+                    )}
+                </Box>
             </Box>
         </Box>
     );
@@ -525,10 +695,11 @@ function Header({ repoPath, dbSizeMB, view, breadcrumb, width }: {
 
 function Footer({ view, width }: { view: View; width: number }): React.ReactNode {
     const hints: Record<View, string> = {
-        dashboard: '↑↓ navigate   Enter drill in   g call graph   q quit',
+        dashboard: '↑↓ navigate   Enter drill in   / search   g call graph   q quit',
         files:     '↑↓ navigate   Enter view chunks   s sort   Esc back   q quit',
-        chunks:    '↑↓ navigate   Esc back   q quit',
+        chunks:    'Tab focus   ↑↓ scroll   h/l switch   u/d page   Enter preview   Esc back   q quit',
         callgraph: 'type to search   ↑↓ navigate   Enter expand   Esc back   q quit',
+        search:    'type to search   ↑↓ navigate   {/} scroll preview   Enter go to file   Esc back   q quit',
     };
 
     return (
@@ -605,7 +776,7 @@ function StatsApp({ dbPath, repoPath, configPath }: {
         } else if (view === 'files') {
             setBreadcrumb([]);
             setView('dashboard');
-        } else if (view === 'callgraph') {
+        } else if (view === 'callgraph' || view === 'search') {
             setBreadcrumb([]);
             setView('dashboard');
         }
@@ -616,6 +787,20 @@ function StatsApp({ dbPath, repoPath, configPath }: {
         setView('callgraph');
     };
 
+    const goSearch = () => {
+        setBreadcrumb(['Search']);
+        setView('search');
+    };
+
+    const searchDrillFile = (filePath: string) => {
+        setCurrentFile(filePath);
+        const dir = filePath.split('/')[0] || '';
+        const fileName = filePath.split('/').pop() || filePath;
+        setCurrentDir(dir);
+        setBreadcrumb(['Search', fileName]);
+        setView('chunks');
+    };
+
     return (
         <Box flexDirection="column" width={width} height={height}>
             <Header repoPath={overview.repoPath} dbSizeMB={overview.dbSizeMB} view={view} breadcrumb={breadcrumb} width={width} />
@@ -624,7 +809,7 @@ function StatsApp({ dbPath, repoPath, configPath }: {
                 <DashboardView
                     overview={overview} languages={languages} dirs={dirs}
                     width={width} height={height}
-                    onDrillDir={drillDir} onCallGraph={goCallGraph}
+                    onDrillDir={drillDir} onCallGraph={goCallGraph} onSearch={goSearch}
                 />
             )}
             {view === 'files' && (
@@ -646,6 +831,14 @@ function StatsApp({ dbPath, repoPath, configPath }: {
                     dbPath={dbPath}
                     width={width} height={height}
                     onBack={goBack}
+                />
+            )}
+            {view === 'search' && (
+                <SearchView
+                    dbPath={dbPath}
+                    width={width} height={height}
+                    onBack={goBack}
+                    onViewChunk={searchDrillFile}
                 />
             )}
 
