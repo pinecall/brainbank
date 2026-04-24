@@ -13,7 +13,7 @@
  * Any --<name> <number> flag is treated as a source filter.
  */
 
-import { c, args, stripFlags, printResults } from '@/cli/utils.ts';
+import { c, args, getFlag, stripFlags, printResults } from '@/cli/utils.ts';
 import { createBrain } from '@/cli/factory/index.ts';
 
 /**
@@ -60,17 +60,23 @@ function parseSourceFlags(): { sources: Record<string, number>; query: string } 
     return { sources, query };
 }
 
-/** Print active source filters. */
-function printFilterInfo(sources: Record<string, number>): void {
+/** Print active source and path filters. */
+function printFilterInfo(sources: Record<string, number>, pathPrefix?: string): void {
+    const parts: string[] = [];
     const entries = Object.entries(sources);
-    if (entries.length === 0) return;
-    const parts = entries.map(([k, v]) => `${k}=${v}`);
-    console.log(c.dim(`  Sources: ${parts.join(', ')}`));
+    if (entries.length > 0) parts.push(...entries.map(([k, v]) => `${k}=${v}`));
+    if (pathPrefix) parts.push(`path=${pathPrefix}`);
+    if (parts.length > 0) console.log(c.dim(`  Filters: ${parts.join(', ')}`));
 }
 
-/** Build search options from sources map. */
-function buildSearchOptions(sources: Record<string, number>): { sources: Record<string, number>; source: 'cli' } {
-    return Object.keys(sources).length > 0 ? { sources, source: 'cli' } : { sources: {}, source: 'cli' };
+/** Build search options from sources map + optional path prefix. */
+function buildSearchOptions(sources: Record<string, number>, pathPrefix?: string): { sources: Record<string, number>; source: 'cli'; pathPrefix?: string } {
+    const opts: { sources: Record<string, number>; source: 'cli'; pathPrefix?: string } = {
+        sources: Object.keys(sources).length > 0 ? sources : {},
+        source: 'cli',
+    };
+    if (pathPrefix) opts.pathPrefix = pathPrefix;
+    return opts;
 }
 
 export async function cmdSearch(): Promise<void> {
@@ -80,11 +86,12 @@ export async function cmdSearch(): Promise<void> {
         process.exit(1);
     }
 
+    const pathPrefix = getFlag('path');
     const brain = await createBrain();
     console.log(c.bold(`\n━━━ BrainBank Search: "${query}" ━━━\n`));
-    printFilterInfo(sources);
+    printFilterInfo(sources, pathPrefix);
 
-    const opts = buildSearchOptions(sources);
+    const opts = buildSearchOptions(sources, pathPrefix);
     const results = await brain.search(query, opts);
     printResults(results);
     brain.close();
@@ -97,13 +104,14 @@ export async function cmdHybridSearch(): Promise<void> {
         process.exit(1);
     }
 
+    const pathPrefix = getFlag('path');
     const brain = await createBrain();
     console.log(c.bold(`\n━━━ BrainBank Hybrid Search: "${query}" ━━━`));
     console.log(c.dim(`  Mode: vector + BM25 → Reciprocal Rank Fusion`));
-    printFilterInfo(sources);
+    printFilterInfo(sources, pathPrefix);
     console.log('');
 
-    const opts = buildSearchOptions(sources);
+    const opts = buildSearchOptions(sources, pathPrefix);
     const results = await brain.hybridSearch(query, opts);
     printResults(results);
     brain.close();
@@ -116,14 +124,15 @@ export async function cmdKeywordSearch(): Promise<void> {
         process.exit(1);
     }
 
+    const pathPrefix = getFlag('path');
     const brain = await createBrain();
     await brain.initialize();
     console.log(c.bold(`\n━━━ BrainBank Keyword Search: "${query}" ━━━`));
     console.log(c.dim(`  Mode: BM25 full-text (instant)`));
-    printFilterInfo(sources);
+    printFilterInfo(sources, pathPrefix);
     console.log('');
 
-    const opts = buildSearchOptions(sources);
+    const opts = buildSearchOptions(sources, pathPrefix);
     const results = await brain.searchBM25(query, opts);
     printResults(results, 0.40);
     brain.close();

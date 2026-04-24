@@ -17,6 +17,7 @@ import type { ResolvedConfig, EmbeddingProvider, SearchResult, ContextOptions } 
 
 import { isVectorSearchPlugin, isSearchable, isCoEditPlugin, isContextFormatterPlugin } from '@/plugin.ts';
 import { reciprocalRankFusion } from '@/lib/rrf.ts';
+import { filterByPath } from '@/search/bm25-boost.ts';
 import { ContextBuilder } from '@/search/context-builder.ts';
 import { CompositeBM25Search } from '@/search/keyword/composite-bm25-search.ts';
 import { CompositeVectorSearch } from '@/search/vector/composite-vector-search.ts';
@@ -104,6 +105,7 @@ export class SearchAPI {
         else if (lists.length === 1) results = lists[0];
         else results = reciprocalRankFusion(lists);
 
+        results = filterByPath(results, options?.pathPrefix);
         this._logSearch('search', query, options, results, Date.now() - t0);
         return results;
     }
@@ -131,6 +133,7 @@ export class SearchAPI {
             results = reciprocalRankFusion(lists);
         }
 
+        results = filterByPath(results, options?.pathPrefix);
         this._logSearch('hybridSearch', query, options, results, Date.now() - t0);
         return results;
     }
@@ -138,7 +141,8 @@ export class SearchAPI {
     /** BM25 keyword search only. */
     async searchBM25(query: string, options?: SearchOptions): Promise<SearchResult[]> {
         const t0 = Date.now();
-        const results = await this._d.bm25?.search(query, options) ?? [];
+        let results = await this._d.bm25?.search(query, options) ?? [];
+        results = filterByPath(results, options?.pathPrefix);
         this._logSearch('searchBM25', query, options, results, Date.now() - t0);
         return results;
     }
