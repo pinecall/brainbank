@@ -224,15 +224,15 @@ The reembed engine collects tables from two sources:
 1. **Plugins** implementing `ReembeddablePlugin` (code, git, docs provide `reembedConfig()`)
 2. **Core tables** always included: `kv_data`→`kv_vectors`
 
-Tables are deduplicated by `vectorTable` name (important for multi-repo where `code:frontend` and `code:backend` share the same `code_vectors` table).
+Tables are deduplicated by `vectorTable` name.
 
 > BrainBank tracks provider metadata in the `embedding_meta` table. It auto-detects dimension mismatches and refuses to initialize — use `initialize({ force: true })` then `reembed()` to migrate.
 
 ---
 
-## Multi-Project Isolation
+## Project Isolation
 
-Each project has its own `.brainbank/` database. In multi-repo setups (same DB, different `code:frontend` / `code:backend` plugins), file paths are relative to each repo root — no collisions. Same-type plugins share a single HNSW index (e.g. all `code:*` share `hnsw-code.index`).
+Each project has its own `.brainbank/` database. File paths are relative to the repo root.
 
 > **Current schema version: v9.** Domain tables (`code_chunks`, `git_commits`, `doc_chunks`, etc.) are now created by their respective plugins via the per-plugin migration system (`runPluginMigrations()`). The core schema contains only framework tables (`schema_version`, `plugin_versions`, `kv_data`, `kv_vectors`, `embedding_meta`, `index_state`, `plugin_tracking`). Plugin schema versions are tracked in the `plugin_versions` table.
 
@@ -242,4 +242,3 @@ Each project has its own `.brainbank/` database. In multi-repo setups (same DB, 
 
 - [Getting Started](getting-started.md) — first indexing walkthrough
 - [Embeddings](embeddings.md) — provider details and re-embedding
-- [Multi-Repo](multi-repo.md) — indexing multiple repositories

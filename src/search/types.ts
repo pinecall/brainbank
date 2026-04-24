@@ -31,7 +31,7 @@ export interface SearchOptions {
     mmrLambda?: number;
     /** Caller origin for debug logging. */
     source?: 'cli' | 'mcp' | 'daemon' | 'api';
-    /** Filter results to files under this path prefix. */
-    pathPrefix?: string;
+    /** Filter results to files under these path prefixes. */
+    pathPrefix?: string | string[];
 }
 

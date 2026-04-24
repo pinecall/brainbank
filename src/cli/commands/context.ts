@@ -8,7 +8,7 @@
  *   --git 5      Max git results
  *   --no-git     Skip git results
  *   --no-code    Skip code results
- *   --path <dir> Filter results to files under this path prefix
+ *   --path <dir>  Filter results to files under path prefix(es) (comma-separated for multiple)
  *   --ignore <paths> Exclude paths (comma-separated or repeated: --ignore a,b --ignore c)
  */
 
@@ -96,7 +96,12 @@ export async function cmdContext(): Promise<void> {
     }
 
     const sources = parseContextFlags();
-    const pathPrefix = getFlag('path');
+    const rawPath = getFlag('path');
+    const pathPrefix = rawPath
+        ? rawPath.split(',').map(p => p.trim()).filter(Boolean)
+        : undefined;
+    // Normalize single-element array to string
+    const normalizedPath = pathPrefix && pathPrefix.length === 1 ? pathPrefix[0] : pathPrefix;
     const ignorePaths = getFlagAll('ignore');
     const repo = getFlag('repo');
 
@@ -108,7 +113,7 @@ export async function cmdContext(): Promise<void> {
         task,
         repo: repo ?? process.cwd(),
         sources: Object.keys(sources).length > 0 ? sources : undefined,
-        pathPrefix,
+        pathPrefix: normalizedPath,
     });
 
     if (serverResult !== null) {
@@ -120,7 +125,7 @@ export async function cmdContext(): Promise<void> {
     const brain = await createBrain();
     const context = await brain.getContext(task, {
         sources: Object.keys(sources).length > 0 ? sources : undefined,
-        pathPrefix,
+        pathPrefix: normalizedPath,
         ignorePaths: ignorePaths.length > 0 ? ignorePaths : undefined,
         source: 'cli',
         fields: Object.keys(fields).length > 0 ? fields : undefined,

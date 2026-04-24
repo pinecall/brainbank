@@ -4,7 +4,7 @@
  * Generic orchestrator for domain-specific vector searches.
  * Embeds the query once, delegates to registered DomainVectorSearch strategies.
  * Uses round-robin interleaving when multiple strategies exist to ensure
- * balanced representation across repos/domains.
+ * balanced representation across domains.
  * Plugin-agnostic — strategies are discovered at wiring time.
  */
 
@@ -36,32 +36,17 @@ export class CompositeVectorSearch implements SearchStrategy {
         let requestedK = 0;
 
         for (const [name, strategy] of this._c.strategies) {
-            const baseName = name.split(':')[0];
-            const k = src[name] ?? src[baseName] ?? this._c.defaults?.[name] ?? CompositeVectorSearch.DEFAULT_K;
+            const k = src[name] ?? this._c.defaults?.[name] ?? CompositeVectorSearch.DEFAULT_K;
             if (k <= 0) continue;
             requestedK = Math.max(requestedK, k);
             const hits = strategy.search(queryVec, k, minScore, useMMR, mmrLambda, query);
-
-            // Multi-repo: prefix filePaths with sub-repo name so path filtering works
-            // e.g. strategy 'code:servicehub-backend' → filePath 'servicehub-backend/src/app.ts'
-            const colonIdx = name.indexOf(':');
-            if (colonIdx > 0) {
-                const subRepo = name.slice(colonIdx + 1);
-                for (const hit of hits) {
-                    if (hit.filePath) hit.filePath = `${subRepo}/${hit.filePath}`;
-                    const meta = hit.metadata as Record<string, unknown>;
-                    if (typeof meta.filePath === 'string') {
-                        meta.filePath = `${subRepo}/${meta.filePath}`;
-                    }
-                }
-            }
 
             allResults.push(...hits);
         }
 
         if (allResults.length === 0) return [];
 
-        // Sort by raw rrfScore (comparable across repos), cap to requested K
+        // Sort by raw rrfScore, cap to requested K
         allResults.sort((a, b) => b.score - a.score);
         const capped = allResults.slice(0, requestedK);
 

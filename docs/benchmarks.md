@@ -139,7 +139,7 @@ Planned benchmarks not yet implemented:
 - [ ] **Code + graph evaluation** — measure retrieval improvement from import graph expansion and symbol cross-references
 - [ ] BEIR full suite (MS MARCO, Natural Questions, HotpotQA)
 - [ ] Large-scale stress test (50k+ files)
-- [ ] Multi-repo indexing performance
+
 - [ ] Memory usage profiling (RAM vs chunk count)
 - [ ] Collection search latency at scale (10k+ items)
 - [ ] Incremental re-index speed (% of changed files)

@@ -35,30 +35,27 @@ export interface ScanResult {
     modules: ScanModule[];
     config: { exists: boolean; ignore?: string[]; include?: string[]; plugins?: string[] };
     db: { exists: boolean; sizeMB: number; lastModified?: Date } | null;
-    gitSubdirs: { name: string }[];
 }
 
 
 /** Scan a repo path and return what's available to index. */
 export function scanRepo(repoPath: string): ScanResult {
     const resolved = path.resolve(repoPath);
-    const gitSubdirs = scanGitSubdirs(resolved);
     const config = scanConfig(resolved);
 
     return {
         repoPath: resolved,
-        modules: scanModules(resolved, gitSubdirs, config),
+        modules: scanModules(resolved, config),
         config,
         db: scanDb(resolved),
-        gitSubdirs,
     };
 }
 
 /** Produce ScanModule descriptors for known plugin types. */
-function scanModules(repoPath: string, gitSubdirs: { name: string }[], config: ScanResult['config']): ScanModule[] {
+function scanModules(repoPath: string, config: ScanResult['config']): ScanModule[] {
     return [
         scanCodeModule(repoPath, config.include, config.ignore),
-        scanGitModule(repoPath, gitSubdirs),
+        scanGitModule(repoPath),
         scanDocsModule(repoPath),
     ];
 }
@@ -149,8 +146,8 @@ function scanCodeModule(repoPath: string, include?: string[], ignore?: string[])
 }
 
 /** Scan for git history. */
-function scanGitModule(repoPath: string, gitSubdirs: { name: string }[]): ScanModule {
-    const stats = scanGitStats(repoPath, gitSubdirs);
+function scanGitModule(repoPath: string): ScanModule {
+    const stats = scanGitStats(repoPath);
 
     if (!stats) {
         return { name: 'git', available: false, summary: 'no .git directory found', icon: '📜', checked: false, disabled: 'not a git repo' };
@@ -197,32 +194,10 @@ function scanDocsModule(repoPath: string): ScanModule {
 }
 
 
-/** Get git stats. Supports single repo and multi-repo aggregation. */
-function scanGitStats(repoPath: string, gitSubdirs: { name: string }[]): { commitCount: number; lastMessage: string; lastDate: string } | null {
-    if (fs.existsSync(path.join(repoPath, '.git'))) {
-        return gitStats(repoPath);
-    }
-
-    if (gitSubdirs.length === 0) return null;
-
-    let totalCommits = 0;
-    let latestMessage = '';
-    let latestDate = '';
-
-    for (const sub of gitSubdirs) {
-        const stats = gitStats(path.join(repoPath, sub.name));
-        if (stats) {
-            totalCommits += stats.commitCount;
-            if (!latestMessage) {
-                latestMessage = stats.lastMessage;
-                latestDate = stats.lastDate;
-            }
-        }
-    }
-
-    return totalCommits > 0
-        ? { commitCount: totalCommits, lastMessage: latestMessage, lastDate: latestDate }
-        : null;
+/** Get git stats for this repo. */
+function scanGitStats(repoPath: string): { commitCount: number; lastMessage: string; lastDate: string } | null {
+    if (!fs.existsSync(path.join(repoPath, '.git'))) return null;
+    return gitStats(repoPath);
 }
 
 /** Get git stats for a single directory. */
@@ -359,44 +334,3 @@ function scanDb(repoPath: string): ScanResult['db'] {
     }
 }
 
-/** Detect subdirectories with their own .git (mono-repo). Respects `repos` whitelist from config. */
-function scanGitSubdirs(repoPath: string): ScanResult['gitSubdirs'] {
-    if (fs.existsSync(path.join(repoPath, '.git'))) return [];
-
-    try {
-        let subdirs = fs.readdirSync(repoPath, { withFileTypes: true })
-            .filter(e => {
-                if (e.name.startsWith('.')) return false;
-                const isDir = e.isDirectory() || (e.isSymbolicLink() && (() => { try { return fs.statSync(path.join(repoPath, e.name)).isDirectory(); } catch { return false; } })());
-                return isDir;
-            })
-            .filter(e => fs.existsSync(path.join(repoPath, e.name, '.git')))
-            .map(e => ({ name: e.name }));
-
-        // Apply repos whitelist from config if present
-        const configRepos = readReposFromConfig(repoPath);
-        if (configRepos) {
-            subdirs = subdirs.filter(s => configRepos.includes(s.name));
-        }
-
-        return subdirs;
-    } catch {
-        return [];
-    }
-}
-
-/** Read the `repos` whitelist from .brainbank/config.json. Returns null if not set. */
-function readReposFromConfig(repoPath: string): string[] | null {
-    const configPath = path.join(repoPath, '.brainbank', 'config.json');
-    try {
-        if (!fs.existsSync(configPath)) return null;
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-        const repos = config.repos;
-        if (Array.isArray(repos) && repos.every(r => typeof r === 'string')) {
-            return repos as string[];
-        }
-        return null;
-    } catch {
-        return null;
-    }
-}

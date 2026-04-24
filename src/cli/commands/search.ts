@@ -60,18 +60,29 @@ function parseSourceFlags(): { sources: Record<string, number>; query: string } 
     return { sources, query };
 }
 
+/** Parse --path as comma-separated list of path prefixes. */
+function parsePaths(): string | string[] | undefined {
+    const raw = getFlag('path');
+    if (!raw) return undefined;
+    const paths = raw.split(',').map(p => p.trim()).filter(Boolean);
+    return paths.length === 1 ? paths[0] : paths;
+}
+
 /** Print active source and path filters. */
-function printFilterInfo(sources: Record<string, number>, pathPrefix?: string): void {
+function printFilterInfo(sources: Record<string, number>, pathPrefix?: string | string[]): void {
     const parts: string[] = [];
     const entries = Object.entries(sources);
     if (entries.length > 0) parts.push(...entries.map(([k, v]) => `${k}=${v}`));
-    if (pathPrefix) parts.push(`path=${pathPrefix}`);
+    if (pathPrefix) {
+        const paths = Array.isArray(pathPrefix) ? pathPrefix : [pathPrefix];
+        parts.push(`path=${paths.join(',')}`);
+    }
     if (parts.length > 0) console.log(c.dim(`  Filters: ${parts.join(', ')}`));
 }
 
-/** Build search options from sources map + optional path prefix. */
-function buildSearchOptions(sources: Record<string, number>, pathPrefix?: string): { sources: Record<string, number>; source: 'cli'; pathPrefix?: string } {
-    const opts: { sources: Record<string, number>; source: 'cli'; pathPrefix?: string } = {
+/** Build search options from sources map + optional path prefix(es). */
+function buildSearchOptions(sources: Record<string, number>, pathPrefix?: string | string[]): { sources: Record<string, number>; source: 'cli'; pathPrefix?: string | string[] } {
+    const opts: { sources: Record<string, number>; source: 'cli'; pathPrefix?: string | string[] } = {
         sources: Object.keys(sources).length > 0 ? sources : {},
         source: 'cli',
     };
@@ -86,7 +97,7 @@ export async function cmdSearch(): Promise<void> {
         process.exit(1);
     }
 
-    const pathPrefix = getFlag('path');
+    const pathPrefix = parsePaths();
     const brain = await createBrain();
     console.log(c.bold(`\n━━━ BrainBank Search: "${query}" ━━━\n`));
     printFilterInfo(sources, pathPrefix);
@@ -104,7 +115,7 @@ export async function cmdHybridSearch(): Promise<void> {
         process.exit(1);
     }
 
-    const pathPrefix = getFlag('path');
+    const pathPrefix = parsePaths();
     const brain = await createBrain();
     console.log(c.bold(`\n━━━ BrainBank Hybrid Search: "${query}" ━━━`));
     console.log(c.dim(`  Mode: vector + BM25 → Reciprocal Rank Fusion`));
@@ -124,7 +135,7 @@ export async function cmdKeywordSearch(): Promise<void> {
         process.exit(1);
     }
 
-    const pathPrefix = getFlag('path');
+    const pathPrefix = parsePaths();
     const brain = await createBrain();
     await brain.initialize();
     console.log(c.bold(`\n━━━ BrainBank Keyword Search: "${query}" ━━━`));

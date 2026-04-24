@@ -7,11 +7,6 @@
  *   import { git } from '@brainbank/git';
  *   
  *   const brain = new BrainBank().use(git({ depth: 500 }));
- *   
- *   // Multi-repo: namespace to avoid key collisions
- *   brain
- *     .use(git({ repoPath: './frontend', name: 'git:frontend' }))
- *     .use(git({ repoPath: './backend',  name: 'git:backend' }));
  */
 
 import type { Plugin, PluginContext, EmbeddingProvider, IndexResult, ProgressCallback, CoEditSuggestion, ReembedTable, SearchResult } from 'brainbank';
@@ -39,8 +34,6 @@ export interface GitPluginOptions {
     depth?: number;
     /** Max diff bytes. Default: from config */
     maxDiffBytes?: number;
-    /** Custom indexer name for multi-repo (e.g. 'git:frontend'). Default: 'git' */
-    name?: string;
     /** Per-plugin embedding provider. Default: global embedding from BrainBank config. */
     embeddingProvider?: EmbeddingProvider;
 }
@@ -54,7 +47,7 @@ class GitPlugin implements Plugin {
     vecCache = new Map<number, Float32Array>();
 
     constructor(private opts: GitPluginOptions = {}) {
-        this.name = opts.name ?? 'git';
+        this.name = 'git';
     }
 
     async initialize(ctx: PluginContext): Promise<void> {
@@ -62,7 +55,7 @@ class GitPlugin implements Plugin {
         runPluginMigrations(ctx.db, this.name, GIT_SCHEMA_VERSION, GIT_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
-        // Use shared HNSW so all git indexers share one index
+        // HNSW index for git vector search
         const shared = await ctx.getOrCreateSharedHnsw('git', 500_000, embedding.dims);
         this.hnsw = shared.hnsw;
         this.vecCache = shared.vecCache;

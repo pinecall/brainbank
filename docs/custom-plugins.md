@@ -120,7 +120,7 @@ async index(): Promise<IndexResult> {
 | Use case | Method | Example |
 |----------|--------|---------|
 | Plugin-local search (not in main pipeline) | `ctx.createHnsw(max, dims, name)` | DocsPlugin, PatternsPlugin |
-| Shared across multi-repo plugins | `ctx.getOrCreateSharedHnsw(type)` | CodePlugin (`'code'`), GitPlugin (`'git'`) |
+| Shared HNSW index | `ctx.getOrCreateSharedHnsw(type)` | CodePlugin (`'code'`), GitPlugin (`'git'`) |
 | KV collections | N/A — owned by KVService | All `brain.collection()` calls |
 
 ---
@@ -432,7 +432,7 @@ npm run build       # → dist/index.js + dist/index.d.ts
 npm publish --access public
 ```
 
-### Usage
+### Usage (Library Mode)
 
 ```typescript
 import { BrainBank } from 'brainbank';
@@ -442,6 +442,92 @@ const brain = new BrainBank({ repoPath: '.' }).use(csv({ dir: './data' }));
 await brain.initialize();
 await brain.index();
 ```
+
+### Usage (CLI Mode)
+
+Third-party npm packages are auto-discovered via `config.json` — no code changes needed:
+
+```jsonc
+// .brainbank/config.json
+{
+  "plugins": ["code", "git", "brainbank-csv"],
+  "brainbank-csv": {
+    "dir": "./data"
+  }
+}
+```
+
+```bash
+npm i -g brainbank-csv     # install the plugin
+brainbank index            # auto-loads brainbank-csv alongside built-ins
+```
+
+The CLI tries to `import(name)` for any plugin name not in the built-in registry. If the package isn't installed, it prints a warning and skips.
+
+---
+
+## TUI Integration (Optional)
+
+Plugins can optionally export `scan()` and `preview()` functions for TUI integration. These are **standalone functions** (not methods on the Plugin class) and are called **before initialization** — they receive only `repoPath`, not `PluginContext`.
+
+### `scan(repoPath)` — TUI Sidebar
+
+Export a `scan` function to appear in the TUI module selector with a custom icon, summary, and availability status:
+
+```typescript
+import type { PluginScanInfo } from 'brainbank';
+
+export function scan(repoPath: string): PluginScanInfo {
+    const files = fs.readdirSync(repoPath).filter(f => f.endsWith('.csv'));
+    return {
+        name: 'csv',
+        available: files.length > 0,
+        summary: `${files.length} CSV files`,
+        icon: '📊',
+        checked: true,
+        details: files.slice(0, 5).map((f, i, arr) => {
+            const prefix = i === arr.length - 1 ? '└──' : '├──';
+            return `${prefix} ${f}`;
+        }),
+    };
+}
+```
+
+Without `scan()`, the plugin appears as "🔌 brainbank-csv plugin" (generic fallback).
+
+### `preview(repoPath)` — TUI Explorer Panel
+
+Export a `preview` function to show domain-specific content in the TUI right panel when the user focuses your module:
+
+```typescript
+import type { PluginPreviewLine } from 'brainbank';
+
+export function preview(repoPath: string): PluginPreviewLine[] {
+    const files = fs.readdirSync(repoPath).filter(f => f.endsWith('.csv'));
+    return [
+        { text: `📊 ${files.length} CSV files`, bold: true },
+        { text: '' },
+        ...files.map(f => {
+            const stat = fs.statSync(path.join(repoPath, f));
+            const size = (stat.size / 1024).toFixed(0);
+            return { text: `  ${f.padEnd(30)} ${size} KB`, color: '#9ECE6A' };
+        }),
+    ];
+}
+```
+
+Without `preview()`, the TUI shows "No preview available" when the module is focused.
+
+### Contract Summary
+
+| Export | Required | When Called | Purpose |
+|--------|:--------:|------------|---------|
+| `factory(opts)` → `Plugin` | ✅ | `createBrain()` | The plugin itself |
+| `scan(repoPath)` → `PluginScanInfo` | ❌ | Before TUI | Sidebar: icon, summary, availability |
+| `preview(repoPath)` → `PluginPreviewLine[]` | ❌ | Before TUI | Explorer panel: preview of indexable content |
+
+> [!TIP]
+> These exports also work for folder plugins in `.brainbank/plugins/`. Export `scan` and `preview` as named exports alongside your default Plugin.
 
 ---
 

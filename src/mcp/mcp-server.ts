@@ -69,7 +69,7 @@ server.registerTool(
             gitResults: z.number().optional().default(5).describe('Max git commit results'),
             docsResults: z.number().optional().describe('Max document results (omit to skip docs)'),
             sources: z.record(z.number()).optional().describe('Per-source result limits, overrides codeResults/gitResults/docsResults (e.g. { code: 10, git: 0, docs: 5 })'),
-            path: z.string().optional().describe('Filter results to files under this path prefix (e.g. src/services/)'),
+            path: z.union([z.string(), z.array(z.string())]).optional().describe('Filter results to files under these path prefixes. Pass a single string or array (e.g. ["src/services/", "lib/"])'),
             ignore: z.array(z.string()).optional().describe('Exclude results whose filePath starts with any of these prefixes (e.g. ["src/tests/", "src/mocks/"])'),
             repo: z.string().describe('Repository path (default: BRAINBANK_REPO)'),
             // BrainBankQL context fields

@@ -54,7 +54,7 @@ export async function createWorkspaceBrain(repoPath: string): Promise<BrainBank>
     };
 
     // Silence stdout during initialization — the core factory emits ANSI-colored
-    // console.log messages (plugin loading, multi-repo detection) that corrupt
+    // console.log messages (plugin loading) that corrupt
     // the MCP JSON-RPC stdio transport. Redirect console.log → stderr temporarily.
     const origLog = console.log;
     console.log = (...args: unknown[]) => console.error(...args);

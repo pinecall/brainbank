@@ -152,8 +152,7 @@ export class Watcher {
 
     /**
      * Single shared recursive fs.watch that fans out events to multiple plugins.
-     * Each event is routed based on: sub-repo prefix (code:backend → servicehub-backend/),
-     * file extension (docs → .md only), and code support (code → isSupported).
+     * Each event is routed based on file extension (docs → .md only, code → isSupported).
      */
     private _startSharedFsWatch(plugins: Plugin[], repoPath: string): WatchHandle | null {
         const watchers: fs.FSWatcher[] = [];
@@ -165,11 +164,7 @@ export class Watcher {
 
         // Pre-compute routing info per plugin
         const routes = plugins.map(plugin => {
-            const baseName = plugin.name.split(':')[0];
-            const subRepo = plugin.name.includes(':')
-                ? plugin.name.split(':').slice(1).join(':')
-                : null;
-            return { plugin, baseName, subRepo };
+            return { plugin, baseName: plugin.name };
         });
 
         const watchDir = (dir: string): void => {
@@ -196,10 +191,7 @@ export class Watcher {
                     };
 
                     // Fan out to matching plugins
-                    for (const { plugin, baseName, subRepo } of routes) {
-                        // Sub-repo routing: skip files outside this plugin's scope
-                        if (subRepo && !relPath.startsWith(subRepo + '/')) continue;
-
+                    for (const { plugin, baseName } of routes) {
                         // Extension-based routing
                         if (baseName === 'docs') {
                             // Docs plugin only cares about doc files

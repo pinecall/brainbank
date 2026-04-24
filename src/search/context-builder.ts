@@ -126,7 +126,7 @@ export class ContextBuilder {
         return parts.join('\n');
     }
 
-    /** Invoke ContextFormatterPlugins. Multi-repo: each plugin formats its own results. */
+    /** Invoke ContextFormatterPlugins. */
     private _appendFormatterResults(
         results: SearchResult[],
         parts: string[],
@@ -138,25 +138,9 @@ export class ContextBuilder {
 
         for (const mod of this._registry.all) {
             if (!isContextFormatterPlugin(mod)) continue;
-            const baseType = mod.name.split(':')[0];
 
-            // Multi-repo plugin (e.g. 'code:servicehub-frontend'):
-            // scope results to this repo and let each plugin format its own
-            const colonIdx = mod.name.indexOf(':');
-            if (colonIdx > 0) {
-                const repoPrefix = mod.name.slice(colonIdx + 1);
-                const scoped = results.filter(r =>
-                    r.filePath?.startsWith(repoPrefix + '/'),
-                );
-                if (scoped.length > 0) {
-                    mod.formatContext(scoped, parts, fields);
-                }
-                continue;
-            }
-
-            // Single-repo plugin: dedup by base type (old behavior)
-            if (seenFormatters.has(baseType)) continue;
-            seenFormatters.add(baseType);
+            if (seenFormatters.has(mod.name)) continue;
+            seenFormatters.add(mod.name);
             mod.formatContext(results, parts, fields);
         }
     }
@@ -187,17 +171,9 @@ export class ContextBuilder {
     private async _expand(task: string, results: SearchResult[]): Promise<{ results: SearchResult[]; note?: string }> {
         if (!this._expander) return { results: [] };
 
-        // Detect multi-repo prefix from results (e.g. 'servicehub-frontend')
-        // Results have prefixed filePaths like 'servicehub-frontend/src/...'
-        // but DB chunks have unprefixed paths like 'src/...'
-        const repoPrefix = this._detectRepoPrefix(results);
-
-        // Collect unique file paths already in results (strip repo prefix for DB match)
+        // Collect unique file paths already in results
         const excludeFilePaths = [...new Set(
-            results.filter(r => r.filePath).map(r => {
-                const fp = r.filePath as string;
-                return repoPrefix && fp.startsWith(repoPrefix + '/') ? fp.slice(repoPrefix.length + 1) : fp;
-            }),
+            results.filter(r => r.filePath).map(r => r.filePath as string),
         )];
 
         // Collect current chunk IDs (to exclude from manifest)
@@ -208,36 +184,15 @@ export class ContextBuilder {
             if (id !== undefined) excludeIds.push(id);
         }
 
-        // Build manifest + resolve from the MATCHING ExpandablePlugin only
-        // In multi-repo, expand only from the plugin whose name matches the result set's repo
+        // Build manifest + resolve from ExpandablePlugins
         const manifest: ExpanderManifestItem[] = [];
         let resolver: ((ids: number[]) => SearchResult[]) | undefined;
         for (const mod of this._registry.all) {
             if (!isExpandablePlugin(mod)) continue;
 
-            // In multi-repo, only expand from the plugin matching the result set's repo
-            // e.g. 'code:servicehub-frontend' matches repoPrefix 'servicehub-frontend'
-            const colonIdx = mod.name.indexOf(':');
-            const pluginRepo = colonIdx > 0 ? mod.name.slice(colonIdx + 1) : undefined;
-            if (repoPrefix && pluginRepo && pluginRepo !== repoPrefix) continue;
-
-            manifest.push(...mod.buildManifest(excludeFilePaths, excludeIds, excludeFilePaths));
+            manifest.push(...mod.buildManifest(excludeFilePaths, excludeIds));
             if (!resolver) {
-                const prefix = pluginRepo;
-                resolver = (ids: number[]) => {
-                    const chunks = mod.resolveChunks(ids);
-                    // Add repo prefix back to resolved chunk filePaths
-                    if (prefix) {
-                        for (const chunk of chunks) {
-                            if (chunk.filePath) chunk.filePath = `${prefix}/${chunk.filePath}`;
-                            const meta = chunk.metadata as Record<string, unknown>;
-                            if (typeof meta.filePath === 'string') {
-                                meta.filePath = `${prefix}/${meta.filePath}`;
-                            }
-                        }
-                    }
-                    return chunks;
-                };
+                resolver = (ids: number[]) => mod.resolveChunks(ids);
             }
         }
         if (manifest.length === 0 || !resolver) return { results: [] };
@@ -253,18 +208,6 @@ export class ContextBuilder {
         }
     }
 
-    /** Detect the multi-repo prefix from existing results (e.g. 'servicehub-frontend'). */
-    private _detectRepoPrefix(results: SearchResult[]): string | undefined {
-        for (const r of results) {
-            if (!r.filePath) continue;
-            // Multi-repo filePaths look like 'servicehub-frontend/src/...'
-            // The repo prefix is the first path segment before 'src/'
-            const srcIdx = r.filePath.indexOf('/src/');
-            if (srcIdx > 0) return r.filePath.slice(0, srcIdx);
-        }
-        return undefined;
-    }
-
     /** Collect results from SearchablePlugins that don't have their own formatter. */
     private async _appendSearchableResults(
         task: string,
@@ -275,7 +218,7 @@ export class ContextBuilder {
         for (const mod of this._registry.all) {
             if (isContextFormatterPlugin(mod)) continue;
             if (!isSearchable(mod)) continue;
-            const hits = await mod.search(task, { k: sources[mod.name.split(':')[0]] ?? 6, minScore });
+            const hits = await mod.search(task, { k: sources[mod.name] ?? 6, minScore });
             if (hits.length > 0) {
                 parts.push(`## ${mod.name}\n`);
                 for (const r of hits) {

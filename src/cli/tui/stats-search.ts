@@ -52,6 +52,8 @@ export interface SourceOption {
     label: string;
     /** Whether this source is enabled for the current search. */
     enabled: boolean;
+    /** Max results for this source (default: 20). */
+    k: number;
 }
 
 // ── Session ───────────────────────────────────────
@@ -113,6 +115,7 @@ export class BrainSearchSession {
                 key: base,
                 label: base.charAt(0).toUpperCase() + base.slice(1),
                 enabled: true,
+                k: 20,
             });
         }
     }
@@ -137,18 +140,17 @@ export class BrainSearchSession {
         const pruner = usePruner ? (this._brain.config.pruner as Pruner | undefined) : undefined;
         const expander = useExpander ? (this._brain.config.expander as Expander | undefined) : undefined;
 
-        // Build sources filter
+        // Build sources filter — always pass K values so we don't fall back to DEFAULT_K=6
         const sources: Record<string, number> = {};
-        if (activeSourceKeys) {
-            for (const src of this._sources) {
-                sources[src.key] = activeSourceKeys.has(src.key) ? 20 : 0;
-            }
+        for (const src of this._sources) {
+            const enabled = activeSourceKeys ? activeSourceKeys.has(src.key) : src.enabled;
+            sources[src.key] = enabled ? src.k : 0;
         }
 
         // Stage 1: Vector search
         const tSearch0 = Date.now();
         const raw = await this._brain.search(query, {
-            sources: Object.keys(sources).length > 0 ? sources : undefined,
+            sources,
             source: 'cli',
         });
         const tSearch = Date.now() - tSearch0;

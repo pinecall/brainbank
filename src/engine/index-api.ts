@@ -49,9 +49,7 @@ export async function runIndex(deps: IndexDeps, options: {
     const results: Record<string, unknown> = {};
 
     for (const mod of deps.registry.all) {
-        const baseType = mod.name.split(':')[0];
-
-        if (want && !want.has(baseType)) continue;
+        if (want && !want.has(mod.name)) continue;
         if (!isIndexable(mod)) continue;
 
         const label = mod.name;
@@ -64,11 +62,9 @@ export async function runIndex(deps: IndexDeps, options: {
             ...options.pluginOptions,
         });
 
-        results[baseType] = mergeResult(results[baseType] as IndexResult | undefined, r);
+        results[mod.name] = mergeResult(results[mod.name] as IndexResult | undefined, r);
 
         // Bump version per plugin name (= HNSW key) so hot-reload resolves correctly.
-        // In multi-repo setups the HNSW key is the full name (e.g. 'code:backend'),
-        // not the base type ('code'). ensureFresh() matches against HNSW map keys.
         bumpVersion(deps.db, mod.name);
     }
 

@@ -160,7 +160,6 @@ brain.use(code({
   maxFileSize: 512_000,        // skip files larger than 500KB
   include: ['src/**', 'lib/**'],            // whitelist — only index matching paths
   ignore: ['sdk/**', '*.generated.ts'],     // blacklist — exclude wins over include
-  name: 'code',                // or 'code:frontend' for multi-repo
   embeddingProvider: ...,      // optional override
 }));
 ```
@@ -204,7 +203,6 @@ brain.use(git({
   repoPath: '.',
   depth: 500,               // max commits to index
   maxDiffBytes: 8192,       // truncate diffs larger than this
-  name: 'git',              // or 'git:backend' for multi-repo
   embeddingProvider: ...,   // optional override
 }));
 ```
@@ -304,5 +302,4 @@ docsPlugin!.removeCollection('old-wiki');
 - [Custom Plugins](custom-plugins.md) — build your own plugin
 - [Embeddings](embeddings.md) — per-plugin embedding providers
 - [Configuration](config.md) — plugin config in `.brainbank/config.json`
-- [Multi-Repo](multi-repo.md) — namespaced plugins for multiple repositories
 - [Migrations](migrations.md) — plugin-owned database schema

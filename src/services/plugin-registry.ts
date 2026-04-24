@@ -6,7 +6,6 @@
  *
  * Responsibilities:
  *   - Store plugins by name
- *   - Type-prefix matching  ('code' finds 'code:frontend', 'code:backend')
  *   - Alias resolution      (currently none; add here if needed)
  *   - Consistent error messages on missing plugins
  */
@@ -27,17 +26,9 @@ export class PluginRegistry {
     }
 
 
-    /**
-     * Check whether a plugin is registered.
-     * Supports type-prefix matching: `has('code')` returns true if
-     * 'code', 'code:frontend', or 'code:backend' is registered.
-     */
+    /** Check whether a plugin is registered (exact match). */
     has(name: string): boolean {
-        if (this._map.has(name)) return true;
-        for (const key of this._map.keys()) {
-            if (key.startsWith(name + ':')) return true;
-        }
-        return false;
+        return this._map.has(name);
     }
 
     /**
@@ -46,7 +37,6 @@ export class PluginRegistry {
      * Resolution order:
      *   1. Alias map   (currently empty)
      *   2. Exact match
-     *   3. First type-prefix match  ('code' → 'code:frontend')
      */
     get<T extends Plugin = Plugin>(name: string): T {
         const resolved = ALIASES[name] ?? name;
@@ -54,31 +44,10 @@ export class PluginRegistry {
         const exact = this._map.get(resolved);
         if (exact) return exact as T;
 
-        const prefixed = this.firstByType(name);
-        if (prefixed) return prefixed as T;
-
         throw new Error(
             `BrainBank: Plugin '${name}' is not loaded. ` +
             `Add .use(${name}()) to your BrainBank instance.`,
         );
-    }
-
-    /**
-     * Return every plugin whose name equals `type` or starts with `type + ':'`.
-     * Example: allByType('code') → [code, code:frontend, code:backend]
-     */
-    allByType(type: string): Plugin[] {
-        return [...this._map.values()].filter(
-            m => m.name === type || m.name.startsWith(type + ':'),
-        );
-    }
-
-    /** Return the first plugin that matches the type prefix, or undefined. */
-    firstByType(type: string): Plugin | undefined {
-        for (const m of this._map.values()) {
-            if (m.name === type || m.name.startsWith(type + ':')) return m;
-        }
-        return undefined;
     }
 
 
@@ -94,7 +63,7 @@ export class PluginRegistry {
 
     /**
      * Underlying Map.
-     * Prefer `all`, `allByType`, or `firstByType` everywhere else.
+     * Prefer `all` everywhere else.
      */
     get raw(): Map<string, Plugin> {
         return this._map;
@@ -106,4 +75,3 @@ export class PluginRegistry {
         this._map.clear();
     }
 }
-

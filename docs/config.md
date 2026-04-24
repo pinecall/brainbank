@@ -51,9 +51,6 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
     "compact": false
   },
 
-  // Multi-repo: only these subdirectories are indexed (optional whitelist)
-  "repos": ["webapp-backend", "webapp-frontend"],
-
   // BrainBank constructor overrides
   "brainbank": {
     "maxFileSize": 512000,
@@ -84,18 +81,9 @@ Drop a `.brainbank/config.json` in your repo root. Every `brainbank index` reads
 └── data/               # All generated files (auto-created, gitignored)
     ├── brainbank.db    # SQLite database (core + KV tables)
     ├── hnsw-kv.index   # HNSW graph for KV collections
-    ├── hnsw-code.index # HNSW graph for code (or hnsw-code:backend.index in multi-repo)
+    ├── hnsw-code.index # HNSW graph for code
     ├── hnsw-git.index  # HNSW graph for git
     └── hnsw-docs.index # HNSW graph for docs
-```
-
-In multi-repo setups, per-repo plugin databases live alongside the main DB:
-
-```
-.brainbank/data/
-├── brainbank.db        # Root DB: KV, embedding_meta, index_state
-├── backend.db          # code:backend + git:backend domain tables
-└── frontend.db         # code:frontend + git:frontend domain tables
 ```
 
 ---
@@ -265,4 +253,3 @@ API keys can be provided in **config.json** or via **environment variables**. Co
 
 - [Embeddings, Pruner & Expander](embeddings.md) — provider details, benchmarks, pruner & expander config
 - [Plugins](plugins.md) — per-plugin embedding override
-- [Multi-Repo](multi-repo.md) — `repos` whitelist and per-repo databases

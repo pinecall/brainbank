@@ -30,6 +30,7 @@ export type {
     ContextFieldDef,
     MigratablePlugin, BM25SearchPlugin, ExpandablePlugin,
     FileResolvablePlugin,
+    PluginScanInfo, PluginPreviewLine,
 } from './plugin.ts';
 export {
     isIndexable, isSearchable, isWatchable,

@@ -305,33 +305,84 @@ function FileExplorerView({ dbPath, dir, width, height, onDrillFile, onBack }: {
     const [cursor, setCursor] = useState(0);
     const [sortMode, setSortMode] = useState<'chunks' | 'name' | 'symbols'>('chunks');
 
+    // Filter mode
+    const [filterText, setFilterText] = useState('');
+    const isFilteringRef = useRef(false);
+    const [isFiltering, setIsFiltering] = useState(false);
+
     const sorted = useMemo(() => {
         const s = [...files];
         if (sortMode === 'name') s.sort((a, b) => a.fileName.localeCompare(b.fileName));
         else if (sortMode === 'symbols') s.sort((a, b) => b.symbols - a.symbols);
-        // default: by chunks (already sorted)
         return s;
     }, [files, sortMode]);
 
+    const filtered = useMemo(() => {
+        if (!filterText) return sorted;
+        const lower = filterText.toLowerCase();
+        return sorted.filter(f => f.fileName.toLowerCase().includes(lower));
+    }, [sorted, filterText]);
+
     const detail: FileDetailInfo | null = useMemo(() => {
-        if (!sorted[cursor]) return null;
-        return fetchFileDetail(dbPath, sorted[cursor].filePath);
-    }, [dbPath, sorted, cursor]);
+        if (!filtered[cursor]) return null;
+        return fetchFileDetail(dbPath, filtered[cursor].filePath);
+    }, [dbPath, filtered, cursor]);
 
     const listH = Math.max(5, height - 6);
-    const scrollOff = centerScroll(cursor, sorted.length, listH);
+    const scrollOff = centerScroll(cursor, filtered.length, listH);
 
     useInput((input, key) => {
-        if (key.escape) onBack();
-        if (key.downArrow) setCursor(c => Math.min(c + 1, sorted.length - 1));
+        const filtering = isFilteringRef.current;
+
+        if (key.escape) {
+            if (filtering || filterText) {
+                isFilteringRef.current = false;
+                setIsFiltering(false);
+                setFilterText('');
+                setCursor(0);
+                return;
+            }
+            onBack();
+            return;
+        }
+
+        // Filter mode typing
+        if (filtering) {
+            if (key.return) {
+                isFilteringRef.current = false;
+                setIsFiltering(false);
+                return;
+            }
+            if (key.backspace || key.delete) {
+                setFilterText(prev => prev.slice(0, -1));
+                setCursor(0);
+                return;
+            }
+            if (input && !key.upArrow && !key.downArrow) {
+                setFilterText(prev => prev + input);
+                setCursor(0);
+                return;
+            }
+        }
+
+        // '/' to start filtering
+        if (input === '/' && !filtering) {
+            isFilteringRef.current = true;
+            setIsFiltering(true);
+            setFilterText('');
+            setCursor(0);
+            return;
+        }
+
+        if (key.downArrow) setCursor(c => Math.min(c + 1, filtered.length - 1));
         if (key.upArrow) setCursor(c => Math.max(c - 1, 0));
-        if (key.return && sorted[cursor]) onDrillFile(sorted[cursor].filePath);
-        if (input === 's') setSortMode(m => m === 'chunks' ? 'name' : m === 'name' ? 'symbols' : 'chunks');
+        if (key.return && filtered[cursor]) onDrillFile(filtered[cursor].filePath);
+        if (!filtering && input === 's') setSortMode(m => m === 'chunks' ? 'name' : m === 'name' ? 'symbols' : 'chunks');
     });
 
     const leftW = Math.min(40, Math.floor(width * 0.4));
     const rightW = width - leftW - 3;
-    const visible = sorted.slice(scrollOff, scrollOff + listH);
+    const visible = filtered.slice(scrollOff, scrollOff + listH);
 
     return (
         <Box flexDirection="row" width={width} height={height - 4}>
@@ -339,10 +390,18 @@ function FileExplorerView({ dbPath, dir, width, height, onDrillFile, onBack }: {
             <Box flexDirection="column" width={leftW} paddingX={1}>
                 <Box marginBottom={1}>
                     <Text color={C.aurora} bold>Files</Text>
-                    <Text color={C.dim}> ({files.length})</Text>
+                    <Text color={C.dim}> ({filtered.length}{filterText ? `/${files.length}` : ''})</Text>
                     <Text color={C.dim}> sort: </Text>
                     <Text color={C.cyan}>{sortMode}</Text>
                 </Box>
+                {/* Filter bar */}
+                {(isFiltering || filterText) && (
+                    <Box height={1} marginBottom={0}>
+                        <Text color={C.aurora} bold>/ </Text>
+                        <Text color={C.text}>{filterText}</Text>
+                        <Text color={C.aurora}>▎</Text>
+                    </Box>
+                )}
                 {visible.map((f, vi) => {
                     const idx = scrollOff + vi;
                     const isCursor = idx === cursor;
@@ -551,7 +610,7 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
 // ── Semantic Search View ──────────────────────────
 
 type SearchState = 'idle' | 'initializing' | 'searching' | 'done' | 'error';
-type SearchFocus = 'input' | 'sources' | 'raw' | 'pruned' | 'preview';
+type SearchFocus = 'input' | 'sources' | 'raw' | 'final' | 'preview' | 'fullpreview';
 
 /** Extract display info from a SearchResult. */
 function resultLabel(r: SearchResult): { name: string; path: string; score: number; line: number } {
@@ -564,48 +623,67 @@ function resultLabel(r: SearchResult): { name: string; path: string; score: numb
     };
 }
 
-function SemanticSearchView({ repoPath, width, height, onBack }: {
+function SemanticSearchView({ repoPath, width, height, onBack, session }: {
     repoPath: string;
     width: number;
     height: number;
     onBack: () => void;
+    session: BrainSearchSession;
 }): React.ReactNode {
-    // Session (lazy init)
-    const sessionRef = useRef<BrainSearchSession | null>(null);
+    // Session — owned by StatsApp, shared across view transitions
+    const sessionRef = useRef<BrainSearchSession>(session);
 
     // State
     const [query, setQuery] = useState('');
-    const [state, setState] = useState<SearchState>('idle');
-    const [stateMsg, setStateMsg] = useState('');
+    const [state, setState] = useState<SearchState>(() =>
+        session.initialized ? 'idle' : 'initializing',
+    );
+    const [stateMsg, setStateMsg] = useState(() =>
+        session.initialized ? '' : 'Loading search index...',
+    );
     const [focus, setFocus] = useState<SearchFocus>('input');
     const [pipeline, setPipeline] = useState<SearchPipelineResult | null>(null);
-    const [sourceOpts, setSourceOpts] = useState<SourceOption[]>([]);
+    const [sourceOpts, setSourceOpts] = useState<SourceOption[]>(() =>
+        session.initialized ? [...session.sources] : [],
+    );
     const [rawCursor, setRawCursor] = useState(0);
-    const [prunedCursor, setPrunedCursor] = useState(0);
+    const [finalCursor, setFinalCursor] = useState(0);
     const [previewScroll, setPreviewScroll] = useState(0);
     const [errorMsg, setErrorMsg] = useState('');
     const [sourceCursor, setSourceCursor] = useState(0);
     const [usePruner, setUsePruner] = useState(true);
     const [useExpander, setUseExpander] = useState(true);
 
-    // Init session lazily on mount
+    // Init session on mount — skip if already initialized (re-entry)
     useEffect(() => {
-        const session = new BrainSearchSession(repoPath);
         sessionRef.current = session;
+
+        if (session.initialized) {
+            setSourceOpts([...session.sources]);
+            setState('idle');
+            setStateMsg('');
+            return;
+        }
+
         setState('initializing');
         setStateMsg('Loading search index...');
-        session.init()
-            .then(() => {
-                setSourceOpts([...session.sources]);
-                setState('idle');
-                setStateMsg('');
-            })
-            .catch((err: unknown) => {
-                setState('error');
-                setErrorMsg(err instanceof Error ? err.message : String(err));
-            });
-        return () => { session.close(); };
-    }, [repoPath]);
+
+        // Defer to next tick so React paints the loading modal before heavy sync work
+        const timer = setTimeout(() => {
+            session.init()
+                .then(() => {
+                    setSourceOpts([...session.sources]);
+                    setState('idle');
+                    setStateMsg('');
+                })
+                .catch((err: unknown) => {
+                    setState('error');
+                    setErrorMsg(err instanceof Error ? err.message : String(err));
+                });
+        }, 50);
+
+        return () => { clearTimeout(timer); };
+    }, [session]);
 
     // Column sizing — preview gets most space for code readability
     const rawW = Math.max(20, Math.floor(width * 0.22));
@@ -614,17 +692,16 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
     const listH = Math.max(3, height - 12);
     const previewH = Math.max(3, height - 12);
 
-    // Active result for preview
+    // Active result for preview — each column independently controls what's shown
     const activeResult = useMemo(() => {
         if (!pipeline) return null;
-        if (focus === 'raw' || focus === 'input' || focus === 'sources') return pipeline.raw[rawCursor] ?? null;
-        if (focus === 'pruned') {
-            // Combined list: pruned + expanded
+        if (focus === 'final') {
             const combined = [...pipeline.pruned, ...pipeline.expanded];
-            return combined[prunedCursor] ?? null;
+            return combined[finalCursor] ?? null;
         }
+        // raw, input, sources, preview all show the raw cursor's item
         return pipeline.raw[rawCursor] ?? null;
-    }, [focus, rawCursor, prunedCursor, pipeline]);
+    }, [focus, rawCursor, finalCursor, pipeline]);
 
     const previewLines = useMemo(() => activeResult?.content.split('\n') ?? [], [activeResult]);
     const maxPreviewScroll = Math.max(0, previewLines.length - previewH);
@@ -649,7 +726,7 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
         setState('searching');
         setStateMsg('Searching...');
         setRawCursor(0);
-        setPrunedCursor(0);
+        setFinalCursor(0);
         try {
             const activeKeys = new Set(
                 sourceOpts.filter(s => s.enabled).map(s => s.key),
@@ -670,6 +747,7 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
     useInput((input, key) => {
         // Esc — back out
         if (key.escape) {
+            if (focus === 'fullpreview') { setFocus('final'); return; }
             if (focus !== 'input' && pipeline) { setFocus('input'); return; }
             onBack();
             return;
@@ -713,6 +791,25 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                 }
                 return;
             }
+            // ↑↓ adjust K for the focused source
+            if (key.upArrow && sourceCursor < sourceOpts.length) {
+                setSourceOpts(prev => {
+                    const next = prev.map(s => ({ ...s }));
+                    const target = next[sourceCursor];
+                    if (target) target.k = Math.min(target.k + 5, 50);
+                    return next;
+                });
+                return;
+            }
+            if (key.downArrow && sourceCursor < sourceOpts.length) {
+                setSourceOpts(prev => {
+                    const next = prev.map(s => ({ ...s }));
+                    const target = next[sourceCursor];
+                    if (target) target.k = Math.max(target.k - 5, 5);
+                    return next;
+                });
+                return;
+            }
             if (key.tab) {
                 setFocus(pipeline ? 'raw' : 'input');
                 return;
@@ -724,9 +821,16 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
             return;
         }
 
+        // 'P' — toggle full context preview (what the agent sees)
+        if (input === 'p' && focus !== 'input') {
+            if (focus === 'fullpreview') { setFocus('final'); }
+            else { setFocus('fullpreview'); setPreviewScroll(0); }
+            return;
+        }
+
         // Tab — cycle focus
         if (key.tab) {
-            const order: SearchFocus[] = ['raw', 'pruned', 'preview', 'input'];
+            const order: SearchFocus[] = ['raw', 'final', 'preview', 'input'];
             const idx = order.indexOf(focus);
             setFocus(order[(idx + 1) % order.length]);
             return;
@@ -739,17 +843,17 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
             if (input === '}') setRawCursor(c => Math.min(c + 10, (pipeline?.raw.length ?? 1) - 1));
             if (input === '{') setRawCursor(c => Math.max(c - 10, 0));
             if (input === 'h' || key.leftArrow) setFocus('sources');
-            if (input === 'l' || key.rightArrow) setFocus('pruned');
+            if (input === 'l' || key.rightArrow) setFocus('final');
             if (key.return) { setFocus('preview'); setPreviewScroll(0); }
             return;
         }
 
-        if (focus === 'pruned') {
+        if (focus === 'final') {
             const combined = pipeline ? [...pipeline.pruned, ...pipeline.expanded] : [];
-            if (key.downArrow) setPrunedCursor(c => Math.min(c + 1, combined.length - 1));
-            if (key.upArrow) setPrunedCursor(c => Math.max(c - 1, 0));
-            if (input === '}') setPrunedCursor(c => Math.min(c + 10, combined.length - 1));
-            if (input === '{') setPrunedCursor(c => Math.max(c - 10, 0));
+            if (key.downArrow) setFinalCursor(c => Math.min(c + 1, combined.length - 1));
+            if (key.upArrow) setFinalCursor(c => Math.max(c - 1, 0));
+            if (input === '}') setFinalCursor(c => Math.min(c + 10, combined.length - 1));
+            if (input === '{') setFinalCursor(c => Math.max(c - 10, 0));
             if (input === 'h' || key.leftArrow) setFocus('raw');
             if (input === 'l' || key.rightArrow) setFocus('preview');
             if (key.return) { setFocus('preview'); setPreviewScroll(0); }
@@ -763,7 +867,17 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
             if (input === '{') setPreviewScroll(s => Math.max(s - 10, 0));
             if (input === 'd') setPreviewScroll(s => Math.min(s + 15, maxPreviewScroll));
             if (input === 'u') setPreviewScroll(s => Math.max(s - 15, 0));
-            if (input === 'h' || key.leftArrow) setFocus('pruned');
+            if (input === 'h' || key.leftArrow) setFocus('final');
+            return;
+        }
+
+        if (focus === 'fullpreview') {
+            if (key.downArrow) setPreviewScroll(s => Math.min(s + 1, maxPreviewScroll));
+            if (key.upArrow) setPreviewScroll(s => Math.max(s - 1, 0));
+            if (input === '}') setPreviewScroll(s => Math.min(s + 10, maxPreviewScroll));
+            if (input === '{') setPreviewScroll(s => Math.max(s - 10, 0));
+            if (input === 'd') setPreviewScroll(s => Math.min(s + 15, maxPreviewScroll));
+            if (input === 'u') setPreviewScroll(s => Math.max(s - 15, 0));
             return;
         }
     });
@@ -784,9 +898,60 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
     }, [pipeline]);
 
     const rawScrollOff = centerScroll(rawCursor, pipeline?.raw.length ?? 0, listH);
-    const prunedScrollOff = centerScroll(prunedCursor, combinedResults.length, listH);
-    const visiblePreview = previewLines.slice(previewScroll, previewScroll + previewH);
-    const scrollPct = maxPreviewScroll > 0 ? Math.round(previewScroll / maxPreviewScroll * 100) : 100;
+    const finalScrollOff = centerScroll(finalCursor, combinedResults.length, listH);
+
+    // Full context preview: all final results concatenated
+    const fullContextLines = useMemo(() => {
+        if (!pipeline) return [];
+        const final = [...pipeline.pruned, ...pipeline.expanded];
+        const lines: string[] = [];
+        for (const r of final) {
+            const info = resultLabel(r);
+            lines.push(`━━━ ${info.path} L${info.line} ━━━`);
+            lines.push(...r.content.split('\n'));
+            lines.push('');
+        }
+        return lines;
+    }, [pipeline]);
+
+    const currentPreviewLines = focus === 'fullpreview' ? fullContextLines : previewLines;
+    const currentMaxScroll = Math.max(0, currentPreviewLines.length - previewH);
+    const visiblePreview = currentPreviewLines.slice(previewScroll, previewScroll + previewH);
+    const scrollPct = currentMaxScroll > 0 ? Math.round(previewScroll / currentMaxScroll * 100) : 100;
+    // Clamp preview scroll to current max
+    useEffect(() => {
+        setPreviewScroll(s => Math.min(s, currentMaxScroll));
+    }, [currentMaxScroll]);
+
+    // Animated spinner during init
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const [spinIdx, setSpinIdx] = useState(0);
+    useEffect(() => {
+        if (state !== 'initializing') return;
+        const timer = setInterval(() => setSpinIdx(i => (i + 1) % spinnerFrames.length), 80);
+        return () => clearInterval(timer);
+    }, [state]);
+
+    // Show loading modal if still initializing
+    if (state === 'initializing') {
+        return (
+            <Box flexDirection="column" width={width} height={height - 4}
+                 justifyContent="center" alignItems="center">
+                <Box flexDirection="column" alignItems="center" borderStyle="round"
+                     borderColor={C.border} paddingX={6} paddingY={2}>
+                    <Text color={C.aurora} bold>
+                        {spinnerFrames[spinIdx]} Loading Search Engine
+                    </Text>
+                    <Text color={C.dim}> </Text>
+                    <Text color={C.dim}>Initializing HNSW indices and plugins...</Text>
+                    <Text color={C.dim}>This only happens once per session</Text>
+                </Box>
+                <Box marginTop={1}>
+                    <Text color={C.dim}>Esc to go back</Text>
+                </Box>
+            </Box>
+        );
+    }
 
     return (
         <Box flexDirection="column" width={width} height={height - 4}>
@@ -808,18 +973,20 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                 {/* Source filter tabs + pipeline toggles */}
                 <Box marginTop={1}>
                     <Text color={focus === 'sources' ? C.aurora : C.dim}>Sources: </Text>
-                    {sourceOpts.map((s, i) => (
-                        <Text key={s.key}>
-                            <Text color={focus === 'sources' && i === sourceCursor
-                                ? C.text
-                                : (s.enabled ? C.aurora : C.dim)}
-                                  bold={focus === 'sources' && i === sourceCursor}
-                                  underline={focus === 'sources' && i === sourceCursor}>
-                                [{s.enabled ? '■' : '□'}] {s.label}
+                    {sourceOpts.map((s, i) => {
+                        const isFocused = focus === 'sources' && i === sourceCursor;
+                        return (
+                            <Text key={s.key}>
+                                <Text color={isFocused ? C.text : (s.enabled ? C.aurora : C.dim)}
+                                      bold={isFocused}
+                                      underline={isFocused}>
+                                    [{s.enabled ? '■' : '□'}] {s.label}
+                                </Text>
+                                <Text color={isFocused ? C.cyan : C.dim}>:{s.k}</Text>
+                                <Text color={C.dim}>  </Text>
                             </Text>
-                            <Text color={C.dim}>  </Text>
-                        </Text>
-                    ))}
+                        );
+                    })}
                     <Text color={C.dim}>│ </Text>
                     {/* Pruner toggle */}
                     <Text color={focus === 'sources' && sourceCursor === sourceOpts.length
@@ -838,11 +1005,45 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                           underline={focus === 'sources' && sourceCursor === sourceOpts.length + 1}>
                         [{useExpander ? '■' : '□'}] Expander
                     </Text>
-                    <Text color={C.dim}>  (←→ move, Space toggle)</Text>
+                    <Text color={C.dim}>  (←→ move, Space toggle, ↑↓ adjust K)</Text>
                 </Box>
             </Box>
 
-            {/* Two result columns + wide preview */}
+            {/* Full context preview mode */}
+            {focus === 'fullpreview' ? (
+                <Box flexDirection="column" width={width} height={listH + 2} marginTop={1} paddingX={1}>
+                    <Box marginBottom={0} justifyContent="space-between">
+                        <Text color={C.aurora} bold>Full Context Preview</Text>
+                        <Text>
+                            <Text color={C.dim} italic>What the agent sees  </Text>
+                            <Text color={C.cyan}>{scrollPct}%</Text>
+                            <Text color={C.dim}>  P to close</Text>
+                        </Text>
+                    </Box>
+                    <Box flexDirection="column">
+                        {visiblePreview.map((line, i) => {
+                            const isHeader = line.startsWith('━━━');
+                            if (isHeader) {
+                                return (
+                                    <Box key={previewScroll + i} height={1}>
+                                        <Text color={C.purple} bold wrap="truncate">{truncate(line, width - 4)}</Text>
+                                    </Box>
+                                );
+                            }
+                            const segs = highlightLine(line, width - 8);
+                            return (
+                                <Box key={previewScroll + i} height={1}>
+                                    <Text wrap="truncate">
+                                        <Text color={C.dim}>{String(previewScroll + i + 1).padStart(4)}│</Text>
+                                        <HighlightedLine segments={segs} />
+                                    </Text>
+                                </Box>
+                            );
+                        })}
+                    </Box>
+                </Box>
+            ) : (
+            /* Two result columns + wide preview */
             <Box flexDirection="row" width={width} height={listH} marginTop={1}>
                 {/* Column 1: Raw results */}
                 <Box flexDirection="column" width={rawW} paddingX={1}>
@@ -873,14 +1074,11 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                     })}
                 </Box>
 
-                {/* Column 2: Pruned + Expanded — shows reranked order with file paths */}
+                {/* Column 2: Final = pruned survivors + expanded discoveries */}
                 <Box flexDirection="column" width={prunedW} paddingX={1}>
                     <Box marginBottom={0}>
-                        <Text color={focus === 'pruned' ? C.aurora : C.dim} bold>
-                            {pipeline && pipeline.dropped.length > 0
-                                ? `Pruned (${pipeline.pruned.length})`
-                                : `Ranked (${pipeline?.pruned.length ?? 0})`
-                            }
+                        <Text color={focus === 'final' ? C.aurora : C.dim} bold>
+                            Final ({combinedResults.length})
                         </Text>
                         {(pipeline?.expanded.length ?? 0) > 0 && (
                             <Text color={C.success}> +{pipeline?.expanded.length}◆</Text>
@@ -889,9 +1087,9 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                             <Text color={C.error}> -{pipeline.dropped.length}</Text>
                         )}
                     </Box>
-                    {combinedResults.slice(prunedScrollOff, prunedScrollOff + listH - 1).map((item, vi) => {
-                        const idx = prunedScrollOff + vi;
-                        const isCursor = focus === 'pruned' && idx === prunedCursor;
+                    {combinedResults.slice(finalScrollOff, finalScrollOff + listH - 1).map((item, vi) => {
+                        const idx = finalScrollOff + vi;
+                        const isCursor = focus === 'final' && idx === finalCursor;
                         const info = resultLabel(item.r);
                         const isExpanded = item.type === 'expanded';
                         const ptr = isCursor ? '▸' : (isExpanded ? '◆' : ' ');
@@ -919,7 +1117,7 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                         <Text color={focus === 'preview' ? C.aurora : C.dim} bold>Preview</Text>
                         <Text>
                             {focus !== 'preview' && <Text color={C.dim} italic>Enter/→ to scroll </Text>}
-                            {previewLines.length > previewH && (
+                            {currentPreviewLines.length > previewH && (
                                 <Text color={focus === 'preview' ? C.cyan : C.dim}>{scrollPct}%</Text>
                             )}
                         </Text>
@@ -944,6 +1142,7 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                     )}
                 </Box>
             </Box>
+            )}
 
             {/* Timings bar */}
             {pipeline && (
@@ -1094,10 +1293,10 @@ function Header({ repoPath, dbSizeMB, view, breadcrumb, width }: {
 function Footer({ view, width }: { view: View; width: number }): React.ReactNode {
     const hints: Record<View, string> = {
         dashboard: '↑↓ navigate   Enter drill in   / search   g call graph   q quit',
-        files:     '↑↓ navigate   Enter view chunks   s sort   Esc back   q quit',
+        files:     '↑↓ navigate   Enter view chunks   s sort   / filter   Esc back   q quit',
         chunks:    'Tab focus   ↑↓ scroll   {/} jump 10   u/d page   Enter preview   Esc back',
         callgraph: 'type to search   ↑↓ navigate   Enter expand   Esc back   q quit',
-        search:    'type query → Enter   ←→ panels   {/} jump 10   Tab sources   Space toggle   Esc back',
+        search:    'type query → Enter   ←→ panels   {/} jump 10   P full context   Tab sources   Space toggle   Esc back',
     };
 
     return (
@@ -1132,6 +1331,19 @@ function StatsApp({ dbPath, repoPath, configPath }: {
     const [breadcrumb, setBreadcrumb] = useState<string[]>([]);
     const [currentDir, setCurrentDir] = useState('');
     const [currentFile, setCurrentFile] = useState('');
+
+    // Persistent search session — survives view transitions
+    const searchSessionRef = useRef<BrainSearchSession | null>(null);
+    const getSearchSession = useCallback(() => {
+        if (!searchSessionRef.current) {
+            searchSessionRef.current = new BrainSearchSession(repoPath);
+        }
+        return searchSessionRef.current;
+    }, [repoPath]);
+    // Clean up on unmount
+    useEffect(() => {
+        return () => { searchSessionRef.current?.close(); };
+    }, []);
 
     const width = Math.floor(rawW * 0.9);
     const height = Math.floor(rawH * 0.9);
@@ -1227,6 +1439,7 @@ function StatsApp({ dbPath, repoPath, configPath }: {
                     repoPath={repoPath}
                     width={width} height={height}
                     onBack={goBack}
+                    session={getSearchSession()}
                 />
             )}
 

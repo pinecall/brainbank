@@ -32,7 +32,7 @@ const CORE_TABLES: ReembedTable[] = [
     },
 ];
 
-/** Collect reembed tables from plugins + core. Deduplicates by vectorTable for multi-repo. */
+/** Collect reembed tables from plugins + core. Deduplicates by vectorTable. */
 function collectTables(plugins: Plugin[]): ReembedTable[] {
     const byVectorTable = new Map<string, ReembedTable>();
     for (const p of plugins) {

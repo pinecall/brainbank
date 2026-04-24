@@ -194,7 +194,6 @@ src/mcp/
 
 ## See Also
 
-- [Multi-Repo](multi-repo.md) — multi-workspace indexing
 - [Configuration](config.md) — embedding config, plugin config
 - [Search](search.md) — BrainBankQL context fields
 - [Architecture](architecture.md) — MCP server internals

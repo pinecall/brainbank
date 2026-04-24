@@ -11,3 +11,4 @@ dist/
 test/benchmarks/rag/benchmark-vs-qmd*.ts
 diff
 tmp/
+.brainbank/config.json

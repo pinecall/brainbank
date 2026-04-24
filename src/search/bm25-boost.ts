@@ -47,10 +47,12 @@ export async function boostWithBM25(
     return boosted;
 }
 
-/** Filter results whose filePath starts with `prefix`. */
-export function filterByPath(results: SearchResult[], prefix: string | undefined): SearchResult[] {
+/** Filter results whose filePath starts with any of the given prefixes. */
+export function filterByPath(results: SearchResult[], prefix: string | string[] | undefined): SearchResult[] {
     if (!prefix) return results;
-    return results.filter(r => r.filePath?.startsWith(prefix));
+    const prefixes = Array.isArray(prefix) ? prefix : [prefix];
+    if (prefixes.length === 0) return results;
+    return results.filter(r => prefixes.some(p => r.filePath?.startsWith(p)));
 }
 
 /** Exclude results whose filePath starts with any of the given prefixes. */

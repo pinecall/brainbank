@@ -7,11 +7,6 @@
  *   import { code } from '@brainbank/code';
  *   
  *   const brain = new BrainBank().use(code({ repoPath: '.' }));
- *   
- *   // Multi-repo: namespace to avoid key collisions
- *   brain
- *     .use(code({ repoPath: './frontend', name: 'code:frontend' }))
- *     .use(code({ repoPath: './backend',  name: 'code:backend' }));
  */
 
 import type { Plugin, PluginContext, ContextFieldDef, ExpanderManifestItem, EmbeddingProvider, IndexResult, ProgressCallback, ReembedTable, SearchResult } from 'brainbank';
@@ -38,8 +33,6 @@ export interface CodePluginOptions {
     ignore?: string[];
     /** Glob patterns to include (e.g. src/**, lib/**). When set, only matching files are indexed. Ignore still applies on top. */
     include?: string[];
-    /** Custom indexer name for multi-repo (e.g. 'code:frontend'). Default: 'code' */
-    name?: string;
     /** Per-plugin embedding provider. Default: global embedding from BrainBank config. */
     embeddingProvider?: EmbeddingProvider;
 }
@@ -57,7 +50,7 @@ class CodePlugin implements Plugin {
     vecCache = new Map<number, Float32Array>();
 
     constructor(private opts: CodePluginOptions = {}) {
-        this.name = opts.name ?? 'code';
+        this.name = 'code';
     }
 
     async initialize(ctx: PluginContext): Promise<void> {
@@ -65,8 +58,7 @@ class CodePlugin implements Plugin {
         runPluginMigrations(ctx.db, this.name, CODE_SCHEMA_VERSION, CODE_MIGRATIONS);
         const embedding = this.opts.embeddingProvider ?? ctx.embedding;
 
-        // Per-repo HNSW: use plugin name as key so each repo has its own vector index
-        // e.g. code:servicehub-backend → separate HNSW from code:servicehub-frontend
+        // HNSW index for code vector search
         const shared = await ctx.getOrCreateSharedHnsw(this.name, undefined, embedding.dims);
         this.hnsw = shared.hnsw;
         this.vecCache = shared.vecCache;
@@ -138,11 +130,7 @@ class CodePlugin implements Plugin {
 
         const codeGraph = new SqlCodeGraphProvider(this.db);
 
-        // Multi-repo: extract sub-repo prefix from plugin name (e.g. 'code:backend' → 'backend')
-        const colonIdx = this.name.indexOf(':');
-        const pathPrefix = colonIdx > 0 ? this.name.slice(colonIdx + 1) : undefined;
-
-        formatCodeContext(codeHits, parts, codeGraph, pathPrefix, fields);
+        formatCodeContext(codeHits, parts, codeGraph, undefined, fields);
     }
 
     /** ExpandablePlugin — build lightweight manifest for expander (excludes already-matched content). */

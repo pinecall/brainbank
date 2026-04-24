@@ -8,11 +8,11 @@
  * Phase 2: Config setup (embedding + pruner) — only if no config.json.
  */
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { render, Box, Text, useApp, useInput, useStdout } from 'ink';
 import type { ScanResult } from '@/cli/commands/scan.ts';
 import {
-    buildFileTree, expandDir, collapseDir, toggleDir, setAllDirs,
+    buildFileTree, expandDir, collapseDir, toggleDir, toggleFile, setAllDirs,
     generatePatternsFromTree, countTotalFiles, getExtColor,
     scanDocsPreview, scanGitPreview,
 } from './tree-scanner.ts';
@@ -113,30 +113,29 @@ function TreeItemRow({ item, isCursor }: {
         const count = String(item.fileCount);
 
         return (
-            <Box height={1}>
+            <Box height={1} justifyContent="space-between">
                 <Text wrap="truncate">
                     <Text color={isCursor ? C.aurora : C.dim}>{ptr}</Text>
                     <Text>{indent}</Text>
                     <Text color={C.dim}>{arrow} </Text>
                     <Text color={checkColor} bold>{check} </Text>
                     <Text color={nameColor} bold={isCursor}>{item.name}/</Text>
-                    <Text color={C.dim}> {count}</Text>
                 </Text>
+                <Text color={C.dim}>{count}</Text>
             </Box>
         );
     }
 
-    const badge = extBadge(item.ext);
-    const color = excluded ? C.dim : getExtColor(item.ext);
+    const check = item.checked ? '✓' : '✗';
+    const checkColor = item.checked ? C.success : C.error;
 
     return (
         <Box height={1}>
             <Text wrap="truncate">
                 <Text color={isCursor ? C.aurora : C.dim}>{ptr}</Text>
                 <Text>{indent}</Text>
-                <Text color={excluded ? C.dim : color} bold>{badge}</Text>
-                <Text> </Text>
-                <Text color={excluded ? C.dim : C.text}>{item.name}</Text>
+                <Text color={checkColor}>{check} </Text>
+                <Text color={excluded ? C.dim : getExtColor(item.ext)}>{item.name}</Text>
             </Text>
         </Box>
     );
@@ -145,9 +144,10 @@ function TreeItemRow({ item, isCursor }: {
 
 // ── Main Screen (sidebar + tree) ──────────────────────
 
-function MainScreen({ scan, width, height, onConfirm }: {
+function MainScreen({ scan, width, height, onConfirm, externalPreviews }: {
     scan: ScanResult; width: number; height: number;
     onConfirm: (modules: string[], include: string[], ignore: string[]) => void;
+    externalPreviews?: Map<string, PreviewLine[]>;
 }): React.ReactNode {
     const { exit } = useApp();
     const allMods = scan.modules;
@@ -172,9 +172,40 @@ function MainScreen({ scan, width, height, onConfirm }: {
     const [treeItems, setTreeItems] = useState<FileTreeItem[]>(() => buildFileTree(scan.repoPath, scan.config.include));
     const [treeCursor, setTreeCursor] = useState(0);
 
+    // Filter mode — '/' to activate, Esc to clear
+    // Use ref so useInput always reads the latest value (avoids React batching lag)
+    const [filterText, setFilterText] = useState('');
+    const [isFiltering, setIsFiltering] = useState(false);
+    const isFilteringRef = useRef(false);
+    const startFiltering = useCallback(() => {
+        isFilteringRef.current = true;
+        setIsFiltering(true);
+        setFilterText('');
+        setTreeCursor(0);
+    }, []);
+    const stopFiltering = useCallback(() => {
+        isFilteringRef.current = false;
+        setIsFiltering(false);
+        setFilterText('');
+        setTreeCursor(0);
+    }, []);
+
     // Docs & Git preview (lazy, memoized)
     const docsPreview = useMemo(() => scanDocsPreview(scan.repoPath), [scan.repoPath]);
     const gitPreview = useMemo(() => scanGitPreview(scan.repoPath), [scan.repoPath]);
+
+    // Merged preview data: external previews override built-in for same name
+    const allPreviews = useMemo(() => {
+        const map = new Map<string, PreviewLine[]>();
+        map.set('docs', docsPreview);
+        map.set('git', gitPreview);
+        if (externalPreviews) {
+            for (const [name, lines] of externalPreviews) {
+                map.set(name, lines);
+            }
+        }
+        return map;
+    }, [docsPreview, gitPreview, externalPreviews]);
 
     // Which module is focused determines Explorer content
     const focusedModName = allMods[modCursor]?.name ?? 'code';
@@ -182,11 +213,6 @@ function MainScreen({ scan, width, height, onConfirm }: {
     // Panel height = total height - header(3) - footer(2) - borders
     const panelH = Math.max(6, height - 7);
     const treeViewH = Math.max(3, panelH - 4); // border(2) + title(1) + title margin(1)
-
-    const scrollOffset = useMemo(
-        () => centerScroll(treeCursor, treeItems.length, treeViewH),
-        [treeCursor, treeItems.length, treeViewH],
-    );
 
     // Module nav (skip disabled)
     const modUp = () => setModCursor(p => {
@@ -199,13 +225,28 @@ function MainScreen({ scan, width, height, onConfirm }: {
     });
 
     useInput((input, key) => {
-        if (key.escape || input === 'q') { exit(); return; }
-        if (key.tab) { setPane(p => p === 'modules' ? 'tree' : 'modules'); return; }
+        const filtering = isFilteringRef.current;
+
+        if (key.escape) {
+            if (filtering || filterText) {
+                stopFiltering();
+                return;
+            }
+            exit(); return;
+        }
+        if (input === 'q' && !filtering) { exit(); return; }
+        if (key.tab && !filtering) { setPane(p => p === 'modules' ? 'tree' : 'modules'); return; }
 
         if (key.return) {
+            if (filtering) {
+                // Confirm filter, stop typing mode but keep filter text
+                isFilteringRef.current = false;
+                setIsFiltering(false);
+                return;
+            }
             const selected = [...checked];
             if (selected.length === 0) return;
-            const patterns = generatePatternsFromTree(treeItems);
+            const patterns = generatePatternsFromTree(treeItems, scan.config.include);
             onConfirm(selected, patterns.include, patterns.ignore);
             return;
         }
@@ -228,46 +269,93 @@ function MainScreen({ scan, width, height, onConfirm }: {
 
         // ── Tree pane ──
         if (pane === 'tree') {
-            if (key.upArrow || input === 'k') {
+            // Filter mode input handling
+            if (filtering) {
+                if (key.backspace || key.delete) {
+                    setFilterText(prev => prev.slice(0, -1));
+                    setTreeCursor(0);
+                    return;
+                }
+                if (input && !key.upArrow && !key.downArrow && !key.leftArrow && !key.rightArrow) {
+                    setFilterText(prev => prev + input);
+                    setTreeCursor(0);
+                    return;
+                }
+            }
+
+            // '/' to enter filter mode (instant via ref)
+            if (input === '/' && !filtering) {
+                startFiltering();
+                return;
+            }
+
+            if (key.upArrow || (!filtering && input === 'k')) {
                 setTreeCursor(p => Math.max(0, p - 1));
                 return;
             }
-            if (key.downArrow || input === 'j') {
-                setTreeCursor(p => Math.min(treeItems.length - 1, p + 1));
+            if (key.downArrow || (!filtering && input === 'j')) {
+                setTreeCursor(p => Math.min(filteredItems.length - 1, p + 1));
                 return;
             }
-            if (key.rightArrow || input === 'l') {
-                const item = treeItems[treeCursor];
+            if (key.rightArrow || (!filtering && input === 'l')) {
+                const item = filteredItems[treeCursor];
                 if (item?.isDir && !item.expanded) {
-                    setTreeItems(prev => expandDir(prev, treeCursor, scan.repoPath));
+                    setTreeItems(prev => expandDir(prev, prev.indexOf(item), scan.repoPath));
                 }
                 return;
             }
-            if (key.leftArrow || input === 'h') {
-                const item = treeItems[treeCursor];
+            if (key.leftArrow || (!filtering && input === 'h')) {
+                const item = filteredItems[treeCursor];
                 if (item?.isDir && item.expanded) {
-                    setTreeItems(prev => collapseDir(prev, treeCursor));
+                    setTreeItems(prev => collapseDir(prev, prev.indexOf(item)));
                 }
                 return;
             }
             if (input === ' ') {
-                const item = treeItems[treeCursor];
-                if (item?.isDir) setTreeItems(prev => toggleDir(prev, treeCursor));
+                const item = filteredItems[treeCursor];
+                if (!item) return;
+                const realIdx = treeItems.indexOf(item);
+                if (realIdx < 0) return;
+                if (item.isDir) setTreeItems(prev => toggleDir(prev, realIdx));
+                else setTreeItems(prev => toggleFile(prev, realIdx));
                 return;
             }
-            if (input === 'a') { setTreeItems(prev => setAllDirs(prev, true)); return; }
-            if (input === 'n') { setTreeItems(prev => setAllDirs(prev, false)); return; }
-            if (input === 'i') {
+            if (!filtering && input === 'a') { setTreeItems(prev => setAllDirs(prev, true)); return; }
+            if (!filtering && input === 'n') { setTreeItems(prev => setAllDirs(prev, false)); return; }
+            if (!filtering && input === 'i') {
                 setTreeItems(prev => prev.map(it => ({ ...it, checked: !it.checked })));
                 return;
             }
         }
     });
 
+    // Filtered tree items — show matching files + their parent dirs
+    const filteredItems = useMemo(() => {
+        if (!filterText) return treeItems;
+        const lower = filterText.toLowerCase();
+        const matchedPaths = new Set<string>();
+        // Find direct matches
+        for (const item of treeItems) {
+            if (item.name.toLowerCase().includes(lower)) {
+                matchedPaths.add(item.path);
+                // Add all ancestor dirs
+                const parts = item.path.split('/');
+                for (let i = 1; i < parts.length; i++) {
+                    matchedPaths.add(parts.slice(0, i).join('/'));
+                }
+            }
+        }
+        return treeItems.filter(item => matchedPaths.has(item.path));
+    }, [treeItems, filterText]);
+
     const totalFiles = countTotalFiles(treeItems);
     const selectedDirs = treeItems.filter(i => i.depth === 0 && i.isDir && i.checked).length;
     const totalDirs = treeItems.filter(i => i.depth === 0 && i.isDir).length;
-    const visible = treeItems.slice(scrollOffset, scrollOffset + treeViewH);
+    const visible = filteredItems.slice(
+        centerScroll(treeCursor, filteredItems.length, treeViewH),
+        centerScroll(treeCursor, filteredItems.length, treeViewH) + treeViewH,
+    );
+    const scrollOffset = centerScroll(treeCursor, filteredItems.length, treeViewH);
     const dbInfo = scan.db?.exists ? `${scan.db.sizeMB} MB` : 'new';
     const sidebarW = 30;
 
@@ -340,8 +428,17 @@ function MainScreen({ scan, width, height, onConfirm }: {
                     {/* Code: interactive tree */}
                     {focusedModName === 'code' && (
                         <Box flexDirection="column" paddingLeft={1} height={treeViewH} overflow="hidden">
+                            {/* Filter bar */}
+                            {(isFiltering || filterText) && (
+                                <Box height={1} marginBottom={0}>
+                                    <Text color={C.aurora} bold>/ </Text>
+                                    <Text color={C.text}>{filterText}</Text>
+                                    <Text color={C.aurora}>▎</Text>
+                                    {filterText && <Text color={C.dim}> ({filteredItems.length} matches)</Text>}
+                                </Box>
+                            )}
                             {visible.map((item, i) => {
-                                const globalIdx = scrollOffset + i;
+                                const globalIdx = centerScroll(treeCursor, filteredItems.length, treeViewH) + i;
                                 return (
                                     <TreeItemRow key={item.path} item={item}
                                         isCursor={pane === 'tree' && globalIdx === treeCursor}
@@ -349,38 +446,35 @@ function MainScreen({ scan, width, height, onConfirm }: {
                                 );
                             })}
                             {visible.length < treeViewH && Array.from(
-                                { length: treeViewH - visible.length },
+                                { length: treeViewH - visible.length - (isFiltering || filterText ? 1 : 0) },
                                 (_, i) => <Box key={`e${i}`} height={1}><Text> </Text></Box>,
                             )}
                         </Box>
                     )}
 
-                    {/* Docs: static preview */}
-                    {focusedModName === 'docs' && (
+                    {/* Docs / Git / External: static preview */}
+                    {focusedModName !== 'code' && allPreviews.has(focusedModName) && (
                         <Box flexDirection="column" paddingLeft={1} height={treeViewH} overflow="hidden">
-                            {docsPreview.slice(0, treeViewH).map((line, i) => (
-                                <Text key={`d${i}`} color={line.dim ? C.dim : line.color ?? C.text}
+                            {allPreviews.get(focusedModName)!.slice(0, treeViewH).map((line, i) => (
+                                <Text key={`p${i}`} color={line.dim ? C.dim : line.color ?? C.text}
                                     bold={line.bold} wrap="truncate"
                                 >{line.text}</Text>
                             ))}
                         </Box>
                     )}
 
-                    {/* Git: static preview */}
-                    {focusedModName === 'git' && (
-                        <Box flexDirection="column" paddingLeft={1} height={treeViewH} overflow="hidden">
-                            {gitPreview.slice(0, treeViewH).map((line, i) => (
-                                <Text key={`g${i}`} color={line.dim ? C.dim : line.color ?? C.text}
-                                    bold={line.bold} wrap="truncate"
-                                >{line.text}</Text>
-                            ))}
+                    {/* No preview available for this module */}
+                    {focusedModName !== 'code' && !allPreviews.has(focusedModName) && (
+                        <Box flexDirection="column" paddingLeft={1} height={treeViewH} justifyContent="center" alignItems="center">
+                            <Text color={C.dim}>No preview available</Text>
+                            <Text color={C.dim}>This plugin will be indexed with default settings</Text>
                         </Box>
                     )}
 
-                    {focusedModName === 'code' && treeItems.length > treeViewH && (
+                    {focusedModName === 'code' && filteredItems.length > treeViewH && (
                         <Box paddingX={2} justifyContent="flex-end">
                             <Text color={C.dim}>
-                                {scrollOffset + 1}–{Math.min(scrollOffset + treeViewH, treeItems.length)}/{treeItems.length}
+                                {scrollOffset + 1}–{Math.min(scrollOffset + treeViewH, filteredItems.length)}/{filteredItems.length}
                             </Text>
                         </Box>
                     )}
@@ -403,6 +497,8 @@ function MainScreen({ scan, width, height, onConfirm }: {
                     <Text color={C.aurora}>n</Text> none
                     <Text color={C.dim}> · </Text>
                     <Text color={C.aurora}>i</Text> invert
+                    <Text color={C.dim}> · </Text>
+                    <Text color={C.aurora}>/</Text> filter
                 </Text>
                 <Text color={C.aurora} bold>
                     Enter: {scan.config.exists ? 'Index ⚡' : 'Next →'}
@@ -504,7 +600,10 @@ function ConfigPanel({ onDone }: {
 
 // ── App Root ────────────────────────────────────────────
 
-function IndexApp({ scan }: { scan: ScanResult }): React.ReactNode {
+function IndexApp({ scan, externalPreviews }: {
+    scan: ScanResult;
+    externalPreviews?: Map<string, PreviewLine[]>;
+}): React.ReactNode {
     const { exit } = useApp();
     const { stdout } = useStdout();
     const [rawW, setRawW] = useState(stdout?.columns || 100);
@@ -544,6 +643,7 @@ function IndexApp({ scan }: { scan: ScanResult }): React.ReactNode {
             {phase === 'main' && (
                 <MainScreen scan={scan} width={width} height={height}
                     onConfirm={handleMainConfirm}
+                    externalPreviews={externalPreviews}
                 />
             )}
             {phase === 'config' && <ConfigPanel onDone={handleConfigDone} />}
@@ -556,9 +656,12 @@ function IndexApp({ scan }: { scan: ScanResult }): React.ReactNode {
 
 let _lastSelection: TuiSelection | null = null;
 
-export async function runIndexTui(scan: ScanResult): Promise<TuiSelection | null> {
+export async function runIndexTui(
+    scan: ScanResult,
+    externalPreviews?: Map<string, PreviewLine[]>,
+): Promise<TuiSelection | null> {
     _lastSelection = null;
-    const instance = render(<IndexApp scan={scan} />);
+    const instance = render(<IndexApp scan={scan} externalPreviews={externalPreviews} />);
     await instance.waitUntilExit();
     return _lastSelection;
 }

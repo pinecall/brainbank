@@ -323,3 +323,59 @@ export interface FileResolvablePlugin extends Plugin {
 export function isFileResolvable(p: Plugin): p is FileResolvablePlugin {
     return typeof (p as FileResolvablePlugin).resolveFiles === 'function';
 }
+
+
+// ── Third-party Plugin Discovery (TUI integration) ────────────────
+
+/**
+ * Scan info for the TUI sidebar. Describes what content a plugin can index.
+ * Exported standalone by plugin packages — called BEFORE plugin initialization.
+ *
+ * @example
+ * ```typescript
+ * // brainbank-csv/index.ts
+ * export function scan(repoPath: string): PluginScanInfo { ... }
+ * ```
+ */
+export interface PluginScanInfo {
+    /** Plugin name (e.g. 'csv', 'openapi'). */
+    name: string;
+    /** Whether there's content available to index. */
+    available: boolean;
+    /** Human-readable summary (e.g. '12 CSV files'). */
+    summary: string;
+    /** Emoji icon for TUI display. */
+    icon: string;
+    /** Whether checked by default in the module selector. */
+    checked: boolean;
+    /** Reason this plugin is disabled (shown when unavailable). */
+    disabled?: string;
+    /** Detail lines for the scan tree (e.g. per-file breakdown). */
+    details?: string[];
+}
+
+/**
+ * A single line in the TUI explorer preview panel.
+ * Returned by `preview()` — rendered as-is in the right panel.
+ *
+ * @example
+ * ```typescript
+ * // brainbank-csv/index.ts
+ * export function preview(repoPath: string): PluginPreviewLine[] {
+ *   return [
+ *     { text: '📊 3 CSV files', bold: true },
+ *     { text: '  sales.csv  2.3 MB', color: '#9ECE6A' },
+ *   ];
+ * }
+ * ```
+ */
+export interface PluginPreviewLine {
+    /** Text content for this line. */
+    text: string;
+    /** Optional hex color (e.g. '#9ECE6A'). */
+    color?: string;
+    /** Render bold. */
+    bold?: boolean;
+    /** Render dimmed. */
+    dim?: boolean;
+}

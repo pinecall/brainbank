@@ -183,7 +183,7 @@ brainbank/
 │       │   ├── brain-context.ts       ← BrainContext type + contextFromCLI() (44 lines)
 │       │   ├── config-loader.ts       ← .brainbank/config.json loader + cache (73 lines)
 │       │   ├── plugin-loader.ts       ← Dynamic @brainbank/* loading + folder discovery (147 lines)
-│       │   └── builtin-registration.ts ← Multi-repo detection + plugin registration (124 lines)
+│       │   └── builtin-registration.ts ← Plugin registration (~90 lines)
 │       └── commands/                  ← 15 command files (index, scan, search, context, kv, etc.)
 │
 │   └── mcp/                           ← MCP stdio server (built into core)
@@ -477,18 +477,7 @@ PluginRegistry
 │  clear()
 ```
 
-**Multi-repo naming convention:**
 
-```typescript
-brain
-  .use(code({ name: 'code:frontend', repoPath: './fe' }))
-  .use(code({ name: 'code:backend',  repoPath: './be' }))
-  .use(git({  name: 'git:frontend',  repoPath: './fe' }))
-  .use(git({  name: 'git:backend',   repoPath: './be' }))
-
-// Code plugins: each gets its OWN HNSW (keyed by full name)
-// Git plugins:  share ONE HNSW (keyed by literal 'git')
-```
 
 ---
 
@@ -1553,26 +1542,6 @@ new BrainBank({ embeddingProvider: openai })
     └───────────────────────────────────────────────────┘
 ```
 
-### 16.2 Multi-Repo Startup
-
-```
-~/projects/ (no root .git)
-├── frontend/  (.git)
-└── backend/   (.git)
-
-CLI detects: gitSubdirs = [frontend, backend]
-
-Registered plugins:
-  code:frontend → pluginDb = frontend.db, HNSW key = 'code:frontend'
-  code:backend  → pluginDb = backend.db,  HNSW key = 'code:backend'
-  git:frontend  → pluginDb = frontend.db, HNSW key = 'git' (shared!)
-  git:backend   → pluginDb = backend.db,  HNSW key = 'git' (shared!)
-
-HNSW layout:
-  _sharedHnsw['code:frontend'] → separate index
-  _sharedHnsw['code:backend']  → separate index
-  _sharedHnsw['git']           → ONE shared index (both repos)
-```
 
 ### 16.3 Hybrid Search Flow
 

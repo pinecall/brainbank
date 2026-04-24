@@ -301,6 +301,17 @@ export function toggleDir(items: FileTreeItem[], index: number): FileTreeItem[] 
 }
 
 
+/** Toggle an individual file's checked state. */
+export function toggleFile(items: FileTreeItem[], index: number): FileTreeItem[] {
+    const node = items[index];
+    if (!node || node.isDir) return items;
+
+    const next = [...items];
+    next[index] = { ...node, checked: !node.checked };
+    return next;
+}
+
+
 /** Set all dirs to checked or unchecked. */
 export function setAllDirs(items: FileTreeItem[], checked: boolean): FileTreeItem[] {
     return items.map(item => item.isDir ? { ...item, checked } : { ...item, checked });
@@ -308,7 +319,10 @@ export function setAllDirs(items: FileTreeItem[], checked: boolean): FileTreeIte
 
 
 /** Generate include/ignore patterns from tree state. */
-export function generatePatternsFromTree(items: FileTreeItem[]): { include: string[]; ignore: string[] } {
+export function generatePatternsFromTree(
+    items: FileTreeItem[],
+    originalInclude?: string[],
+): { include: string[]; ignore: string[] } {
     const include: string[] = [];
     const ignore: string[] = [];
 
@@ -317,7 +331,6 @@ export function generatePatternsFromTree(items: FileTreeItem[]): { include: stri
 
     // If everything is checked, no filtering needed
     if (topDirs.every(d => d.checked)) {
-        // Check if any sub-dirs are unchecked
         const uncheckedSubs = allDirs.filter(d => !d.checked && d.depth > 0);
         if (uncheckedSubs.length === 0) return { include: [], ignore: [] };
         for (const item of uncheckedSubs) {
@@ -326,14 +339,28 @@ export function generatePatternsFromTree(items: FileTreeItem[]): { include: stri
         return { include, ignore };
     }
 
-    // If nothing is checked, return empty (caller should handle)
+    // If nothing is checked, return empty
     if (allDirs.every(d => !d.checked)) {
         return { include: [], ignore: [] };
     }
 
-    // Find the "leaf" checked dirs — checked dirs that have no checked child
-    // OR checked dirs whose ALL visible children are also checked (full subtree).
-    // Strategy: walk checked dirs and determine if this is a "full inclusion" or "partial".
+    // Build lookup: for each dir path, which original patterns applied to it
+    const originalByDir = new Map<string, string[]>();
+    if (originalInclude && originalInclude.length > 0) {
+        for (const pattern of originalInclude) {
+            // Extract the base directory from the pattern
+            const base = pattern.replace(/\/\*\*$/, '').replace(/\/\*$/, '');
+            // Find which top-level (or depth-1) dir this pattern falls under
+            const parts = base.split('/');
+            // Map to all ancestor dirs
+            for (let i = 1; i <= parts.length; i++) {
+                const dirPath = parts.slice(0, i).join('/');
+                const existing = originalByDir.get(dirPath) ?? [];
+                existing.push(pattern);
+                originalByDir.set(dirPath, existing);
+            }
+        }
+    }
 
     /** Get visible children of a dir in the flat list */
     function getVisibleChildren(parentIdx: number): FileTreeItem[] {
@@ -349,21 +376,22 @@ export function generatePatternsFromTree(items: FileTreeItem[]): { include: stri
     /** Check if a dir is a "full inclusion" — all its visible children are checked */
     function isFullInclusion(idx: number): boolean {
         const children = getVisibleChildren(idx);
-        if (children.length === 0) return true; // leaf dir or collapsed
+        if (children.length === 0) return true;
         return children.filter(c => c.isDir).every(c => c.checked);
     }
 
-    // Walk and find inclusion patterns
+    // Walk checked dirs and determine include patterns
     for (let i = 0; i < items.length; i++) {
         const item = items[i]!;
         if (!item.isDir || !item.checked) continue;
 
-        // Skip if parent is also checked AND parent is a full inclusion
-        // (this dir is already covered by parent's include)
+        // Skip if a REAL ancestor is also checked and is a full inclusion
         let coveredByParent = false;
         for (let j = i - 1; j >= 0; j--) {
             const ancestor = items[j]!;
-            if (ancestor.isDir && ancestor.depth < item.depth && ancestor.checked) {
+            if (ancestor.isDir && ancestor.depth < item.depth
+                && item.path.startsWith(ancestor.path + '/')
+                && ancestor.checked) {
                 if (isFullInclusion(j)) {
                     coveredByParent = true;
                 }
@@ -372,11 +400,45 @@ export function generatePatternsFromTree(items: FileTreeItem[]): { include: stri
         }
         if (coveredByParent) continue;
 
-        // If this dir is a full inclusion, add it as include and skip children
-        if (isFullInclusion(i)) {
+        // Check if original patterns exist for this dir — preserve them
+        const origPatterns = originalByDir.get(item.path);
+        if (origPatterns && origPatterns.length > 0) {
+            // Use original patterns that are scoped to or under this dir
+            for (const p of origPatterns) {
+                if (!include.includes(p)) {
+                    include.push(p);
+                }
+            }
+        } else {
+            // New selection — generate fresh pattern
             include.push(`${item.path}/**`);
         }
-        // else: partial — don't add this dir, let children be evaluated individually
+    }
+
+    // Build a set of included dir prefixes for coverage checks
+    const includedPrefixes = new Set(include);
+
+    // Handle individually checked files whose parent dir is NOT in the include set
+    for (const item of items) {
+        if (item.isDir || !item.checked) continue;
+        // Check if this file is already covered by an included directory
+        const covered = [...includedPrefixes].some(p => {
+            const base = p.replace(/\/\*\*$/, '').replace(/\/\*$/, '');
+            return item.path.startsWith(base + '/') || item.path === base;
+        });
+        if (!covered) {
+            include.push(item.path);
+        }
+    }
+
+    // Handle individually unchecked files inside checked directories
+    for (const item of items) {
+        if (item.isDir || item.checked) continue;
+        const parentPath = item.path.split('/').slice(0, -1).join('/');
+        const parentIncluded = includedPrefixes.has(`${parentPath}/**`);
+        if (parentIncluded) {
+            ignore.push(item.path);
+        }
     }
 
     return { include, ignore };

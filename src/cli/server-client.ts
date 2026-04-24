@@ -14,7 +14,7 @@ interface ContextOptions {
     task: string;
     repo?: string;
     sources?: Record<string, number>;
-    pathPrefix?: string;
+    pathPrefix?: string | string[];
     affectedFiles?: string[];
 }
 

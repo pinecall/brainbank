@@ -1,8 +1,7 @@
 /**
  * BrainBank CLI — Plugin Registration
  *
- * Generic plugin registration with multi-repo detection
- * and per-plugin config resolution. No hardcoded plugin names.
+ * Generic plugin registration with per-plugin config resolution.
  */
 
 import type { BrainBank } from '@/brainbank.ts';
@@ -12,7 +11,7 @@ import type { ProjectConfig } from './config-loader.ts';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { c } from '../utils.ts';
-import { loadPlugin, isMultiRepoCapable, resolveEmbeddingKey } from './plugin-loader.ts';
+import { loadPlugin, resolveEmbeddingKey } from './plugin-loader.ts';
 
 /** Read a nested property from a generic config section. */
 function pluginCfg(config: ProjectConfig | null, pluginName: string): Record<string, unknown> {
@@ -23,38 +22,11 @@ function pluginCfg(config: ProjectConfig | null, pluginName: string): Record<str
     return {};
 }
 
-/** Detect subdirectories that have their own .git repo. Respects optional `repos` whitelist. */
-function detectGitSubdirs(parentPath: string, repos?: string[]): { name: string; path: string }[] {
-    try {
-        const entries = fs.readdirSync(parentPath, { withFileTypes: true });
-        let subdirs = entries
-            .filter(e => {
-                if (e.name.startsWith('.') || e.name.startsWith('node_modules')) return false;
-                // Follow symlinks: isDirectory() is false for symlinks, so check via statSync
-                const isDir = e.isDirectory() || (e.isSymbolicLink() && fs.statSync(path.join(parentPath, e.name)).isDirectory());
-                return isDir && fs.existsSync(path.join(parentPath, e.name, '.git'));
-            })
-            .map(e => ({ name: e.name, path: path.join(parentPath, e.name) }));
-
-        if (repos && repos.length > 0) {
-            const allowed = new Set(repos);
-            subdirs = subdirs.filter(s => allowed.has(s.name));
-        }
-
-        return subdirs;
-    } catch { return []; }
-}
-
-/** Register plugins with multi-repo detection and per-plugin config. */
+/** Register plugins with per-plugin config. */
 export async function registerBuiltins(
     brain: BrainBank, rp: string, pluginNames: string[],
     config: ProjectConfig | null, ignorePatterns: string[] = [], includePatterns: string[] = [],
 ): Promise<void> {
-    const resolvedRp = path.resolve(rp);
-    const hasRootGit = fs.existsSync(path.join(resolvedRp, '.git'));
-    const configRepos = config?.repos as string[] | undefined;
-    const gitSubdirs = !hasRootGit ? detectGitSubdirs(resolvedRp, configRepos) : [];
-
     for (const name of pluginNames) {
         const factory = await loadPlugin(name);
         if (!factory) {
@@ -69,40 +41,23 @@ export async function registerBuiltins(
         const embKey = cfg.embedding as string | undefined;
         const embeddingProvider = embKey ? await resolveEmbeddingKey(embKey) : undefined;
 
-        // Multi-repo: create one plugin instance per git subdir
-        if (gitSubdirs.length > 0 && isMultiRepoCapable(name)) {
-            console.error(c.cyan(`  Multi-repo: found ${gitSubdirs.length} git repos: ${gitSubdirs.map(d => d.name).join(', ')}`));
-            for (const sub of gitSubdirs) {
-                const mergedIgnore = [...(cfg.ignore as string[] ?? []), ...(config?.ignore as string[] ?? []), ...ignorePatterns];
-                const mergedInclude = [...(cfg.include as string[] ?? []), ...(config?.include as string[] ?? []), ...includePatterns];
-                brain.use(factory({
-                    ...cfg,
-                    repoPath: sub.path,
-                    name: `${name}:${sub.name}`,
-                    embeddingProvider,
-                    ignore: mergedIgnore.length > 0 ? mergedIgnore : undefined,
-                    include: mergedInclude.length > 0 ? mergedInclude : undefined,
-                }));
-            }
-        } else {
-            // Single repo: merge ignore/include patterns for plugins that support them
-            // Sources: per-plugin config (e.g. config.code.ignore), root config (config.ignore), CLI flags
-            const configIgnore = cfg.ignore as string[] | undefined ?? [];
-            const rootIgnore = (config?.ignore ?? []) as string[];
-            const mergedIgnore = [...configIgnore, ...rootIgnore, ...ignorePatterns];
+        // Merge ignore/include patterns for plugins that support them
+        // Sources: per-plugin config (e.g. config.code.ignore), root config (config.ignore), CLI flags
+        const configIgnore = cfg.ignore as string[] | undefined ?? [];
+        const rootIgnore = (config?.ignore ?? []) as string[];
+        const mergedIgnore = [...configIgnore, ...rootIgnore, ...ignorePatterns];
 
-            const configInclude = cfg.include as string[] | undefined ?? [];
-            const rootInclude = (config?.include ?? []) as string[];
-            const mergedInclude = [...configInclude, ...rootInclude, ...includePatterns];
+        const configInclude = cfg.include as string[] | undefined ?? [];
+        const rootInclude = (config?.include ?? []) as string[];
+        const mergedInclude = [...configInclude, ...rootInclude, ...includePatterns];
 
-            brain.use(factory({
-                ...cfg,
-                repoPath: rp,
-                embeddingProvider,
-                ignore: mergedIgnore.length > 0 ? mergedIgnore : undefined,
-                include: mergedInclude.length > 0 ? mergedInclude : undefined,
-            }));
-        }
+        brain.use(factory({
+            ...cfg,
+            repoPath: rp,
+            embeddingProvider,
+            ignore: mergedIgnore.length > 0 ? mergedIgnore : undefined,
+            include: mergedInclude.length > 0 ? mergedInclude : undefined,
+        }));
     }
 }
 

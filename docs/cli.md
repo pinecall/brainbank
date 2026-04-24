@@ -96,8 +96,6 @@ brainbank index [path] --include "src/**,lib/**"    # Only index matching paths 
 brainbank index [path] --include "src/**" --ignore "src/generated/**"  # Whitelist + blacklist
 ```
 
-> **Multi-repo:** If `[path]` contains multiple Git subdirectories (no root `.git/`), BrainBank auto-detects them and indexes all into one shared DB. See [Multi-Repo](multi-repo.md).
-
 ---
 
 ## Search
@@ -287,9 +285,9 @@ When you run `brainbank context "task"`, the CLI:
 2. If running → sends the query to `POST http://localhost:<port>/context` → prints the result
 3. If not running → falls back to local mode (loads models, queries, then exits)
 
-### Multi-Repo
+### Workspace Cache
 
-A single server handles all repos. The `--repo` flag in each CLI call selects the workspace:
+A single server handles multiple repos. The `--repo` flag in each CLI call selects the workspace:
 
 ```bash
 brainbank context "auth flow" --repo ~/aurora     # loads aurora workspace

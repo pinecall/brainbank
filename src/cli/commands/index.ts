@@ -48,15 +48,14 @@ export async function cmdIndex(): Promise<void> {
 
     if (onlyRaw) {
         // --only flag: explicit module selection
-        printScanTree(scan, depth);
+        printIndexHeader(scan, depth);
         modules = onlyRaw.split(',').map(s => s.trim());
     } else if (scan.config.plugins && scan.config.plugins.length > 0 && !forceSetup) {
         // Config exists with plugins field — skip TUI, index directly
-        printScanTree(scan, depth);
+        printIndexHeader(scan, depth);
         modules = scan.config.plugins;
-        console.log(c.dim(`\n  Using config: plugins = [${modules.join(', ')}]\n`));
     } else if (skipPrompt) {
-        printScanTree(scan, depth);
+        printIndexHeader(scan, depth);
         modules = buildDefaultModules(scan);
     } else {
         // ── Interactive TUI ──
@@ -108,13 +107,15 @@ export async function cmdIndex(): Promise<void> {
     }
 
     // Save config from TUI selection — only when TUI actually ran
+    // NEVER rewrite config on headless runs (existing config + no --setup)
     if (tuiConfig) {
         // New config (first run) — save everything
         saveConfigFromTui(scan.repoPath, modules, tuiConfig.embedding, tuiConfig.pruner, tuiConfig.expander, tuiInclude, tuiIgnore);
-    } else {
-        // TUI ran with existing config — always update plugins + patterns
+    } else if (tuiInclude.length > 0 || tuiIgnore.length > 0) {
+        // TUI ran with existing config and user changed selections — update patterns only
         updateConfigPlugins(scan.repoPath, modules, tuiInclude, tuiIgnore);
     }
+    // If neither condition is true, config already exists and TUI didn't run — don't touch it
 
 
     console.log(c.bold(`\n━━━ Indexing: ${modules.join(', ')} ━━━`));
@@ -204,48 +205,54 @@ export async function cmdIndex(): Promise<void> {
 }
 
 
-function printScanTree(scan: ScanResult, depth: number): void {
-    console.clear();
-    console.log(c.bold('\n━━━ BrainBank Scan ━━━'));
-    console.log(c.dim(`  Repo: ${scan.repoPath}`));
+/** Compact header for headless (non-TUI) index runs. Validates include/ignore paths. */
+function printIndexHeader(scan: ScanResult, _depth: number): void {
+    console.log(c.bold('\n━━━ BrainBank ━━━'));
+    console.log(c.dim(`  ${scan.repoPath}\n`));
 
-    // Dynamic module display
-    for (const mod of scan.modules) {
+    // Show plugins
+    const plugins = scan.config.plugins ?? [];
+    console.log(`  Plugins: ${c.cyan(plugins.join(', '))}`);
+
+    // Validate and show include patterns
+    if (scan.config.include?.length) {
         console.log('');
-        if (mod.available) {
-            const extra = mod.name === 'git' ? ` (depth: ${depth})` : '';
-            console.log(`  ${mod.icon} ${c.bold(capitalizeFirst(mod.name))} — ${mod.summary}${extra}`);
-            if (mod.details) {
-                for (const d of mod.details) {
-                    console.log(c.dim(`     ${d}`));
-                }
-            }
-        } else {
-            console.log(`  ${mod.icon} ${c.dim(`${capitalizeFirst(mod.name)} — ${mod.summary}`)}`);
+        for (const pattern of scan.config.include) {
+            const exists = validatePattern(scan.repoPath, pattern);
+            const icon = exists ? c.green('✓') : c.red('✗');
+            const label = exists ? c.dim(pattern) : c.red(pattern);
+            console.log(`  ${icon} ${label}`);
         }
     }
 
-    // Config ignore
+    // Validate and show ignore patterns
     if (scan.config.ignore?.length) {
-        console.log(c.dim(`     Ignore: ${scan.config.ignore.join(', ')}`));
-    }
-    // Config include
-    if (scan.config.include?.length) {
-        console.log(c.dim(`     Include: ${scan.config.include.join(', ')}`));
+        console.log('');
+        console.log(c.dim('  Ignore:'));
+        for (const pattern of scan.config.ignore) {
+            console.log(`    ${c.yellow('─')} ${c.dim(pattern)}`);
+        }
     }
 
-    // Config & DB
-    console.log('');
-    if (scan.config.exists) {
-        console.log(`  ⚙️  ${c.dim('Config:')} .brainbank/config.json ${c.green('✓')}`);
-    }
+    // DB info
     if (scan.db?.exists) {
         const ago = scan.db.lastModified ? timeSince(scan.db.lastModified) : '';
-        console.log(`  💾 ${c.dim('DB:')} ${scan.db.sizeMB} MB${ago ? `, last indexed ${ago}` : ''}`);
-    } else {
-        console.log(`  💾 ${c.dim('DB: new (first index)')}`);
+        console.log(c.dim(`\n  DB: ${scan.db.sizeMB} MB${ago ? `, last indexed ${ago}` : ''}`));
     }
     console.log('');
+}
+
+/** Check if a glob pattern's base directory exists on disk. */
+function validatePattern(repoPath: string, pattern: string): boolean {
+    // Strip trailing /** or /* or glob chars
+    const base = pattern.replace(/\/\*\*$/, '').replace(/\/\*$/, '');
+    const absPath = path.join(repoPath, base);
+    try {
+        fs.statSync(absPath);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 

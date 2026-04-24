@@ -8,9 +8,6 @@
  *   POST /context  → brain.getContext()
  *   POST /index    → brain.index()
  *   GET  /health   → { ok, pid, uptime, port }
- *
- * Multi-repo: a single server handles all repos via WorkspacePool.
- * Each request includes a `repo` field to select the workspace.
  */
 
 import type { BrainBank } from '@/brainbank.ts';
@@ -25,7 +22,7 @@ interface ContextRequest {
     task: string;
     repo?: string;
     sources?: Record<string, number>;
-    pathPrefix?: string;
+    pathPrefix?: string | string[];
     affectedFiles?: string[];
     codeResults?: number;
     gitResults?: number;
@@ -47,7 +44,7 @@ interface PoolOptions {
 // ── Simple Workspace Pool ─────────────────────────────
 
 /**
- * Minimal in-memory pool for multi-repo support.
+ * Minimal in-memory pool for workspace management.
  * Creates BrainBank instances on demand and caches them.
  * Eviction by TTL (30 min inactivity).
  */

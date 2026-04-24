@@ -382,8 +382,8 @@ export interface ContextOptions {
     useMMR?: boolean;
     /** MMR lambda (0 = diversity, 1 = relevance). Default: 0.7 */
     mmrLambda?: number;
-    /** Filter results to files under this path prefix (e.g. 'src/services/'). */
-    pathPrefix?: string;
+    /** Filter results to files under these path prefixes (e.g. 'src/services/' or ['src/', 'lib/']). */
+    pathPrefix?: string | string[];
     /** Exclude results whose filePath starts with any of these prefixes (e.g. ['src/tests/', 'src/mocks/']). */
     ignorePaths?: string[];
     /** File paths to exclude from results (e.g. files already returned in a previous query). */
