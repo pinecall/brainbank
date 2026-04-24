@@ -102,11 +102,10 @@ export class BrainSearchSession {
         this._brain = await createBrain(this._repoPath);
         await this._brain.initialize();
 
-        // Discover installed sources from plugin names
-        this._sources = [{ key: 'all', label: 'All', enabled: true }];
+        // Discover installed sources from plugin names (no 'all' — user selects individually)
+        this._sources = [];
         const seen = new Set<string>();
         for (const name of this._brain.plugins) {
-            // Plugin names are like 'code:repo-name', 'git:repo-name'
             const base = name.split(':')[0];
             if (seen.has(base)) continue;
             seen.add(base);
@@ -123,19 +122,25 @@ export class BrainSearchSession {
      *
      * @param query  - Search query
      * @param activeSourceKeys - Set of active source keys (e.g. {'code', 'git'})
+     * @param usePruner - Whether to run the pruner stage
+     * @param useExpander - Whether to run the expander stage
      */
-    async search(query: string, activeSourceKeys?: Set<string>): Promise<SearchPipelineResult> {
+    async search(
+        query: string,
+        activeSourceKeys?: Set<string>,
+        usePruner = true,
+        useExpander = true,
+    ): Promise<SearchPipelineResult> {
         if (!this._brain) throw new Error('BrainSearchSession not initialized');
 
         const tTotal = Date.now();
-        const pruner = this._brain.config.pruner as Pruner | undefined;
-        const expander = this._brain.config.expander as Expander | undefined;
+        const pruner = usePruner ? (this._brain.config.pruner as Pruner | undefined) : undefined;
+        const expander = useExpander ? (this._brain.config.expander as Expander | undefined) : undefined;
 
         // Build sources filter
         const sources: Record<string, number> = {};
-        if (activeSourceKeys && !activeSourceKeys.has('all')) {
+        if (activeSourceKeys) {
             for (const src of this._sources) {
-                if (src.key === 'all') continue;
                 sources[src.key] = activeSourceKeys.has(src.key) ? 20 : 0;
             }
         }
@@ -156,17 +161,21 @@ export class BrainSearchSession {
             const pt0 = Date.now();
             pruned = await pruneResults(query, raw, pruner);
             tPrune = Date.now() - pt0;
-            // Dropped = items in raw but not in pruned
             const prunedSet = new Set(pruned);
             dropped = raw.filter(r => !prunedSet.has(r));
         }
 
-        // Stage 3: Expand
+        // Stage 3: Expand — filter results to only include active sources
         let expanded: SearchResult[] = [];
         let tExpand = 0;
         if (expander && pruned.length > 0) {
             const et0 = Date.now();
-            expanded = await this._runExpansion(query, pruned, expander);
+            let expandedRaw = await this._runExpansion(query, pruned, expander);
+            // Filter expanded results by active sources
+            if (activeSourceKeys) {
+                expandedRaw = expandedRaw.filter(r => activeSourceKeys.has(r.type));
+            }
+            expanded = expandedRaw;
             tExpand = Date.now() - et0;
         }
 
@@ -182,8 +191,8 @@ export class BrainSearchSession {
                 expand: tExpand,
                 total: Date.now() - tTotal,
             },
-            prunerName: pruner?.constructor?.name ?? null,
-            expanderName: expander?.constructor?.name ?? null,
+            prunerName: usePruner ? (pruner?.constructor?.name ?? null) : null,
+            expanderName: useExpander ? (expander?.constructor?.name ?? null) : null,
         };
     }
 

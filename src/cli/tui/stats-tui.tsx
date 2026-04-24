@@ -584,6 +584,8 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
     const [previewScroll, setPreviewScroll] = useState(0);
     const [errorMsg, setErrorMsg] = useState('');
     const [sourceCursor, setSourceCursor] = useState(0);
+    const [usePruner, setUsePruner] = useState(true);
+    const [useExpander, setUseExpander] = useState(true);
 
     // Init session lazily on mount
     useEffect(() => {
@@ -633,16 +635,8 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
     const toggleSource = useCallback((key: string) => {
         setSourceOpts(prev => {
             const next = prev.map(s => ({ ...s }));
-            if (key === 'all') {
-                // Toggle all on
-                for (const s of next) s.enabled = true;
-            } else {
-                // Toggle specific source, disable 'all'
-                const target = next.find(s => s.key === key);
-                if (target) target.enabled = !target.enabled;
-                const allOpt = next.find(s => s.key === 'all');
-                if (allOpt) allOpt.enabled = next.filter(s => s.key !== 'all').every(s => s.enabled);
-            }
+            const target = next.find(s => s.key === key);
+            if (target) target.enabled = !target.enabled;
             return next;
         });
     }, []);
@@ -657,10 +651,10 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
         setPrunedCursor(0);
         try {
             const activeKeys = new Set(
-                sourceOpts.filter(s => s.enabled && s.key !== 'all').map(s => s.key),
+                sourceOpts.filter(s => s.enabled).map(s => s.key),
             );
-            const allEnabled = sourceOpts.find(s => s.key === 'all')?.enabled;
-            const result = await session.search(query, allEnabled ? undefined : activeKeys);
+            const allEnabled = sourceOpts.every(s => s.enabled);
+            const result = await session.search(query, allEnabled ? undefined : activeKeys, usePruner, useExpander);
             setPipeline(result);
             setState('done');
             setStateMsg('');
@@ -669,7 +663,7 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
             setState('error');
             setErrorMsg(err instanceof Error ? err.message : String(err));
         }
-    }, [query, sourceOpts]);
+    }, [query, sourceOpts, usePruner, useExpander]);
 
     // Input handling
     useInput((input, key) => {
@@ -703,11 +697,19 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
         }
 
         // Sources mode — ←→ to move cursor, space to toggle
+        // Combined list: [sources...] | [Pruner] [Expander]
         if (focus === 'sources') {
-            if (key.rightArrow) setSourceCursor(c => Math.min(c + 1, sourceOpts.length - 1));
+            const totalOpts = sourceOpts.length + 2; // +2 for pruner, expander
+            if (key.rightArrow) setSourceCursor(c => Math.min(c + 1, totalOpts - 1));
             if (key.leftArrow) setSourceCursor(c => Math.max(c - 1, 0));
-            if (input === ' ' && sourceOpts[sourceCursor]) {
-                toggleSource(sourceOpts[sourceCursor].key);
+            if (input === ' ') {
+                if (sourceCursor < sourceOpts.length) {
+                    toggleSource(sourceOpts[sourceCursor].key);
+                } else if (sourceCursor === sourceOpts.length) {
+                    setUsePruner(p => !p);
+                } else {
+                    setUseExpander(e => !e);
+                }
                 return;
             }
             if (key.tab) {
@@ -794,7 +796,7 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                             : 'Enter to search'}
                     </Text>
                 </Box>
-                {/* Source filter tabs */}
+                {/* Source filter tabs + pipeline toggles */}
                 <Box marginTop={1}>
                     <Text color={focus === 'sources' ? C.aurora : C.dim}>Sources: </Text>
                     {sourceOpts.map((s, i) => (
@@ -806,9 +808,27 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                                   underline={focus === 'sources' && i === sourceCursor}>
                                 [{s.enabled ? '■' : '□'}] {s.label}
                             </Text>
-                            <Text color={C.dim}>{i < sourceOpts.length - 1 ? '  ' : ''}</Text>
+                            <Text color={C.dim}>  </Text>
                         </Text>
                     ))}
+                    <Text color={C.dim}>│ </Text>
+                    {/* Pruner toggle */}
+                    <Text color={focus === 'sources' && sourceCursor === sourceOpts.length
+                        ? C.text
+                        : (usePruner ? C.purple : C.dim)}
+                          bold={focus === 'sources' && sourceCursor === sourceOpts.length}
+                          underline={focus === 'sources' && sourceCursor === sourceOpts.length}>
+                        [{usePruner ? '■' : '□'}] Pruner
+                    </Text>
+                    <Text color={C.dim}>  </Text>
+                    {/* Expander toggle */}
+                    <Text color={focus === 'sources' && sourceCursor === sourceOpts.length + 1
+                        ? C.text
+                        : (useExpander ? C.purple : C.dim)}
+                          bold={focus === 'sources' && sourceCursor === sourceOpts.length + 1}
+                          underline={focus === 'sources' && sourceCursor === sourceOpts.length + 1}>
+                        [{useExpander ? '■' : '□'}] Expander
+                    </Text>
                     <Text color={C.dim}>  (←→ move, Space toggle)</Text>
                 </Box>
             </Box>
