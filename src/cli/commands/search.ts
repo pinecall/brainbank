@@ -26,7 +26,7 @@ function parseSourceFlags(): { sources: Record<string, number>; query: string } 
     const NON_SOURCE_FLAGS = new Set([
         'repo', 'depth', 'collection', 'pattern', 'context', 'name',
         'keep', 'pruner', 'only', 'docs-path', 'mode', 'limit',
-        'ignore', 'meta', 'k', 'yes', 'y', 'force', 'verbose',
+        'ignore', 'include', 'meta', 'k', 'yes', 'y', 'force', 'verbose', 'path',
     ]);
 
     const sources: Record<string, number> = {};
@@ -76,7 +76,7 @@ function buildSearchOptions(sources: Record<string, number>): { sources: Record<
 export async function cmdSearch(): Promise<void> {
     const { sources, query } = parseSourceFlags();
     if (!query) {
-        console.log(c.red('Usage: brainbank search <query> [--code <n>] [--git <n>] [--<source> <n>]'));
+        console.log(c.red('Usage: brainbank search <query> [--repo <path>] [--path <dir>] [--code <n>] [--git <n>]'));
         process.exit(1);
     }
 
@@ -93,7 +93,7 @@ export async function cmdSearch(): Promise<void> {
 export async function cmdHybridSearch(): Promise<void> {
     const { sources, query } = parseSourceFlags();
     if (!query) {
-        console.log(c.red('Usage: brainbank hsearch <query> [--code <n>] [--git <n>] [--docs <n>] [--<source> <n>]'));
+        console.log(c.red('Usage: brainbank hsearch <query> [--repo <path>] [--path <dir>] [--code <n>] [--git <n>] [--docs <n>]'));
         process.exit(1);
     }
 
@@ -112,7 +112,7 @@ export async function cmdHybridSearch(): Promise<void> {
 export async function cmdKeywordSearch(): Promise<void> {
     const { sources, query } = parseSourceFlags();
     if (!query) {
-        console.log(c.red('Usage: brainbank ksearch <query> [--code <n>] [--git <n>] [--<source> <n>]'));
+        console.log(c.red('Usage: brainbank ksearch <query> [--repo <path>] [--path <dir>] [--code <n>] [--git <n>]'));
         process.exit(1);
     }
 
@@ -125,6 +125,6 @@ export async function cmdKeywordSearch(): Promise<void> {
 
     const opts = buildSearchOptions(sources);
     const results = await brain.searchBM25(query, opts);
-    printResults(results);
+    printResults(results, 0.40);
     brain.close();
 }

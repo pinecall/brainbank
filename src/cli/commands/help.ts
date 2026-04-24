@@ -16,7 +16,7 @@ export function showHelp(): void {
     console.log(`  ${c.cyan('hsearch')} <query>                    Hybrid search (${c.bold('best quality')})`);
     console.log(`  ${c.cyan('ksearch')} <query>                    Keyword search (BM25, instant)`);
     console.log(`  ${c.cyan('dsearch')} <query>                    Document search`);
-    console.log(c.dim('    All search commands accept --<source> <n> to filter by source'));
+    console.log(c.dim('    All accept --repo <path> --path <dir> --<source> <n>'));
     console.log('');
     console.log(c.bold('Context:'));
     console.log(`  ${c.cyan('context')} <task>                     Get formatted context for a task`);
