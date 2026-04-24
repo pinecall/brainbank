@@ -445,7 +445,8 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
             if (focusPanel === 'content') { setFocusPanel('list'); return; }
             onBack();
         }
-        if (key.tab || (input === 'l' && focusPanel === 'list') || (input === 'h' && focusPanel === 'content')) {
+        if (key.tab || (input === 'l' && focusPanel === 'list') || (input === 'h' && focusPanel === 'content')
+            || (key.rightArrow && focusPanel === 'list') || (key.leftArrow && focusPanel === 'content')) {
             setFocusPanel(p => p === 'list' ? 'content' : 'list');
             return;
         }
@@ -735,8 +736,11 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
         if (focus === 'raw') {
             if (key.downArrow) setRawCursor(c => Math.min(c + 1, (pipeline?.raw.length ?? 1) - 1));
             if (key.upArrow) setRawCursor(c => Math.max(c - 1, 0));
-            if (input === 'h') setFocus('sources');
-            if (input === 'l') setFocus('pruned');
+            if (input === '}') setRawCursor(c => Math.min(c + 10, (pipeline?.raw.length ?? 1) - 1));
+            if (input === '{') setRawCursor(c => Math.max(c - 10, 0));
+            if (input === 'h' || key.leftArrow) setFocus('sources');
+            if (input === 'l' || key.rightArrow) setFocus('pruned');
+            if (key.return) { setFocus('preview'); setPreviewScroll(0); }
             return;
         }
 
@@ -744,17 +748,22 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
             const combined = pipeline ? [...pipeline.pruned, ...pipeline.expanded] : [];
             if (key.downArrow) setPrunedCursor(c => Math.min(c + 1, combined.length - 1));
             if (key.upArrow) setPrunedCursor(c => Math.max(c - 1, 0));
-            if (input === 'h') setFocus('raw');
-            if (input === 'l') setFocus('preview');
+            if (input === '}') setPrunedCursor(c => Math.min(c + 10, combined.length - 1));
+            if (input === '{') setPrunedCursor(c => Math.max(c - 10, 0));
+            if (input === 'h' || key.leftArrow) setFocus('raw');
+            if (input === 'l' || key.rightArrow) setFocus('preview');
+            if (key.return) { setFocus('preview'); setPreviewScroll(0); }
             return;
         }
 
         if (focus === 'preview') {
             if (key.downArrow) setPreviewScroll(s => Math.min(s + 1, maxPreviewScroll));
             if (key.upArrow) setPreviewScroll(s => Math.max(s - 1, 0));
+            if (input === '}') setPreviewScroll(s => Math.min(s + 10, maxPreviewScroll));
+            if (input === '{') setPreviewScroll(s => Math.max(s - 10, 0));
             if (input === 'd') setPreviewScroll(s => Math.min(s + 15, maxPreviewScroll));
             if (input === 'u') setPreviewScroll(s => Math.max(s - 15, 0));
-            if (input === 'h') setFocus('pruned');
+            if (input === 'h' || key.leftArrow) setFocus('pruned');
             return;
         }
     });
@@ -908,9 +917,12 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                 <Box flexDirection="column" width={previewW} paddingX={1}>
                     <Box marginBottom={0} justifyContent="space-between">
                         <Text color={focus === 'preview' ? C.aurora : C.dim} bold>Preview</Text>
-                        {previewLines.length > previewH && (
-                            <Text color={focus === 'preview' ? C.cyan : C.dim}>{scrollPct}%</Text>
-                        )}
+                        <Text>
+                            {focus !== 'preview' && <Text color={C.dim} italic>Enter/→ to scroll </Text>}
+                            {previewLines.length > previewH && (
+                                <Text color={focus === 'preview' ? C.cyan : C.dim}>{scrollPct}%</Text>
+                            )}
+                        </Text>
                     </Box>
                     {activeResult && (
                         <Box flexDirection="column">
@@ -1085,7 +1097,7 @@ function Footer({ view, width }: { view: View; width: number }): React.ReactNode
         files:     '↑↓ navigate   Enter view chunks   s sort   Esc back   q quit',
         chunks:    'Tab focus   ↑↓ scroll   {/} jump 10   u/d page   Enter preview   Esc back',
         callgraph: 'type to search   ↑↓ navigate   Enter expand   Esc back   q quit',
-        search:    'type query → Enter   Tab cycle panels   ←→ sources   Space toggle   Esc back',
+        search:    'type query → Enter   ←→ panels   {/} jump 10   Tab sources   Space toggle   Esc back',
     };
 
     return (
