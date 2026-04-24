@@ -6,11 +6,13 @@
  */
 
 import type { ScanResult, ScanModule } from './scan.ts';
+import type { PreviewLine } from '@/cli/tui/tree-scanner.ts';
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { c, args, getFlag, hasFlag, stripFlags } from '@/cli/utils.ts';
 import { createBrain, getConfig, registerConfigCollections, contextFromCLI } from '@/cli/factory/index.ts';
+import { discoverExternalPlugins } from '@/cli/factory/plugin-loader.ts';
 import { findDocsPlugin } from '@/cli/utils.ts';
 import { autoExportMcp } from './mcp-export.ts';
 import { scanRepo } from './scan.ts';
@@ -29,6 +31,15 @@ export async function cmdIndex(): Promise<void> {
 
     const scan = scanRepo(repoPath);
 
+    // Discover external (non-built-in) plugins from config and .brainbank/plugins/
+    const configPlugins = scan.config.plugins ?? [];
+    const externalDiscovery = await discoverExternalPlugins(repoPath, configPlugins);
+    let externalPreviews: Map<string, PreviewLine[]> = externalDiscovery.previews;
+
+    // Merge external modules into scan result
+    if (externalDiscovery.modules.length > 0) {
+        scan.modules = [...scan.modules, ...externalDiscovery.modules];
+    }
 
     let modules: string[];
     let tuiInclude: string[] = [];
@@ -49,7 +60,7 @@ export async function cmdIndex(): Promise<void> {
         modules = buildDefaultModules(scan);
     } else {
         // ── Interactive TUI ──
-        const selection = await runIndexTui(scan);
+        const selection = await runIndexTui(scan, externalPreviews);
         if (!selection) {
             console.log(c.dim('\n  Cancelled. Exiting.\n'));
             return;
@@ -100,8 +111,8 @@ export async function cmdIndex(): Promise<void> {
     if (tuiConfig) {
         // New config (first run) — save everything
         saveConfigFromTui(scan.repoPath, modules, tuiConfig.embedding, tuiConfig.pruner, tuiConfig.expander, tuiInclude, tuiIgnore);
-    } else if (tuiInclude.length > 0 || tuiIgnore.length > 0) {
-        // TUI ran with existing config — update plugins + patterns
+    } else {
+        // TUI ran with existing config — always update plugins + patterns
         updateConfigPlugins(scan.repoPath, modules, tuiInclude, tuiIgnore);
     }
 
@@ -198,14 +209,6 @@ function printScanTree(scan: ScanResult, depth: number): void {
     console.log(c.bold('\n━━━ BrainBank Scan ━━━'));
     console.log(c.dim(`  Repo: ${scan.repoPath}`));
 
-    // Multi-repo detection
-    if (scan.gitSubdirs.length > 0) {
-        console.log(c.cyan(`\n  🔀 Multi-repo — ${scan.gitSubdirs.length} git repos detected`));
-        for (const sub of scan.gitSubdirs) {
-            console.log(c.dim(`     └── ${sub.name}`));
-        }
-    }
-
     // Dynamic module display
     for (const mod of scan.modules) {
         console.log('');
@@ -268,6 +271,39 @@ function capitalizeFirst(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Common doc folder names to auto-detect for docs plugin. */
+const DOC_FOLDERS = ['docs', 'doc', 'wiki', 'documentation', 'guides', 'notes'];
+
+/** Auto-detect document collections in a repo. Scans for common doc folders + README. */
+function autoDetectDocCollections(repoPath: string): { name: string; path: string; pattern: string; context?: string }[] {
+    const resolved = path.resolve(repoPath);
+    const collections: { name: string; path: string; pattern: string; context?: string }[] = [];
+
+    for (const folder of DOC_FOLDERS) {
+        const absPath = path.join(resolved, folder);
+        try {
+            const stat = fs.statSync(absPath);
+            if (stat.isDirectory()) {
+                // Check it actually contains markdown files
+                const entries = fs.readdirSync(absPath, { recursive: true }) as string[];
+                const hasMd = entries.some(e => typeof e === 'string' && /\.md$/i.test(e));
+                if (hasMd) {
+                    collections.push({
+                        name: folder,
+                        path: folder,
+                        pattern: '**/*.md',
+                        context: `${folder} directory`,
+                    });
+                }
+            }
+        } catch {
+            // Folder doesn't exist — skip
+        }
+    }
+
+    return collections;
+}
+
 /** Save config.json from TUI selections (no interactive prompts). */
 function saveConfigFromTui(
     repoPath: string, modules: string[], embedding: string, pruner: string, expander: string,
@@ -295,6 +331,15 @@ function saveConfigFromTui(
     }
     if (ignore.length > 0) {
         config.ignore = ignore;
+    }
+
+    // Auto-detect doc collections when docs plugin is selected
+    if (modules.includes('docs')) {
+        const collections = autoDetectDocCollections(repoPath);
+        if (collections.length > 0) {
+            config.docs = { collections };
+            console.log(c.dim(`  Auto-detected docs: ${collections.map(dc => dc.name).join(', ')}`));
+        }
     }
 
     // Auto-detect API keys from environment
@@ -343,6 +388,19 @@ function updateConfigPlugins(repoPath: string, modules: string[], include: strin
             delete config.ignore;
         }
 
+        // Auto-detect doc collections when docs is newly added and none exist
+        if (modules.includes('docs')) {
+            const existing = config.docs as Record<string, unknown> | undefined;
+            const hasCollections = existing && Array.isArray(existing.collections) && existing.collections.length > 0;
+            if (!hasCollections) {
+                const collections = autoDetectDocCollections(repoPath);
+                if (collections.length > 0) {
+                    config.docs = { ...(existing ?? {}), collections };
+                    console.log(c.dim(`  Auto-detected docs: ${collections.map(dc => dc.name).join(', ')}`));
+                }
+            }
+        }
+
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
         console.log(c.green(`  ✓ Updated config.json`));
     } catch {
@@ -356,7 +414,7 @@ function updateConfigPlugins(repoPath: string, modules: string[], include: strin
  * Opens the SQLite database directly and drops module-specific rows.
  */
 function deindexModule(repoPath: string, moduleName: string): void {
-    const dbPath = path.join(repoPath, '.brainbank', 'brainbank.db');
+    const dbPath = path.join(repoPath, '.brainbank', 'data', 'brainbank.db');
     if (!fs.existsSync(dbPath)) return;
 
     // Simple interface — we only need exec() and close()
