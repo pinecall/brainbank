@@ -87,6 +87,115 @@ function truncate(str: string, max: number): string {
     return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
+// ── Syntax Highlighting ───────────────────────────
+
+/** A colored segment of a syntax-highlighted line. */
+interface SyntaxSegment {
+    text: string;
+    color: string;
+}
+
+// Keyword sets for common languages
+const KEYWORDS = new Set([
+    // JS/TS
+    'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue',
+    'default', 'delete', 'do', 'else', 'enum', 'export', 'extends', 'false',
+    'finally', 'for', 'from', 'function', 'if', 'implements', 'import', 'in',
+    'instanceof', 'interface', 'let', 'new', 'null', 'of', 'return', 'static',
+    'super', 'switch', 'this', 'throw', 'true', 'try', 'type', 'typeof',
+    'undefined', 'var', 'void', 'while', 'yield',
+    // Python
+    'def', 'class', 'self', 'None', 'True', 'False', 'and', 'or', 'not',
+    'is', 'lambda', 'with', 'as', 'pass', 'raise', 'global', 'nonlocal',
+    'elif', 'except', 'assert',
+]);
+
+const TYPE_WORDS = new Set([
+    'string', 'number', 'boolean', 'any', 'void', 'never', 'unknown',
+    'object', 'Promise', 'Array', 'Map', 'Set', 'Record', 'Partial',
+    'Readonly', 'Required', 'Pick', 'Omit', 'int', 'float', 'str',
+    'list', 'dict', 'tuple', 'bool', 'Optional',
+]);
+
+/** Tokenize a line of code into colored segments. Simple regex-based. */
+function highlightLine(line: string, maxW: number): SyntaxSegment[] {
+    const trimmed = line.length > maxW ? line.slice(0, maxW - 1) + '…' : line;
+    if (trimmed.length === 0) return [{ text: '', color: C.text }];
+
+    const segments: SyntaxSegment[] = [];
+    // Single-line comment check
+    const commentIdx = findCommentStart(trimmed);
+    const codePart = commentIdx >= 0 ? trimmed.slice(0, commentIdx) : trimmed;
+    const commentPart = commentIdx >= 0 ? trimmed.slice(commentIdx) : '';
+
+    // Tokenize code part
+    if (codePart.length > 0) {
+        // Match patterns: strings, numbers, keywords, decorators, rest
+        const pattern = /(@\w+)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)|([^A-Za-z_@'"\d`]+)/g;
+        let m: RegExpExecArray | null;
+        while ((m = pattern.exec(codePart)) !== null) {
+            const [full, decorator, str, num, word, other] = m;
+            if (decorator) {
+                segments.push({ text: decorator, color: C.warning });
+            } else if (str) {
+                segments.push({ text: str, color: C.success });
+            } else if (num) {
+                segments.push({ text: num, color: C.orange });
+            } else if (word) {
+                if (KEYWORDS.has(word)) {
+                    segments.push({ text: word, color: C.purple });
+                } else if (TYPE_WORDS.has(word)) {
+                    segments.push({ text: word, color: C.cyan });
+                } else if (word[0] === word[0].toUpperCase() && word[0] !== word[0].toLowerCase()) {
+                    // PascalCase → likely a class/type
+                    segments.push({ text: word, color: C.cyan });
+                } else {
+                    segments.push({ text: word, color: C.text });
+                }
+            } else if (other) {
+                segments.push({ text: other, color: C.dim });
+            } else {
+                segments.push({ text: full, color: C.text });
+            }
+        }
+    }
+
+    // Comment part
+    if (commentPart) {
+        segments.push({ text: commentPart, color: C.dim });
+    }
+
+    return segments.length > 0 ? segments : [{ text: trimmed, color: C.text }];
+}
+
+/** Find the start of a single-line comment, avoiding matches inside strings. */
+function findCommentStart(line: string): number {
+    let inString: string | null = null;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inString) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === inString) inString = null;
+        } else {
+            if (ch === '"' || ch === "'" || ch === '`') { inString = ch; continue; }
+            if (ch === '/' && line[i + 1] === '/') return i;
+            if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) return i;
+        }
+    }
+    return -1;
+}
+
+/** Render a syntax-highlighted code line as Ink <Text> elements. */
+function HighlightedLine({ segments }: { segments: SyntaxSegment[] }): React.ReactNode {
+    return (
+        <>
+            {segments.map((seg, i) => (
+                <Text key={i} color={seg.color}>{seg.text}</Text>
+            ))}
+        </>
+    );
+}
+
 type View = 'dashboard' | 'files' | 'chunks' | 'callgraph' | 'search';
 
 
@@ -323,8 +432,8 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
     const rightW = width - leftW - 3;
     const activeChunk = chunks[cursor] ?? null;
     const visible = chunks.slice(scrollOff, scrollOff + listH);
-    const metaH = 5; // header + symbol + calls
-    const previewH = Math.max(3, height - 10 - metaH);
+    // Preview fills to footer: height - 4 (outer margin) - 2 (header) - 3 (calls+meta) = usable
+    const previewH = Math.max(3, height - 9);
     const contentLines = useMemo(() => activeChunk?.content.split('\n') ?? [], [activeChunk]);
     const maxContentScroll = Math.max(0, contentLines.length - previewH);
 
@@ -343,11 +452,15 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
         if (focusPanel === 'list') {
             if (key.downArrow) setCursor(c => Math.min(c + 1, chunks.length - 1));
             if (key.upArrow) setCursor(c => Math.max(c - 1, 0));
+            if (input === '}') setCursor(c => Math.min(c + 10, chunks.length - 1));
+            if (input === '{') setCursor(c => Math.max(c - 10, 0));
             if (key.return) setFocusPanel('content');
         } else {
             // Content panel scrolling
             if (key.downArrow) setContentScroll(s => Math.min(s + 1, maxContentScroll));
             if (key.upArrow) setContentScroll(s => Math.max(s - 1, 0));
+            if (input === '}') setContentScroll(s => Math.min(s + 10, maxContentScroll));
+            if (input === '{') setContentScroll(s => Math.max(s - 10, 0));
             if (input === 'd') setContentScroll(s => Math.min(s + 15, maxContentScroll));
             if (input === 'u') setContentScroll(s => Math.max(s - 15, 0));
         }
@@ -387,29 +500,35 @@ function ChunkViewerView({ dbPath, filePath, width, height, onBack }: {
                 </Box>
             </Box>
 
-            {/* Right: Chunk preview (scrollable) */}
+            {/* Right: Chunk preview (scrollable with syntax highlighting) */}
             <Box flexDirection="column" width={rightW} paddingX={1}>
                 {activeChunk && (
                     <>
-                        <Box marginBottom={1} justifyContent="space-between">
+                        <Box marginBottom={0} justifyContent="space-between">
                             <Text>
                                 <Text color={focusPanel === 'content' ? C.aurora : C.dim} bold>Preview</Text>
                                 <Text color={C.dim}> #{cursor + 1} L{activeChunk.startLine}-{activeChunk.endLine}</Text>
                                 {activeChunk.name ? <Text color={C.purple}> {activeChunk.name}</Text> : null}
                             </Text>
-                            {contentLines.length > previewH && (
-                                <Text color={focusPanel === 'content' ? C.cyan : C.dim}>{scrollPct}%</Text>
-                            )}
+                            <Text>
+                                {focusPanel === 'list' && <Text color={C.dim} italic>Enter to scroll </Text>}
+                                {contentLines.length > previewH && (
+                                    <Text color={focusPanel === 'content' ? C.cyan : C.dim}>{scrollPct}%</Text>
+                                )}
+                            </Text>
                         </Box>
                         <Box flexDirection="column">
-                            {visibleLines.map((line, i) => (
-                                <Box key={contentScroll + i} height={1}>
-                                    <Text wrap="truncate">
-                                        <Text color={C.dim}>{String(activeChunk.startLine + contentScroll + i).padStart(4)}│</Text>
-                                        <Text color={C.text}>{truncate(line, rightW - 6)}</Text>
-                                    </Text>
-                                </Box>
-                            ))}
+                            {visibleLines.map((line, i) => {
+                                const segs = highlightLine(line, rightW - 6);
+                                return (
+                                    <Box key={contentScroll + i} height={1}>
+                                        <Text wrap="truncate">
+                                            <Text color={C.dim}>{String(activeChunk.startLine + contentScroll + i).padStart(4)}│</Text>
+                                            <HighlightedLine segments={segs} />
+                                        </Text>
+                                    </Box>
+                                );
+                            })}
                         </Box>
 
                         <Box marginTop={1} flexDirection="column">
@@ -778,14 +897,17 @@ function SemanticSearchView({ repoPath, width, height, onBack }: {
                             <Text color={C.dim} wrap="truncate">
                                 {truncate(resultLabel(activeResult).path, previewW - 4)} L{resultLabel(activeResult).line}
                             </Text>
-                            {visiblePreview.map((line, i) => (
-                                <Box key={previewScroll + i} height={1}>
-                                    <Text wrap="truncate">
-                                        <Text color={C.dim}>{String(previewScroll + i + 1).padStart(3)}│</Text>
-                                        <Text color={C.text}>{truncate(line, previewW - 5)}</Text>
-                                    </Text>
-                                </Box>
-                            ))}
+                            {visiblePreview.map((line, i) => {
+                                const segs = highlightLine(line, previewW - 5);
+                                return (
+                                    <Box key={previewScroll + i} height={1}>
+                                        <Text wrap="truncate">
+                                            <Text color={C.dim}>{String(previewScroll + i + 1).padStart(3)}│</Text>
+                                            <HighlightedLine segments={segs} />
+                                        </Text>
+                                    </Box>
+                                );
+                            })}
                         </Box>
                     )}
                 </Box>
@@ -941,7 +1063,7 @@ function Footer({ view, width }: { view: View; width: number }): React.ReactNode
     const hints: Record<View, string> = {
         dashboard: '↑↓ navigate   Enter drill in   / search   g call graph   q quit',
         files:     '↑↓ navigate   Enter view chunks   s sort   Esc back   q quit',
-        chunks:    'Tab focus   ↑↓ scroll   h/l switch   u/d page   Esc back   q quit',
+        chunks:    'Tab focus   ↑↓ scroll   {/} jump 10   u/d page   Enter preview   Esc back',
         callgraph: 'type to search   ↑↓ navigate   Enter expand   Esc back   q quit',
         search:    'type query → Enter   Tab cycle panels   ←→ sources   Space toggle   Esc back',
     };
